@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  webclock:
+    build: .
+    container_name: webclock
+    restart: always
+    ports:
+      - "80:5000"
+    volumes:
+      - ./manual_notes.json:/app/manual_notes.json
+    environment:
+      - PORT=5000
+      - HOST=0.0.0.0
+    env_file:
+      - .env

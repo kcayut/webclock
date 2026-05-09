@@ -1,0 +1,5 @@
+Flask
+requests
+icalendar
+holidays
+python-dotenv

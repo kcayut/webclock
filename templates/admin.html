@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ translations[language].admin_title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            padding: 20px;
+            max-width: 640px;
+            margin: 0 auto;
+            background: #f5f5f7;
+            color: #1d1d1f;
+        }
+
+        h2,
+        h3 {
+            margin: 0 0 14px;
+        }
+
+        .control-panel,
+        .input-group,
+        li {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        .control-panel {
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            min-height: 44px;
+            padding: 10px 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.2s;
+            background: #e7e7ea;
+            color: #1d1d1f;
+        }
+
+        .btn.active {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-black {
+            background: #333;
+            color: white;
+        }
+
+        .btn-black.active {
+            background: #000;
+            box-shadow: inset 0 0 0 2px #007bff;
+        }
+
+        .field {
+            margin-top: 15px;
+        }
+
+        .field label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type=range] {
+            flex: 1;
+            height: 6px;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="time"],
+        select {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #d2d2d7;
+            border-radius: 8px;
+            background: white;
+        }
+
+        .input-group {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .submit-btn {
+            padding: 12px;
+            font-size: 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            margin-top: 10px;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .note-text {
+            overflow-wrap: anywhere;
+        }
+
+        .time-tag {
+            font-size: 12px;
+            color: #6e6e73;
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+
+        .delete-btn {
+            background: #ff3b30;
+            color: white;
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+
+<body>
+    <h2 data-i18n="admin_title">{{ translations[language].admin_title }}</h2>
+    <div class="control-panel">
+        <h3 data-i18n="display_control">{{ translations[language].display_control }}</h3>
+        <div class="btn-group">
+            <button class="btn {% if settings.mode == 'normal' %}active{% endif %}" onclick="setMode('normal')"
+                data-i18n="normal_display">{{ translations[language].normal_display }}</button>
+            <button class="btn btn-black {% if settings.mode == 'black' %}active{% endif %}" onclick="setMode('black')"
+                data-i18n="black_screen">{{ translations[language].black_screen }}</button>
+        </div>
+
+        <div class="field">
+            <label><span data-i18n="brightness">{{ translations[language].brightness }}</span>: <span
+                    id="bright-val">{{ settings.brightness }}</span>%</label>
+            <div class="slider-container">
+                <span data-i18n="dark">{{ translations[language].dark }}</span>
+                <input type="range" min="0" max="100" value="{{ settings.brightness }}"
+                    oninput="setBrightness(this.value)">
+                <span data-i18n="bright">{{ translations[language].bright }}</span>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="timezone-select" data-i18n="timezone">{{ translations[language].timezone }}</label>
+            <select id="timezone-select" onchange="setTimezone(this.value)">
+                <option value="-12">UTC-12</option>
+                <option value="-11">UTC-11</option>
+                <option value="-10">UTC-10</option>
+                <option value="-9">UTC-9</option>
+                <option value="-8">UTC-8</option>
+                <option value="-7">UTC-7</option>
+                <option value="-6">UTC-6</option>
+                <option value="-5">UTC-5</option>
+                <option value="-4">UTC-4</option>
+                <option value="-3">UTC-3</option>
+                <option value="-2">UTC-2</option>
+                <option value="-1">UTC-1</option>
+                <option value="0">UTC+0</option>
+                <option value="1">UTC+1</option>
+                <option value="2">UTC+2</option>
+                <option value="3">UTC+3</option>
+                <option value="4">UTC+4</option>
+                <option value="5">UTC+5</option>
+                <option value="6">UTC+6</option>
+                <option value="7">UTC+7</option>
+                <option value="8">UTC+8</option>
+                <option value="9">UTC+9</option>
+                <option value="10">UTC+10</option>
+                <option value="11">UTC+11</option>
+                <option value="12">UTC+12</option>
+                <option value="13">UTC+13</option>
+                <option value="14">UTC+14</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="language-select" data-i18n="language">{{ translations[language].language }}</label>
+            <select id="language-select" onchange="setLanguage(this.value)">
+                {% for code, label in languages.items() %}
+                <option value="{{ code }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #ddd; margin: 30px 0;">
+
+    <h2 data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
+    <div class="input-group">
+        <form action="/add" method="POST" style="display: flex; flex-direction: column; gap: 10px;">
+            <label data-i18n="event_text">{{ translations[language].event_text }}</label>
+            <input type="text" name="note_text" data-i18n-placeholder="event_placeholder"
+                placeholder="{{ translations[language].event_placeholder }}" required>
+            <label data-i18n="date_optional">{{ translations[language].date_optional }}</label>
+            <input type="date" name="note_date">
+            <label data-i18n="time_optional">{{ translations[language].time_optional }}</label>
+            <input type="time" name="note_time">
+            <button type="submit" class="submit-btn" data-i18n="add">{{ translations[language].add }}</button>
+        </form>
+    </div>
+
+    <h3 style="margin-top: 24px;" data-i18n="current_list">{{ translations[language].current_list }}</h3>
+    <ul>
+        {% for note in notes %}
+        <li>
+            <div class="note-text">
+                {% if note.due_date %}<span class="time-tag">{{ note.due_date }}</span>{% endif %}
+                <b>{{ note.text }}</b>
+            </div>
+            <a href="/delete/{{ note.id }}" class="delete-btn" data-i18n="delete">{{ translations[language].delete }}</a>
+        </li>
+        {% else %}
+        <li style="justify-content: center; color: #999;" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
+        {% endfor %}
+    </ul>
+
+    <script>
+        var I18N = {{ translations | tojson }};
+        var currentLanguage = {{ language | tojson }};
+
+        document.getElementById('timezone-select').value = "{{ settings.timezone_offset }}";
+        document.getElementById('language-select').value = currentLanguage;
+
+        function t(key) {
+            var pack = I18N[currentLanguage] || I18N['zh-TW'];
+            return pack[key] || I18N['zh-TW'][key] || key;
+        }
+
+        function applyLanguage() {
+            document.documentElement.lang = currentLanguage;
+            document.title = t('admin_title');
+            document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+                el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
+            });
+        }
+
+        function postSettings(payload) {
+            return fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        function setMode(mode) {
+            document.querySelectorAll('.btn').forEach(function (button) {
+                button.classList.remove('active');
+            });
+            if (mode === 'normal') {
+                document.querySelector('.btn:first-child').classList.add('active');
+            } else {
+                document.querySelector('.btn-black').classList.add('active');
+            }
+            postSettings({ mode: mode });
+        }
+
+        function setBrightness(val) {
+            document.getElementById('bright-val').textContent = val;
+            postSettings({ brightness: val });
+        }
+
+        function setTimezone(val) {
+            postSettings({ timezone_offset: val });
+        }
+
+        function setLanguage(language) {
+            if (!I18N[language]) return;
+            currentLanguage = language;
+            applyLanguage();
+            postSettings({ language: language });
+        }
+    </script>
+</body>
+
+</html>

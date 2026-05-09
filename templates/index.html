@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="MyClock">
+    <title>{{ translations[language].app_title }}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            color: #fff;
+            margin: 0;
+            font-family: -apple-system, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: -webkit-flex;
+            display: flex;
+            -webkit-flex-direction: column;
+            flex-direction: column;
+            -webkit-justify-content: center;
+            justify-content: center;
+            -webkit-align-items: center;
+            align-items: center;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        #clock-container {
+            text-align: center;
+            margin-bottom: 0;
+            -webkit-flex: 0 0 auto;
+            flex: 0 0 auto;
+        }
+
+        #time {
+            font-size: 35vw;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        #date-info {
+            font-size: 13vw;
+            margin-top: 10px;
+            display: -webkit-flex;
+            display: flex;
+            -webkit-justify-content: center;
+            justify-content: center;
+            -webkit-align-items: center;
+            align-items: center;
+        }
+
+        #date-part {
+            margin-right: 20px;
+            padding: 4px 0;
+        }
+
+        #day-part {
+            padding: 4px 15px;
+            border-radius: 12px;
+            transition: background-color 0.5s;
+            line-height: 1;
+        }
+
+        .holiday-highlight {
+            background-color: #c0392b;
+            font-weight: bold;
+        }
+
+        #list-container {
+            width: 95%;
+            height: 25vh;
+            margin-top: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .event-row {
+            color: #ccc;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            display: -webkit-flex;
+            display: flex;
+            -webkit-justify-content: center;
+            justify-content: center;
+            -webkit-align-items: center;
+            align-items: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 10vh;
+        }
+
+        .event-content-wrapper {
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        .scrolling {
+            -webkit-animation: scroll-left 10s linear infinite;
+            animation: scroll-left 10s linear infinite;
+            padding-left: 100%;
+        }
+
+        @-webkit-keyframes scroll-left {
+            0% {
+                -webkit-transform: translateX(0);
+            }
+
+            100% {
+                -webkit-transform: translateX(-100%);
+            }
+        }
+
+        @keyframes scroll-left {
+            0% {
+                transform: translateX(0);
+            }
+
+            100% {
+                transform: translateX(-100%);
+            }
+        }
+
+        .event-row.active {
+            opacity: 1;
+            z-index: 10;
+        }
+
+        .event-time {
+            color: #f39c12;
+            margin-right: 20px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        .force-black #clock-container,
+        .force-black #list-container,
+        .force-black #notice {
+            opacity: 0 !important;
+        }
+
+        #event-counter {
+            position: absolute;
+            bottom: 5px;
+            right: 15px;
+            font-size: 5vh;
+            color: #888;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 2px 10px;
+            border-radius: 12px;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #notice {
+            position: fixed;
+            right: 8px;
+            bottom: 8px;
+            max-width: 90%;
+            color: #aaa;
+            background: rgba(0, 0, 0, 0.65);
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 5px 24px 5px 8px;
+            font-size: 12px;
+            line-height: 1.4;
+            z-index: 100;
+            display: none;
+        }
+
+        #notice-close {
+            position: absolute;
+            top: 2px;
+            right: 6px;
+            color: #ccc;
+            font-size: 16px;
+            line-height: 16px;
+            cursor: pointer;
+        }
+
+        #connection-toggle {
+            position: fixed;
+            right: 10px;
+            bottom: 10px;
+            width: 28px;
+            height: 28px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.45);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            line-height: 26px;
+            text-align: center;
+            z-index: 130;
+            opacity: 0.35;
+            cursor: pointer;
+        }
+
+        #connection-toggle:hover,
+        #connection-toggle:focus {
+            opacity: 0.9;
+            outline: none;
+        }
+
+        #connection-panel {
+            position: fixed;
+            right: 10px;
+            bottom: 46px;
+            width: min(340px, calc(100vw - 20px));
+            color: #ddd;
+            background: rgba(12, 12, 12, 0.94);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 13px;
+            line-height: 1.35;
+            z-index: 125;
+            display: none;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+        }
+
+        #connection-panel.open {
+            display: block;
+        }
+
+        #connection-panel label {
+            display: block;
+            margin: 8px 0 4px;
+            color: #aaa;
+        }
+
+        #connection-panel input {
+            width: 100%;
+            min-height: 34px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            background: #111;
+            color: #eee;
+            padding: 7px 8px;
+            font-size: 14px;
+        }
+
+        #connection-panel button {
+            min-height: 34px;
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #1d1d1d;
+            color: #eee;
+            padding: 7px 9px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        #connection-panel button:hover,
+        #connection-panel button:focus {
+            background: #292929;
+            outline: none;
+        }
+
+        .connection-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .connection-row button {
+            flex: 1;
+        }
+
+        #connection-status {
+            color: #aaa;
+            min-height: 18px;
+        }
+
+        #local-events-list {
+            max-height: 110px;
+            overflow: auto;
+            margin-top: 8px;
+        }
+
+        .local-event-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            border-top: 1px solid #2c2c2c;
+            padding: 6px 0;
+        }
+
+        .local-event-item span {
+            overflow-wrap: anywhere;
+        }
+
+        .local-event-item button {
+            min-height: 26px;
+            padding: 3px 7px;
+            color: #ffb4af;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="clock-container">
+        <div id="time">00:00</div>
+        <div id="date-info">
+            <span id="date-part">{{ translations[language].loading }}</span>
+            <span id="day-part">...</span>
+        </div>
+    </div>
+
+    <div id="list-container">
+        <div id="event-counter"></div>
+    </div>
+
+    <div id="notice">
+        <span id="notice-text"></span>
+        <span id="notice-close" onclick="hideNotice(true)" title="{{ translations[language].notice_close }}">x</span>
+    </div>
+
+    <button id="connection-toggle" type="button" onclick="toggleConnectionPanel()" title="Connection settings">...</button>
+    <div id="connection-panel" aria-live="polite">
+        <div id="connection-status"></div>
+        <label for="server-url-input">Server URL</label>
+        <input id="server-url-input" type="url" inputmode="url" placeholder="http://192.168.1.10">
+        <div class="connection-row">
+            <button type="button" onclick="saveServerUrl()">Save</button>
+            <button type="button" onclick="reconnectNow()">Reconnect</button>
+        </div>
+        <label for="local-event-text">Offline reminder</label>
+        <input id="local-event-text" type="text" placeholder="Reminder text">
+        <div class="connection-row">
+            <input id="local-event-time" type="time" aria-label="Offline reminder time">
+            <button type="button" onclick="addLocalEvent()">Add</button>
+        </div>
+        <div id="local-events-list"></div>
+    </div>
+
+    <script>
+        var I18N = {{ translations | tojson }};
+        var currentLanguage = {{ language | tojson }};
+        var STORAGE_SERVER_URL = 'webclock.serverUrl';
+        var STORAGE_SETTINGS = 'webclock.settings';
+        var STORAGE_LOCAL_EVENTS = 'webclock.localEvents';
+        var NOTICE_HIDE_MS = 12 * 60 * 60 * 1000;
+        var noticeTimer = null;
+        var lastNoticeMessage = "";
+        var noticeMutedUntil = 0;
+        var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
+        var connectionMode = 'server';
+        var lastServerStatus = 'Connecting...';
+
+        function t(key) {
+            var pack = I18N[currentLanguage] || I18N['zh-TW'];
+            return pack[key] || I18N['zh-TW'][key] || key;
+        }
+
+        function setLanguage(language) {
+            if (!I18N[language] || currentLanguage === language) return;
+            currentLanguage = language;
+            document.documentElement.lang = language;
+            document.title = t('app_title');
+            updateClock();
+        }
+
+        function readStoredValue(key, fallback) {
+            try {
+                var value = window.localStorage.getItem(key);
+                return value === null ? fallback : value;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function writeStoredValue(key, value) {
+            try {
+                window.localStorage.setItem(key, value);
+            } catch (e) {
+            }
+        }
+
+        function readStoredJson(key, fallback) {
+            try {
+                var value = window.localStorage.getItem(key);
+                return value ? JSON.parse(value) : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function writeStoredJson(key, value) {
+            try {
+                window.localStorage.setItem(key, JSON.stringify(value));
+            } catch (e) {
+            }
+        }
+
+        function normalizeServerUrl(value) {
+            if (!value) return "";
+            var trimmed = String(value).replace(/\s+/g, "");
+            if (!trimmed) return "";
+            if (!/^https?:\/\//i.test(trimmed)) {
+                trimmed = "http://" + trimmed;
+            }
+            return trimmed.replace(/\/+$/, "");
+        }
+
+        function getStatusUrl() {
+            return serverUrl + '/api/status?nocache=' + new Date().getTime();
+        }
+
+        function getStoredSettings() {
+            var defaults = {
+                mode: 'normal',
+                brightness: 100,
+                timezone_offset: 8,
+                language: currentLanguage
+            };
+            var stored = readStoredJson(STORAGE_SETTINGS, {});
+            for (var key in stored) {
+                if (stored.hasOwnProperty(key)) defaults[key] = stored[key];
+            }
+            return defaults;
+        }
+
+        function saveSettings(settings) {
+            if (!settings) return;
+            writeStoredJson(STORAGE_SETTINGS, {
+                mode: settings.mode || 'normal',
+                brightness: settings.brightness === undefined ? 100 : Number(settings.brightness),
+                timezone_offset: settings.timezone_offset === undefined ? timezoneOffset : Number(settings.timezone_offset),
+                language: settings.language || currentLanguage
+            });
+        }
+
+        function applySettings(settings) {
+            if (!settings) return;
+            if (settings.language) {
+                setLanguage(settings.language);
+            }
+            if (settings.timezone_offset !== undefined) {
+                timezoneOffset = Number(settings.timezone_offset);
+            }
+
+            var body = document.body;
+            if (settings.mode === 'black') {
+                body.classList.add('force-black');
+            } else {
+                body.classList.remove('force-black');
+                body.style.opacity = (settings.brightness === undefined ? 100 : Number(settings.brightness)) / 100;
+            }
+        }
+
+        function showNotice(message) {
+            var notice = document.getElementById('notice');
+            var text = document.getElementById('notice-text');
+            var nowMs = new Date().getTime();
+            if (!notice || !text) return;
+            if (message === lastNoticeMessage && nowMs < noticeMutedUntil) return;
+            if (message === lastNoticeMessage && notice.style.display === 'block') return;
+
+            lastNoticeMessage = message;
+            text.textContent = message;
+            notice.style.display = 'block';
+
+            if (noticeTimer) {
+                clearTimeout(noticeTimer);
+            }
+            noticeTimer = setTimeout(function () {
+                hideNotice(true);
+            }, NOTICE_HIDE_MS);
+        }
+
+        function hideNotice(mute) {
+            var notice = document.getElementById('notice');
+            if (notice) {
+                notice.style.display = 'none';
+            }
+            if (mute) {
+                noticeMutedUntil = new Date().getTime() + NOTICE_HIDE_MS;
+            }
+            if (noticeTimer) {
+                clearTimeout(noticeTimer);
+                noticeTimer = null;
+            }
+        }
+
+        window.onerror = function () {
+            showNotice(t('page_error'));
+            return true;
+        };
+
+        var timezoneOffset = 8;
+        var clockBaseUtcMs = null;
+        var clockBaseDeviceMs = null;
+        var standardTimeSynced = false;
+
+        function setClockBase(utcMs) {
+            if (typeof utcMs !== 'number' || isNaN(utcMs) || utcMs <= 0) return;
+            clockBaseUtcMs = utcMs;
+            clockBaseDeviceMs = new Date().getTime();
+        }
+
+        function getClockUtcMs() {
+            var deviceNow = new Date().getTime();
+            if (clockBaseUtcMs !== null && clockBaseDeviceMs !== null) {
+                return clockBaseUtcMs + (deviceNow - clockBaseDeviceMs);
+            }
+            return deviceNow;
+        }
+
+        function updateClock() {
+            var nowUtcMs = getClockUtcMs();
+            var targetTimeMs = nowUtcMs + (timezoneOffset * 3600000);
+            var targetTime = new Date(targetTimeMs);
+            var h = String(targetTime.getUTCHours()).replace(/^(\d)$/, "0$1");
+            var m = String(targetTime.getUTCMinutes()).replace(/^(\d)$/, "0$1");
+            var weekDays = t('weekdays');
+
+            document.getElementById('time').textContent = h + ":" + m;
+            document.getElementById('date-part').textContent = (targetTime.getUTCMonth() + 1) + "/" + targetTime.getUTCDate();
+            document.getElementById('day-part').textContent = weekDays[targetTime.getUTCDay()];
+        }
+
+        function syncStandardTime() {
+            var xhr = new XMLHttpRequest();
+            var timestamp = new Date().getTime();
+            xhr.open('GET', 'https://worldtimeapi.org/api/timezone/Etc/UTC?nocache=' + timestamp, true);
+            xhr.timeout = 8000;
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4) return;
+                if (xhr.status === 200) {
+                    try {
+                        var data = JSON.parse(xhr.responseText);
+                        if (typeof data.unixtime === 'number') {
+                            setClockBase(data.unixtime * 1000);
+                            standardTimeSynced = true;
+                            return;
+                        }
+                    } catch (e) {
+                    }
+                }
+                if (!standardTimeSynced) {
+                    showNotice(t('standard_time_unavailable'));
+                }
+            };
+            xhr.onerror = function () {
+                if (!standardTimeSynced) showNotice(t('standard_time_unavailable'));
+            };
+            xhr.ontimeout = function () {
+                if (!standardTimeSynced) showNotice(t('standard_time_unavailable'));
+            };
+            try {
+                xhr.send();
+            } catch (e) {
+                if (!standardTimeSynced) showNotice(t('standard_time_unavailable'));
+            }
+        }
+
+        function setConnectionStatus(message, isOffline) {
+            lastServerStatus = message;
+            var status = document.getElementById('connection-status');
+            var toggle = document.getElementById('connection-toggle');
+            if (status) status.textContent = message;
+            if (toggle) {
+                toggle.textContent = isOffline ? '!' : '.';
+                toggle.title = message;
+            }
+        }
+
+        function enterStandaloneMode(message) {
+            connectionMode = 'standalone';
+            applySettings(getStoredSettings());
+            renderList(getLocalEventsForToday());
+            updateClock();
+            setConnectionStatus(message || 'Standalone mode: using device time and local reminders.', true);
+        }
+
+        function enterServerMode(data) {
+            connectionMode = 'server';
+            if (data.settings) {
+                applySettings(data.settings);
+                saveSettings(data.settings);
+            }
+            if (!standardTimeSynced && typeof data.server_timestamp === 'number') {
+                setClockBase(data.server_timestamp);
+            }
+
+            var dayPart = document.getElementById('day-part');
+            if (data.is_holiday) dayPart.classList.add('holiday-highlight');
+            else dayPart.classList.remove('holiday-highlight');
+
+            renderList(data.events);
+            updateClock();
+            setConnectionStatus('Server connected: ' + serverUrl, false);
+        }
+
+        function fetchStatus() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', getStatusUrl(), true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    try {
+                        var data = JSON.parse(xhr.responseText);
+                        enterServerMode(data);
+                    } catch (e) {
+                        showNotice(t('status_parse_failed'));
+                        enterStandaloneMode('Standalone mode: server response could not be read.');
+                    }
+                } else if (xhr.readyState === 4) {
+                    showNotice(t('server_unavailable'));
+                    enterStandaloneMode('Standalone mode: server is unavailable.');
+                }
+            };
+            xhr.onerror = function () {
+                showNotice(t('server_unavailable'));
+                enterStandaloneMode('Standalone mode: server is unavailable.');
+            };
+            xhr.ontimeout = function () {
+                showNotice(t('server_timeout'));
+                enterStandaloneMode('Standalone mode: server timed out.');
+            };
+            xhr.timeout = 8000;
+            try {
+                xhr.send();
+            } catch (e) {
+                showNotice(t('server_unavailable'));
+                enterStandaloneMode('Standalone mode: server is unavailable.');
+            }
+        }
+
+        function getLocalEvents() {
+            var events = readStoredJson(STORAGE_LOCAL_EVENTS, []);
+            return Array.isArray(events) ? events : [];
+        }
+
+        function saveLocalEvents(events) {
+            writeStoredJson(STORAGE_LOCAL_EVENTS, events);
+            renderLocalEventsEditor();
+            if (connectionMode === 'standalone') {
+                renderList(getLocalEventsForToday());
+            }
+        }
+
+        function getLocalEventsForToday() {
+            var events = getLocalEvents();
+            var today = getClockDateString();
+            var visible = [];
+            for (var i = 0; i < events.length; i++) {
+                var event = events[i];
+                if (!event.date || event.date === today) {
+                    visible.push({ text: event.text, time: event.time || "" });
+                }
+            }
+            visible.sort(function (a, b) {
+                return (a.time || "99:99").localeCompare(b.time || "99:99");
+            });
+            return visible;
+        }
+
+        function getClockDateString() {
+            var nowUtcMs = getClockUtcMs();
+            var targetTime = new Date(nowUtcMs + (timezoneOffset * 3600000));
+            var month = String(targetTime.getUTCMonth() + 1).replace(/^(\d)$/, "0$1");
+            var day = String(targetTime.getUTCDate()).replace(/^(\d)$/, "0$1");
+            return targetTime.getUTCFullYear() + "-" + month + "-" + day;
+        }
+
+        function addLocalEvent() {
+            var textInput = document.getElementById('local-event-text');
+            var timeInput = document.getElementById('local-event-time');
+            var text = textInput ? textInput.value.replace(/^\s+|\s+$/g, "") : "";
+            if (!text) return;
+
+            var events = getLocalEvents();
+            events.push({
+                id: new Date().getTime(),
+                text: text,
+                time: timeInput ? timeInput.value : "",
+                date: ""
+            });
+            if (textInput) textInput.value = "";
+            if (timeInput) timeInput.value = "";
+            saveLocalEvents(events);
+        }
+
+        function deleteLocalEvent(id) {
+            var events = getLocalEvents().filter(function (event) {
+                return String(event.id) !== String(id);
+            });
+            saveLocalEvents(events);
+        }
+
+        function renderLocalEventsEditor() {
+            var list = document.getElementById('local-events-list');
+            if (!list) return;
+            var events = getLocalEvents();
+            list.innerHTML = "";
+            for (var i = 0; i < events.length; i++) {
+                var event = events[i];
+                var item = document.createElement('div');
+                var text = document.createElement('span');
+                var button = document.createElement('button');
+                item.className = 'local-event-item';
+                text.textContent = (event.time ? event.time + " " : "") + event.text;
+                button.type = 'button';
+                button.textContent = 'Delete';
+                button.setAttribute('data-event-id', event.id);
+                button.onclick = function () {
+                    deleteLocalEvent(this.getAttribute('data-event-id'));
+                };
+                item.appendChild(text);
+                item.appendChild(button);
+                list.appendChild(item);
+            }
+        }
+
+        function toggleConnectionPanel() {
+            var panel = document.getElementById('connection-panel');
+            var input = document.getElementById('server-url-input');
+            if (!panel) return;
+            panel.classList.toggle('open');
+            if (input) input.value = serverUrl;
+            setConnectionStatus(lastServerStatus, connectionMode === 'standalone');
+            renderLocalEventsEditor();
+        }
+
+        function saveServerUrl() {
+            var input = document.getElementById('server-url-input');
+            var nextUrl = input ? normalizeServerUrl(input.value) : "";
+            if (!nextUrl) return;
+            serverUrl = nextUrl;
+            writeStoredValue(STORAGE_SERVER_URL, serverUrl);
+            setConnectionStatus('Server URL saved: ' + serverUrl, connectionMode === 'standalone');
+        }
+
+        function reconnectNow() {
+            saveServerUrl();
+            setConnectionStatus('Connecting...', connectionMode === 'standalone');
+            fetchStatus();
+        }
+
+        var currentEventsJson = "";
+        var currentIndex = 0;
+        var carouselInterval = null;
+
+        function renderList(events) {
+            var newJson = JSON.stringify(events);
+            if (newJson === currentEventsJson) return;
+            currentEventsJson = newJson;
+
+            var container = document.getElementById('list-container');
+            var oldRows = container.querySelectorAll('.event-row');
+            for (var k = 0; k < oldRows.length; k++) {
+                container.removeChild(oldRows[k]);
+            }
+
+            var counterDiv = document.getElementById('event-counter');
+            if (!events || events.length === 0) {
+                container.style.display = 'none';
+                counterDiv.textContent = "";
+                return;
+            }
+
+            container.style.display = 'block';
+            currentIndex = 0;
+            counterDiv.textContent = "1 / " + events.length;
+
+            for (var i = 0; i < events.length; i++) {
+                var item = events[i];
+                var div = document.createElement('div');
+                var contentSpan = document.createElement('span');
+
+                div.className = 'event-row';
+                if (i === 0) div.classList.add('active');
+                contentSpan.className = 'event-content-wrapper';
+
+                if (item.time) {
+                    var timeSpan = document.createElement('span');
+                    timeSpan.className = 'event-time';
+                    timeSpan.textContent = item.time;
+                    contentSpan.appendChild(timeSpan);
+                }
+
+                var textSpan = document.createElement('span');
+                textSpan.textContent = item.text || '';
+                contentSpan.appendChild(textSpan);
+                div.appendChild(contentSpan);
+                container.appendChild(div);
+            }
+
+            applyScrolling(document.querySelector('.event-row.active'));
+            if (!carouselInterval) {
+                carouselInterval = setInterval(showNextEvent, 5000);
+            }
+        }
+
+        function applyScrolling(row) {
+            if (!row) return;
+            var wrapper = row.querySelector('.event-content-wrapper');
+            if (!wrapper) return;
+            if (wrapper.offsetWidth > row.offsetWidth) {
+                wrapper.classList.add('scrolling');
+            } else {
+                wrapper.classList.remove('scrolling');
+            }
+        }
+
+        function showNextEvent() {
+            var items = document.querySelectorAll('.event-row');
+            if (items.length === 0) return;
+            if (items[currentIndex]) {
+                items[currentIndex].classList.remove('active');
+            }
+
+            currentIndex = (currentIndex + 1) % items.length;
+            var nextItem = items[currentIndex];
+            nextItem.classList.add('active');
+
+            var counterDiv = document.getElementById('event-counter');
+            if (counterDiv) {
+                counterDiv.textContent = (currentIndex + 1) + " / " + items.length;
+            }
+            applyScrolling(nextItem);
+        }
+
+        applySettings(getStoredSettings());
+        renderLocalEventsEditor();
+        setConnectionStatus('Connecting...', false);
+        setInterval(updateClock, 1000);
+        setInterval(fetchStatus, 5000);
+        setInterval(syncStandardTime, 6 * 60 * 60 * 1000);
+        updateClock();
+        syncStandardTime();
+        fetchStatus();
+    </script>
+</body>
+
+</html>
