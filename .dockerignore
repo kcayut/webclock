@@ -1,0 +1,7 @@
+.git
+venv
+.env
+manual_notes.json
+webclock_state
+.webclock-update*
+**/__pycache__

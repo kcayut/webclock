@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, redirect, url_for
+from flask import Flask, render_template, jsonify, request, redirect, url_for, abort
 from datetime import datetime, timezone, timedelta
 import holidays
 import requests
@@ -6,12 +6,15 @@ from icalendar import Calendar
 import json
 import os
 import time
+import tempfile
+from threading import Lock
 from dotenv import load_dotenv
 
 load_dotenv()
 
 ICAL_URL = os.getenv('ICAL_URL', "")
 NOTES_FILE = "manual_notes.json"
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'webclock_state', 'settings.json')
 CACHE_DURATION = 9000
 DEFAULT_LANGUAGE = 'zh-TW'
 
@@ -47,6 +50,16 @@ UI_TRANSLATIONS = {
         'event_placeholder': '例如：倒垃圾、吃藥、會議',
         'date_optional': '日期（選填）',
         'time_optional': '時間（選填）',
+        'display_window': '顯示時間區間（選填）',
+        'display_mode': '區間模式',
+        'range_mode': '指定日期時間',
+        'daily_mode': '每天固定時段',
+        'display_start': '開始顯示',
+        'display_end': '結束顯示',
+        'edit_window': '設定顯示區間',
+        'save': '儲存',
+        'settings_save_error': '設定未能儲存，將重新載入目前設定。',
+        'window_error': '請填寫有效且完整的開始與結束時間。指定日期時，結束須晚於開始；每天時段不可相同，可跨午夜。兩欄皆空白可取消區間。',
         'add': '新增',
         'current_list': '目前列表',
         'delete': '刪除',
@@ -76,6 +89,16 @@ UI_TRANSLATIONS = {
         'event_placeholder': '例如：倒垃圾、吃药、会议',
         'date_optional': '日期（选填）',
         'time_optional': '时间（选填）',
+        'display_window': '显示时间区间（选填）',
+        'display_mode': '区间模式',
+        'range_mode': '指定日期时间',
+        'daily_mode': '每天固定时段',
+        'display_start': '开始显示',
+        'display_end': '结束显示',
+        'edit_window': '设置显示区间',
+        'save': '保存',
+        'settings_save_error': '设置未能保存，将重新加载当前设置。',
+        'window_error': '请填写有效且完整的开始与结束时间。指定日期时，结束须晚于开始；每天时段不可相同，可跨午夜。两栏皆空白可取消区间。',
         'add': '新增',
         'current_list': '当前列表',
         'delete': '删除',
@@ -105,6 +128,16 @@ UI_TRANSLATIONS = {
         'event_placeholder': 'Example: take out trash, medicine, meeting',
         'date_optional': 'Date (optional)',
         'time_optional': 'Time (optional)',
+        'display_window': 'Display window (optional)',
+        'display_mode': 'Window mode',
+        'range_mode': 'Specific dates and times',
+        'daily_mode': 'Daily time window',
+        'display_start': 'Display from',
+        'display_end': 'Display until',
+        'edit_window': 'Set display window',
+        'save': 'Save',
+        'settings_save_error': 'Settings could not be saved. Reloading current settings.',
+        'window_error': 'Enter valid start and end values. For specific dates, end must follow start. Daily times must differ and may cross midnight. Leave both blank to remove the window.',
         'add': 'Add',
         'current_list': 'Current List',
         'delete': 'Delete',
@@ -134,6 +167,16 @@ UI_TRANSLATIONS = {
         'event_placeholder': '例：ごみ出し、薬、会議',
         'date_optional': '日付（任意）',
         'time_optional': '時刻（任意）',
+        'display_window': '表示期間（任意）',
+        'display_mode': '期間モード',
+        'range_mode': '日時を指定',
+        'daily_mode': '毎日の時間帯',
+        'display_start': '表示開始',
+        'display_end': '表示終了',
+        'edit_window': '表示期間を設定',
+        'save': '保存',
+        'settings_save_error': '設定を保存できませんでした。現在の設定を再読み込みします。',
+        'window_error': '有効な開始と終了を入力してください。日時指定では終了を開始より後に、毎日の時間帯では異なる時刻にしてください（日付をまたげます）。両方空欄で解除します。',
         'add': '追加',
         'current_list': '現在のリスト',
         'delete': '削除',
@@ -155,12 +198,59 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     return response
 
-display_settings = {
+DEFAULT_SETTINGS = {
     'mode': 'normal',
     'brightness': 100,
     'timezone_offset': 8,
     'language': DEFAULT_LANGUAGE,
 }
+settings_lock = Lock()
+
+
+def validate_settings(data):
+    if not isinstance(data, dict) or set(data) - set(DEFAULT_SETTINGS):
+        raise ValueError('Invalid settings object')
+    result = dict(data)
+    for key, low, high in (('brightness', 0, 100), ('timezone_offset', -12, 14)):
+        if key in result:
+            value = result[key]
+            if type(value) not in (int, str):
+                raise ValueError('Invalid ' + key)
+            result[key] = int(value)
+            if not low <= result[key] <= high:
+                raise ValueError('Invalid ' + key)
+    if 'mode' in result and result['mode'] not in ('normal', 'black'):
+        raise ValueError('Invalid display mode')
+    if 'language' in result and result['language'] not in SUPPORTED_LANGUAGES:
+        raise ValueError('Invalid language')
+    return result
+
+
+def load_display_settings():
+    try:
+        with open(SETTINGS_FILE, encoding='utf-8') as f:
+            saved = validate_settings(json.load(f))
+    except FileNotFoundError:
+        saved = {}
+    return dict(DEFAULT_SETTINGS, **saved)
+
+
+def save_display_settings(settings):
+    directory = os.path.dirname(SETTINGS_FILE)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=directory, prefix='.settings-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, SETTINGS_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+display_settings = load_display_settings()
 
 
 def get_local_now():
@@ -184,10 +274,30 @@ def load_notes():
         return []
 
 
-def save_note(text, due_date):
+def parse_display_window(values):
+    mode = values.get('display_mode', 'range')
+    if mode not in ('range', 'daily'):
+        raise ValueError('Invalid display mode')
+    start = values.get('display_start', '')
+    end = values.get('display_end', '')
+    if not start and not end:
+        return '', ''
+    for value in (start, end):
+        parsed = datetime.strptime(value, '%H:%M' if mode == 'daily' else '%Y-%m-%dT%H:%M')
+        normalized = parsed.strftime('%H:%M') if mode == 'daily' else parsed.isoformat(timespec='minutes')
+        if normalized != value:
+            raise ValueError('Invalid display datetime')
+    if end == start or (mode == 'range' and end < start):
+        raise ValueError('Invalid display window order')
+    return start, end
+
+
+def save_note(text, due_date, display_start='', display_end='', display_mode='range'):
     notes = load_notes()
     new_id = 1 if not notes else max(n['id'] for n in notes) + 1
-    notes.append({'id': new_id, 'text': text, 'due_date': due_date})
+    notes.append({'id': new_id, 'text': text, 'due_date': due_date,
+                  'display_start': display_start, 'display_end': display_end,
+                  'display_mode': display_mode})
     with open(NOTES_FILE, 'w', encoding='utf-8') as f:
         json.dump(notes, f, ensure_ascii=False)
 
@@ -267,32 +377,40 @@ def index():
 
 
 @app.route('/admin')
-def admin():
+def admin(error=None, editing_id=None):
     return render_template(
         'admin.html',
         notes=load_notes(),
         settings=display_settings,
+        error=error,
+        editing_id=editing_id,
         **template_context()
     )
 
 
 @app.route('/api/control', methods=['POST'])
 def control():
-    data = request.json or {}
-    if 'mode' in data:
-        display_settings['mode'] = data['mode']
-    if 'brightness' in data:
-        display_settings['brightness'] = int(data['brightness'])
-    if 'timezone_offset' in data:
-        display_settings['timezone_offset'] = int(data['timezone_offset'])
-    if 'language' in data and data['language'] in SUPPORTED_LANGUAGES:
-        display_settings['language'] = data['language']
-
-    return jsonify({'status': 'ok', 'settings': display_settings})
+    try:
+        changes = validate_settings(request.get_json())
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid settings'}), 400
+    with settings_lock:
+        updated = dict(display_settings, **changes)
+        try:
+            save_display_settings(updated)
+        except OSError:
+            app.logger.exception('Could not save display settings')
+            return jsonify({'error': 'Could not save settings'}), 500
+        display_settings.update(updated)
+        return jsonify({'status': 'ok', 'settings': display_settings})
 
 
 @app.route('/add', methods=['POST'])
 def add():
+    try:
+        display_start, display_end = parse_display_window(request.form)
+    except ValueError:
+        return admin(error='window_error'), 400
     text = request.form.get('note_text')
     date_part = request.form.get('note_date')
     time_part = request.form.get('note_time')
@@ -302,7 +420,23 @@ def add():
         if time_part:
             full_time_str += f" {time_part}"
     if text:
-        save_note(text, full_time_str)
+        save_note(text, full_time_str, display_start, display_end, request.form.get('display_mode', 'range'))
+    return redirect(url_for('admin'))
+
+
+@app.route('/schedule/<int:id>', methods=['POST'])
+def schedule(id):
+    notes = load_notes()
+    note = next((note for note in notes if note['id'] == id), None)
+    if note is None:
+        abort(404)
+    try:
+        start, end = parse_display_window(request.form)
+    except ValueError:
+        return admin(error='window_error', editing_id=id), 400
+    note.update(display_start=start, display_end=end, display_mode=request.form.get('display_mode', 'range'))
+    with open(NOTES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(notes, f, ensure_ascii=False)
     return redirect(url_for('admin'))
 
 
@@ -326,7 +460,22 @@ def status():
         should_show = False
         time_display = ""
 
-        if not due_date:
+        if note.get('display_start') or note.get('display_end'):
+            try:
+                start, end = parse_display_window(note)
+            except (ValueError, TypeError):
+                continue
+            # Stored wall times follow the clock's configured timezone.
+            if note.get('display_mode') == 'daily':
+                current_time = now.strftime('%H:%M')
+                if start < end:
+                    should_show = start <= current_time < end
+                else:
+                    should_show = current_time >= start or current_time < end
+            else:
+                should_show = start <= now.isoformat(timespec='minutes')[:16] < end
+            time_display = due_date[11:] if len(due_date) > 10 else ''
+        elif not due_date:
             should_show = True
         elif due_date.startswith(today_str):
             should_show = True

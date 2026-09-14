@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="WebClock 免費線上時鐘，開啟即顯示裝置的時間、日期與星期。開放原始碼，自行架設可使用行事曆與提醒功能。">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WebClock">
+    <meta name="theme-color" content="#000000">
+    <title>WebClock — 免費線上時鐘</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="static/clock.css">
+    <style>
+        #project-links {
+            position: fixed;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            text-align: center;
+            font-size: 13px;
+            color: #999;
+        }
+
+        #project-links a {
+            display: inline-block;
+            padding: 14px 8px;
+            color: #aaa;
+            text-underline-offset: 3px;
+        }
+
+        #project-links a:hover,
+        #project-links a:focus {
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <main id="clock-container" aria-label="裝置時間">
+        <div id="time">--:--</div>
+        <div id="date-info">
+            <span id="date-part">...</span>
+            <span id="day-part">...</span>
+        </div>
+    </main>
+    <nav id="project-links" aria-label="關於 WebClock">
+        <span>WebClock</span>
+        <a href="https://github.com/kcayut/webclock" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/kcayut/webclock#self-hosting" target="_blank" rel="noopener noreferrer">行事曆與自行架設</a>
+    </nav>
+    <noscript>請啟用 JavaScript，以顯示裝置時間。</noscript>
+    <script src="static/clock.js"></script>
+    <script>
+        function updateDeviceClock() {
+            renderClock(new Date().getTime(), null, ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']);
+        }
+
+        updateDeviceClock();
+        setInterval(updateDeviceClock, 1000);
+        document.addEventListener('visibilitychange', updateDeviceClock);
+        window.addEventListener('pageshow', updateDeviceClock);
+    </script>
+</body>
+
+</html>

@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ translations[language].admin_title }}</title>
     <style>
+        * { box-sizing: border-box; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             padding: 20px;
@@ -91,6 +93,7 @@
         input[type="text"],
         input[type="date"],
         input[type="time"],
+        input[type="datetime-local"],
         select {
             width: 100%;
             padding: 12px;
@@ -127,13 +130,36 @@
             margin-top: 10px;
             padding: 15px;
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             gap: 12px;
         }
 
         .note-text {
             overflow-wrap: anywhere;
+            min-width: 0;
+            flex: 1;
+        }
+
+        fieldset {
+            margin: 10px 0 0;
+            padding: 0;
+            border: 0;
+            min-width: 0;
+        }
+
+        legend { margin-bottom: 10px; font-weight: 600; }
+        .window-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .window-fields label { display: block; margin-bottom: 6px; }
+        .window-fields input { min-width: 0; }
+        details { width: 100%; min-width: 0; }
+        summary { cursor: pointer; }
+        .window-tag { display: block; margin-top: 6px; font-size: 13px; color: #555; }
+        .form-error { color: #b42318; }
+
+        @media (max-width: 520px) {
+            .window-fields { grid-template-columns: minmax(0, 1fr); }
         }
 
         .time-tag {
@@ -158,6 +184,27 @@
 </head>
 
 <body>
+    {% macro window_fields(values, suffix) %}
+    <fieldset>
+        <legend data-i18n="display_window">{{ translations[language].display_window }}</legend>
+        {% set mode = values.get('display_mode', 'range') %}
+        <label for="display-mode-{{ suffix }}" data-i18n="display_mode">{{ translations[language].display_mode }}</label>
+        <select id="display-mode-{{ suffix }}" name="display_mode" onchange="setWindowMode(this)" style="margin: 6px 0 10px;">
+            <option value="range" {% if mode == 'range' %}selected{% endif %} data-i18n="range_mode">{{ translations[language].range_mode }}</option>
+            <option value="daily" {% if mode == 'daily' %}selected{% endif %} data-i18n="daily_mode">{{ translations[language].daily_mode }}</option>
+        </select>
+        <div class="window-fields">
+            <div>
+                <label for="display-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
+                <input id="display-start-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_start" value="{{ values.get('display_start', '') }}">
+            </div>
+            <div>
+                <label for="display-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
+                <input id="display-end-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_end" value="{{ values.get('display_end', '') }}">
+            </div>
+        </div>
+    </fieldset>
+    {% endmacro %}
     <h2 data-i18n="admin_title">{{ translations[language].admin_title }}</h2>
     <div class="control-panel">
         <h3 data-i18n="display_control">{{ translations[language].display_control }}</h3>
@@ -225,15 +272,18 @@
     <hr style="border: 0; border-top: 1px solid #ddd; margin: 30px 0;">
 
     <h2 data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
+    {% if error %}<p class="form-error" role="alert" data-i18n="{{ error }}">{{ translations[language][error] }}</p>{% endif %}
     <div class="input-group">
+        {% set draft = request.form if request.endpoint == 'add' else {} %}
         <form action="/add" method="POST" style="display: flex; flex-direction: column; gap: 10px;">
-            <label data-i18n="event_text">{{ translations[language].event_text }}</label>
-            <input type="text" name="note_text" data-i18n-placeholder="event_placeholder"
+            <label for="note-text" data-i18n="event_text">{{ translations[language].event_text }}</label>
+            <input id="note-text" type="text" name="note_text" value="{{ draft.get('note_text', '') }}" data-i18n-placeholder="event_placeholder"
                 placeholder="{{ translations[language].event_placeholder }}" required>
-            <label data-i18n="date_optional">{{ translations[language].date_optional }}</label>
-            <input type="date" name="note_date">
-            <label data-i18n="time_optional">{{ translations[language].time_optional }}</label>
-            <input type="time" name="note_time">
+            <label for="note-date" data-i18n="date_optional">{{ translations[language].date_optional }}</label>
+            <input id="note-date" type="date" name="note_date" value="{{ draft.get('note_date', '') }}">
+            <label for="note-time" data-i18n="time_optional">{{ translations[language].time_optional }}</label>
+            <input id="note-time" type="time" name="note_time" value="{{ draft.get('note_time', '') }}">
+            {{ window_fields(draft, 'add') }}
             <button type="submit" class="submit-btn" data-i18n="add">{{ translations[language].add }}</button>
         </form>
     </div>
@@ -245,8 +295,18 @@
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
+                {% if note.display_start and note.display_end %}
+                <span class="window-tag"><span data-i18n="{{ 'daily_mode' if note.display_mode == 'daily' else 'range_mode' }}">{{ translations[language]['daily_mode' if note.display_mode == 'daily' else 'range_mode'] }}</span>: {{ note.display_start | replace('T', ' ') }} ~ {{ note.display_end | replace('T', ' ') }}</span>
+                {% endif %}
             </div>
             <a href="/delete/{{ note.id }}" class="delete-btn" data-i18n="delete">{{ translations[language].delete }}</a>
+            <details {% if editing_id == note.id %}open{% endif %}>
+                <summary data-i18n="edit_window">{{ translations[language].edit_window }}</summary>
+                <form action="/schedule/{{ note.id }}" method="POST">
+                    {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
+                    <button type="submit" class="submit-btn" data-i18n="save">{{ translations[language].save }}</button>
+                </form>
+            </details>
         </li>
         {% else %}
         <li style="justify-content: center; color: #999;" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
@@ -265,6 +325,13 @@
             return pack[key] || I18N['zh-TW'][key] || key;
         }
 
+        function setWindowMode(select) {
+            select.closest('fieldset').querySelectorAll('input').forEach(function (input) {
+                input.value = '';
+                input.type = select.value === 'daily' ? 'time' : 'datetime-local';
+            });
+        }
+
         function applyLanguage() {
             document.documentElement.lang = currentLanguage;
             document.title = t('admin_title');
@@ -281,6 +348,12 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
+            }).then(function (response) {
+                if (!response.ok) throw new Error('Settings not saved');
+                return response.json();
+            }).catch(function () {
+                alert(t('settings_save_error'));
+                window.location.reload();
             });
         }
 

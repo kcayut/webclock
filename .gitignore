@@ -1,23 +1,18 @@
-# Python bytecode and caches
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 .mypy_cache/
-
-# Local virtual environments
 venv/
 .venv/
-
-# Local secrets and machine-specific settings
 .env
 .env.*
 !.env.example
-
-# Local notes and runtime output
 manual_notes.json
+webclock_state/
+.webclock-update-*/
+.webclock-update.lock
 *.log
-
-# OS/editor noise
 .DS_Store
 Thumbs.db
