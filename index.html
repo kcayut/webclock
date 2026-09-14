@@ -13,6 +13,11 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="static/clock.css">
     <style>
+        body {
+            --clock-height: calc(var(--viewport-height) - 72px);
+            padding-bottom: 64px;
+        }
+
         #project-links {
             position: fixed;
             bottom: 8px;

@@ -13,6 +13,7 @@
         #list-container {
             width: 95%;
             height: 25vh;
+            flex-shrink: 0;
             margin-top: 0;
             position: relative;
             overflow: hidden;
@@ -685,6 +686,7 @@
         var carouselInterval = null;
 
         function renderList(events) {
+            document.body.classList.toggle('has-events', !!(events && events.length));
             var newJson = JSON.stringify(events);
             if (newJson === currentEventsJson) return;
             currentEventsJson = newJson;

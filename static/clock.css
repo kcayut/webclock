@@ -3,11 +3,17 @@
 }
 
 body {
+    --viewport-height: 100vh;
+    --clock-width: 35vw;
+    --clock-height: calc(var(--viewport-height) - 16px);
+    --clock-size: min(var(--clock-width), calc((var(--clock-height) - 18px) / 1.5));
     background-color: #000;
     color: #fff;
     margin: 0;
     font-family: -apple-system, Helvetica, Arial, sans-serif;
     height: 100vh;
+    height: var(--viewport-height);
+    padding: 8px;
     overflow: hidden;
     display: -webkit-flex;
     display: flex;
@@ -35,6 +41,7 @@ body {
 
 #date-info {
     font-size: 13vw;
+    line-height: 1.2;
     margin-top: 10px;
     display: -webkit-flex;
     display: flex;
@@ -61,12 +68,27 @@ body {
     font-weight: bold;
 }
 
-@media (min-aspect-ratio: 3/2) {
+@supports (font-size: min(1vw, 1vh)) {
     #time {
-        font-size: 45vh;
+        font-size: var(--clock-size);
     }
 
     #date-info {
-        font-size: 16vh;
+        font-size: calc(var(--clock-size) * 13 / 35);
     }
+}
+
+@supports (height: 100dvh) {
+    body {
+        --viewport-height: 100dvh;
+    }
+}
+
+body.has-events {
+    --clock-height: calc(var(--viewport-height) - 25vh - 16px);
+}
+
+/* Keep the same time/date ratio when full English weekdays need more width. */
+body:lang(en) {
+    --clock-width: min(35vw, calc((100vw - 66px) / 3));
 }
