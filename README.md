@@ -190,35 +190,6 @@ Google Calendar、手動リマインダー、休日表示、明るさ・黒画�
 
 `.env`、`manual_notes.json`、`webclock_state/` をバックアップしてください。Linux サービスの更新は `sudo bash update_clock.sh` で行います。更新中は一時停止し、`venv/` のバックアップ容量が必要です。失敗時は復元を試み、バックアップを保持します。Docker はソースを更新した後、`docker compose up -d --build` を実行します。
 
-<a id="development"></a>
+## 問題與建議 · Feedback
 
-## 開發與貢獻 · Development
-
-公開網頁與 Flask 版共用 `static/clock.css` 和 `static/clock.js`。歡迎透過 [Issues](https://github.com/kcayut/webclock/issues) 回報問題或提出建議。
-
-只預覽公開頁面：
-
-```bash
-preview_dir=$(mktemp -d)
-mkdir -p "$preview_dir/static"
-cp index.html "$preview_dir/"
-cp static/clock.css static/clock.js "$preview_dir/static/"
-python3 -m http.server 8000 --bind 127.0.0.1 --directory "$preview_dir"
-```
-
-開啟 `http://127.0.0.1:8000/`，以 `Ctrl+C` 結束。執行檢查：
-
-```bash
-node tests/test_clock.js
-venv/bin/python -m unittest discover -s tests
-```
-
-Node.js 僅用於開發檢查，不是自架版的執行需求。
-
-<a id="github-pages"></a>
-
-### 發布自己的 GitHub Pages
-
-在自己的儲存庫 **Settings → Pages → Source** 選擇 **GitHub Actions**，再執行 **Deploy public clock to GitHub Pages** 工作流程。之後 `main` 分支的公開資源變更會自動部署。若使用自己的 fork，請同步調整 README 與頁面的專案連結。
-
-發布內容僅包含 `index.html`、`static/clock.css` 和 `static/clock.js`，不包含 Flask 程式或私人設定檔。
+歡迎透過 [Issues](https://github.com/kcayut/webclock/issues) 回報問題或提出建議。
