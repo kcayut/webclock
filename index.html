@@ -53,10 +53,11 @@
     <nav id="project-links" aria-label="關於 WebClock">
         <span>WebClock</span>
         <a href="https://github.com/kcayut/webclock" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <a href="https://github.com/kcayut/webclock#self-hosting" target="_blank" rel="noopener noreferrer">行事曆與自行架設</a>
+        <span id="offline-status" role="status" data-ready="已可離線開啟" data-unavailable="離線開啟需要支援的瀏覽器與 HTTPS" data-failed="離線準備未完成，請連線後重試"></span>
     </nav>
     <noscript>請啟用 JavaScript，以顯示裝置時間。</noscript>
     <script src="static/clock.js"></script>
+    <script src="static/offline.js"></script>
     <script>
         function updateDeviceClock() {
             renderClock(new Date().getTime(), null, ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']);

@@ -10,3 +10,29 @@ function renderClock(utcMs, timezoneOffset, weekDays) {
     document.getElementById('date-part').textContent = (targetTime.getUTCMonth() + 1) + '/' + targetTime.getUTCDate();
     document.getElementById('day-part').textContent = weekDays[targetTime.getUTCDay()];
 }
+
+function clockDisplaySettings(settings, utcMs, timezoneOffset) {
+    var date = new Date(utcMs);
+    var offset = timezoneOffset === null ? -date.getTimezoneOffset() / 60 : timezoneOffset;
+    var local = new Date(utcMs + offset * 3600000);
+    var minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
+    var night = settings.night || {};
+    var toMinutes = function (time) {
+        var parts = String(time).split(':');
+        return Number(parts[0]) * 60 + Number(parts[1]);
+    };
+    var start = toMinutes(night.start);
+    var end = toMinutes(night.end);
+    var active = night.enabled && start !== end &&
+        (start < end ? minutes >= start && minutes < end : minutes >= start || minutes < end);
+    return {
+        mode: settings.mode === 'black' || (active && night.black) ? 'black' : 'normal',
+        brightness: active ? night.brightness : (settings.brightness === undefined ? 100 : settings.brightness)
+    };
+}
+
+function clockCountdown(event, utcMs, template) {
+    if (!event || !Number.isFinite(event.starts_at) || event.starts_at <= utcMs) return '';
+    var minutes = Math.ceil((event.starts_at - utcMs) / 60000);
+    return template.replace('{text}', function () { return event.text; }).replace('{minutes}', String(minutes));
+}

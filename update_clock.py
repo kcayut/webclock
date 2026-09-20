@@ -100,7 +100,8 @@ def perform_update(project):
     if state.exists() and not state.is_dir():
         raise RuntimeError('webclock_state must be a directory.')
     snapshot = http_json(url + '/api/status')['settings']
-    if set(snapshot) != {'mode', 'brightness', 'timezone_offset', 'language'}:
+    required = {'mode', 'brightness', 'timezone_offset', 'language'}
+    if not required <= set(snapshot) or set(snapshot) - (required | {'night'}):
         raise RuntimeError('Could not capture current display settings.')
     if settings_file.exists() and json.loads(settings_file.read_text(encoding='utf-8')) != snapshot:
         raise RuntimeError('Saved settings differ from the running service; resolve this before updating.')

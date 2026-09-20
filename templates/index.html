@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MyClock">
@@ -23,7 +23,7 @@
             color: #ccc;
             position: absolute;
             width: 100%;
-            height: 100%;
+            height: 72%;
             top: 0;
             left: 0;
             opacity: 0;
@@ -89,6 +89,12 @@
             opacity: 0 !important;
         }
 
+        #clock-container, #list-container { opacity: var(--display-opacity, 1); }
+        #next-event {
+            position: absolute; bottom: 8px; left: 0; right: 24%;
+            color: #f39c12; font-size: clamp(14px, 3.2vh, 26px);
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+        }
         #event-counter {
             position: absolute;
             bottom: 5px;
@@ -166,6 +172,8 @@
             line-height: 1.35;
             z-index: 125;
             display: none;
+            max-height: calc(100vh - 65px);
+            overflow-y: auto;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
         }
 
@@ -260,6 +268,7 @@
 
     <div id="list-container">
         <div id="event-counter"></div>
+        <div id="next-event"></div>
     </div>
 
     <div id="notice">
@@ -270,6 +279,7 @@
     <button id="connection-toggle" type="button" onclick="toggleConnectionPanel()" title="Connection settings">...</button>
     <div id="connection-panel" aria-live="polite">
         <div id="connection-status"></div>
+        <p id="offline-status" role="status" data-ready="{{ translations[language].offline_ready }}" data-unavailable="{{ translations[language].offline_unavailable }}" data-failed="{{ translations[language].offline_failed }}"></p>
         <label for="server-url-input">Server URL</label>
         <input id="server-url-input" type="url" inputmode="url" placeholder="http://192.168.1.10">
         <div class="connection-row">
@@ -286,6 +296,7 @@
     </div>
 
     <script src="{{ url_for('static', filename='clock.js') }}"></script>
+    <script src="{{ url_for('static', filename='offline.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
         var currentLanguage = {{ language | tojson }};
@@ -298,6 +309,9 @@
         var noticeMutedUntil = 0;
         var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
         var connectionMode = 'server';
+        var activeSettings = {};
+        var nextEvent = null;
+        var visibleEvents = [];
         var lastServerStatus = 'Connecting...';
 
         function t(key) {
@@ -310,6 +324,12 @@
             currentLanguage = language;
             document.documentElement.lang = language;
             document.title = t('app_title');
+            var offline = document.getElementById('offline-status');
+            ['ready', 'unavailable', 'failed'].forEach(function (state) {
+                offline.setAttribute('data-' + state, t('offline_' + state));
+            });
+            var state = offline.getAttribute('data-state');
+            if (state) offline.textContent = t('offline_' + state);
             updateClock();
         }
 
@@ -379,12 +399,14 @@
                 mode: settings.mode || 'normal',
                 brightness: settings.brightness === undefined ? 100 : Number(settings.brightness),
                 timezone_offset: settings.timezone_offset === undefined ? timezoneOffset : Number(settings.timezone_offset),
-                language: settings.language || currentLanguage
+                language: settings.language || currentLanguage,
+                night: settings.night || {enabled: false}
             });
         }
 
         function applySettings(settings) {
             if (!settings) return;
+            activeSettings = settings;
             if (settings.language) {
                 setLanguage(settings.language);
             }
@@ -392,13 +414,13 @@
                 timezoneOffset = Number(settings.timezone_offset);
             }
 
-            var body = document.body;
-            if (settings.mode === 'black') {
-                body.classList.add('force-black');
-            } else {
-                body.classList.remove('force-black');
-                body.style.opacity = (settings.brightness === undefined ? 100 : Number(settings.brightness)) / 100;
-            }
+            applyDisplay();
+        }
+
+        function applyDisplay() {
+            var effective = clockDisplaySettings(activeSettings, getClockUtcMs(), timezoneOffset);
+            document.body.classList.toggle('force-black', effective.mode === 'black');
+            document.body.style.setProperty('--display-opacity', effective.brightness / 100);
         }
 
         function showNotice(message) {
@@ -461,6 +483,34 @@
 
         function updateClock() {
             renderClock(getClockUtcMs(), timezoneOffset, t('weekdays'));
+            applyDisplay();
+            if (connectionMode === 'standalone') {
+                nextEvent = getNextLocalEvent();
+                renderList(getLocalEventsForToday());
+            }
+            updateCountdown();
+        }
+
+        function updateCountdown() {
+            var text = clockCountdown(nextEvent, getClockUtcMs(), t('countdown'));
+            var node = document.getElementById('next-event');
+            node.textContent = text;
+            node.title = text;
+            var hasContent = visibleEvents.length > 0 || !!text;
+            document.body.classList.toggle('has-events', hasContent);
+            document.getElementById('list-container').style.display = hasContent ? 'block' : 'none';
+        }
+
+        function getNextLocalEvent() {
+            var today = getClockDateString();
+            var now = getClockUtcMs();
+            var next = null;
+            getLocalEventsForToday().forEach(function (event) {
+                if (!event.time) return;
+                var instant = Date.parse(today + 'T' + event.time + ':00Z') - timezoneOffset * 3600000;
+                if (instant > now && (!next || instant < next.starts_at)) next = {text: event.text, starts_at: instant};
+            });
+            return next;
         }
 
         function syncStandardTime() {
@@ -511,6 +561,7 @@
 
         function enterStandaloneMode(message) {
             connectionMode = 'standalone';
+            nextEvent = getNextLocalEvent();
             applySettings(getStoredSettings());
             renderList(getLocalEventsForToday());
             updateClock();
@@ -519,6 +570,7 @@
 
         function enterServerMode(data) {
             connectionMode = 'server';
+            nextEvent = data.next_event || null;
             if (data.settings) {
                 applySettings(data.settings);
                 saveSettings(data.settings);
@@ -686,7 +738,8 @@
         var carouselInterval = null;
 
         function renderList(events) {
-            document.body.classList.toggle('has-events', !!(events && events.length));
+            visibleEvents = events || [];
+            updateCountdown();
             var newJson = JSON.stringify(events);
             if (newJson === currentEventsJson) return;
             currentEventsJson = newJson;
@@ -699,7 +752,7 @@
 
             var counterDiv = document.getElementById('event-counter');
             if (!events || events.length === 0) {
-                container.style.display = 'none';
+                container.style.display = clockCountdown(nextEvent, getClockUtcMs(), t('countdown')) ? 'block' : 'none';
                 counterDiv.textContent = "";
                 return;
             }
@@ -769,6 +822,8 @@
         applySettings(getStoredSettings());
         renderLocalEventsEditor();
         setConnectionStatus('Connecting...', false);
+        document.addEventListener('visibilitychange', updateClock);
+        window.addEventListener('pageshow', updateClock);
         setInterval(updateClock, 1000);
         setInterval(fetchStatus, 5000);
         setInterval(syncStandardTime, 6 * 60 * 60 * 1000);

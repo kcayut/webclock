@@ -58,3 +58,23 @@ context.renderClock(Date.parse('2026-09-14T20:00:00Z'), 8,
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
 assert.deepEqual(Object.values(nodes).map(node => node.textContent), ['04:00', '9/15', 'Tue']);
 console.log('Clock checks passed: device timezone, DST, date rollover, resume, server override, no network.');
+
+// Night mode follows configured wall time; it restores the user's daytime value.
+const settings = {mode: 'normal', brightness: 80, night: {enabled: true, start: '22:00', end: '07:00', brightness: 12, black: false}};
+for (const [instant, brightness] of [
+    ['2026-09-17T13:59:59Z', 80], ['2026-09-17T14:00:00Z', 12],
+    ['2026-09-17T22:59:59Z', 12], ['2026-09-17T23:00:00Z', 80],
+]) assert.equal(context.clockDisplaySettings(settings, Date.parse(instant), 8).brightness, brightness);
+settings.night.black = true;
+assert.equal(context.clockDisplaySettings(settings, Date.parse('2026-09-17T14:00:00Z'), 8).mode, 'black');
+settings.mode = 'black';
+assert.equal(context.clockDisplaySettings(settings, Date.parse('2026-09-17T23:00:00Z'), 8).mode, 'black');
+settings.mode = 'normal';
+settings.night.start = '10:00'; settings.night.end = '12:00';
+assert.equal(context.clockDisplaySettings(settings, Date.parse('2026-09-17T03:00:00Z'), 8).brightness, 12);
+assert.equal(context.clockDisplaySettings(settings, Date.parse('2026-09-17T04:00:00Z'), 8).brightness, 80);
+assert.equal(context.clockCountdown({text: '$& meeting', starts_at: 900000}, 0, '{text} in {minutes} minutes'), '$& meeting in 15 minutes');
+assert.equal(context.clockCountdown({text: 'meeting', starts_at: 900000}, 899999, '{minutes}'), '1');
+assert.equal(context.clockCountdown({text: 'meeting', starts_at: 900000}, 900000, '{minutes}'), '');
+assert.equal(context.clockCountdown(null, 0, '{minutes}'), '');
+console.log('Night schedule boundaries, manual override, daytime restoration and countdown checks passed.');

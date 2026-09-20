@@ -7,7 +7,10 @@ on:
       - index.html
       - static/clock.css
       - static/clock.js
+      - static/offline.js
+      - sw.js
       - tests/test_clock.js
+      - tests/test_offline.js
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -29,13 +32,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Check clock behavior
-        run: node tests/test_clock.js
+        run: |
+          node tests/test_clock.js
+          node tests/test_offline.js
       - uses: actions/configure-pages@v5
       - name: Prepare public files only
         run: |
           mkdir -p "$RUNNER_TEMP/webclock-pages/static"
-          cp index.html "$RUNNER_TEMP/webclock-pages/"
-          cp static/clock.css static/clock.js "$RUNNER_TEMP/webclock-pages/static/"
+          cp index.html sw.js "$RUNNER_TEMP/webclock-pages/"
+          cp static/clock.css static/clock.js static/offline.js "$RUNNER_TEMP/webclock-pages/static/"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ runner.temp }}/webclock-pages

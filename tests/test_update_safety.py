@@ -140,6 +140,10 @@ class UpdaterTest(unittest.TestCase):
         self.assert_data_preserved()
         self.assertEqual(len(list(self.project.glob('.webclock-update-*'))), 1)
 
+    def test_success_preserves_night_schedule(self):
+        self.settings['night'] = dict(clock.DEFAULT_NIGHT, enabled=True)
+        self.test_success_preserves_settings_and_data()
+
     def test_unhealthy_service_rolls_back(self):
         with patch.object(updater, 'wait_healthy', side_effect=[RuntimeError('crash'), None]):
             with self.assertRaisesRegex(RuntimeError, 'crash'):

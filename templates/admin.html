@@ -155,6 +155,14 @@
         .window-fields input { min-width: 0; }
         details { width: 100%; min-width: 0; }
         summary { cursor: pointer; }
+        .weekday-options { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+        .weekday-options label { display: flex; align-items: center; gap: 5px; min-height: 32px; }
+        .weekday-options input { width: auto; }
+        .help { color: #646469; font-size: 14px; line-height: 1.5; }
+        button, summary, a { touch-action: manipulation; }
+        input[type="file"] { max-width: 100%; }
+        .note-actions { display: flex; align-items: center; gap: 8px; }
+        .paused { border-left: 4px solid #888; }
         .window-tag { display: block; margin-top: 6px; font-size: 13px; color: #555; }
         .form-error { color: #b42318; }
 
@@ -203,7 +211,27 @@
                 <input id="display-end-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_end" value="{{ values.get('display_end', '') }}">
             </div>
         </div>
+        <div class="repeat-days" {% if mode != 'daily' %}hidden{% endif %}>
+            <p data-i18n="repeat_days">{{ translations[language].repeat_days }}</p>
+            <input type="hidden" name="weekdays_present" value="1">
+            {% set selected = values.getlist('weekdays') if values.getlist is defined else values.get('weekdays', []) %}
+            <div class="weekday-options">
+                {% for day in range(7) %}
+                <label><input type="checkbox" name="weekdays" value="{{ day }}" {% if day in selected or day|string in selected %}checked{% endif %}>
+                    <span data-weekday="{{ (day + 1) % 7 }}">{{ translations[language].weekdays[(day + 1) % 7] }}</span></label>
+                {% endfor %}
+            </div>
+            <p class="help" data-i18n="repeat_hint">{{ translations[language].repeat_hint }}</p>
+        </div>
     </fieldset>
+    {% endmacro %}
+    {% macro note_fields(values, suffix) %}
+        <label for="note-text-{{ suffix }}" data-i18n="event_text">{{ translations[language].event_text }}</label>
+        <input id="note-text-{{ suffix }}" type="text" name="note_text" maxlength="1000" value="{{ values.get('note_text', values.get('text', '')) }}" required>
+        <label for="note-date-{{ suffix }}" data-i18n="date_optional">{{ translations[language].date_optional }}</label>
+        <input id="note-date-{{ suffix }}" type="date" name="note_date" value="{{ values.get('note_date', values.get('due_date', '')[:10]) }}">
+        <label for="note-time-{{ suffix }}" data-i18n="time_optional">{{ translations[language].time_optional }}</label>
+        <input id="note-time-{{ suffix }}" type="time" name="note_time" value="{{ values.get('note_time', values.get('due_date', '')[11:]) }}">
     {% endmacro %}
     <h2 data-i18n="admin_title">{{ translations[language].admin_title }}</h2>
     <div class="control-panel">
@@ -269,6 +297,23 @@
         </div>
     </div>
 
+    <form class="control-panel" id="night-form" onsubmit="event.preventDefault(); saveNight()">
+        <h3 data-i18n="night_title">{{ translations[language].night_title }}</h3>
+        <label><input id="night-enabled" type="checkbox" {% if settings.night.enabled %}checked{% endif %}> <span data-i18n="night_enabled">{{ translations[language].night_enabled }}</span></label>
+        <div class="window-fields field">
+            <div><label for="night-start" data-i18n="night_start">{{ translations[language].night_start }}</label><input id="night-start" type="time" value="{{ settings.night.start }}" required></div>
+            <div><label for="night-end" data-i18n="night_end">{{ translations[language].night_end }}</label><input id="night-end" type="time" value="{{ settings.night.end }}" required></div>
+        </div>
+        <div class="field">
+            <label for="night-brightness"><span data-i18n="night_brightness">{{ translations[language].night_brightness }}</span>: <output id="night-value">{{ settings.night.brightness }}</output>%</label>
+            <input id="night-brightness" type="range" min="0" max="100" value="{{ settings.night.brightness }}" oninput="document.getElementById('night-value').textContent = this.value">
+        </div>
+        <label><input id="night-black" type="checkbox" {% if settings.night.black %}checked{% endif %}> <span data-i18n="night_black">{{ translations[language].night_black }}</span></label>
+        <p class="help" data-i18n="night_hint">{{ translations[language].night_hint }}</p>
+        <button class="submit-btn" type="submit" data-i18n="save">{{ translations[language].save }}</button>
+        <span id="night-status" role="status"></span>
+    </form>
+
     <hr style="border: 0; border-top: 1px solid #ddd; margin: 30px 0;">
 
     <h2 data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
@@ -276,13 +321,7 @@
     <div class="input-group">
         {% set draft = request.form if request.endpoint == 'add' else {} %}
         <form action="/add" method="POST" style="display: flex; flex-direction: column; gap: 10px;">
-            <label for="note-text" data-i18n="event_text">{{ translations[language].event_text }}</label>
-            <input id="note-text" type="text" name="note_text" value="{{ draft.get('note_text', '') }}" data-i18n-placeholder="event_placeholder"
-                placeholder="{{ translations[language].event_placeholder }}" required>
-            <label for="note-date" data-i18n="date_optional">{{ translations[language].date_optional }}</label>
-            <input id="note-date" type="date" name="note_date" value="{{ draft.get('note_date', '') }}">
-            <label for="note-time" data-i18n="time_optional">{{ translations[language].time_optional }}</label>
-            <input id="note-time" type="time" name="note_time" value="{{ draft.get('note_time', '') }}">
+            {{ note_fields(draft, 'add') }}
             {{ window_fields(draft, 'add') }}
             <button type="submit" class="submit-btn" data-i18n="add">{{ translations[language].add }}</button>
         </form>
@@ -291,18 +330,26 @@
     <h3 style="margin-top: 24px;" data-i18n="current_list">{{ translations[language].current_list }}</h3>
     <ul>
         {% for note in notes %}
-        <li>
+        <li class="{{ 'paused' if not note.get('enabled', True) else '' }}">
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
+                {% if not note.get('enabled', True) %}<span data-i18n="paused">{{ translations[language].paused }}</span>{% endif %}
+                {% if note.get('weekdays') and note.get('display_mode') == 'daily' %}
+                <span class="window-tag">{% for day in note.weekdays %}<span data-weekday="{{ (day + 1) % 7 }}">{{ translations[language].weekdays[(day + 1) % 7] }}</span> {% endfor %}</span>
+                {% endif %}
                 {% if note.display_start and note.display_end %}
                 <span class="window-tag"><span data-i18n="{{ 'daily_mode' if note.display_mode == 'daily' else 'range_mode' }}">{{ translations[language]['daily_mode' if note.display_mode == 'daily' else 'range_mode'] }}</span>: {{ note.display_start | replace('T', ' ') }} ~ {{ note.display_end | replace('T', ' ') }}</span>
                 {% endif %}
             </div>
+            <div class="note-actions">
+                <form action="/toggle/{{ note.id }}" method="POST"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
             <a href="/delete/{{ note.id }}" class="delete-btn" data-i18n="delete">{{ translations[language].delete }}</a>
+            </div>
             <details {% if editing_id == note.id %}open{% endif %}>
-                <summary data-i18n="edit_window">{{ translations[language].edit_window }}</summary>
+                <summary data-i18n="edit_note">{{ translations[language].edit_note }}</summary>
                 <form action="/schedule/{{ note.id }}" method="POST">
+                    {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
                     <button type="submit" class="submit-btn" data-i18n="save">{{ translations[language].save }}</button>
                 </form>
@@ -312,6 +359,18 @@
         <li style="justify-content: center; color: #999;" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
         {% endfor %}
     </ul>
+
+    <section class="control-panel">
+        <h3 data-i18n="backup_title">{{ translations[language].backup_title }}</h3>
+        <p class="help" data-i18n="backup_hint">{{ translations[language].backup_hint }}</p>
+        <p><a href="/api/backup" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
+        <form onsubmit="event.preventDefault(); importBackup()">
+            <label for="backup-file" data-i18n="backup_file">{{ translations[language].backup_file }}</label>
+            <input id="backup-file" type="file" accept=".json,application/json" required>
+            <button id="backup-submit" class="submit-btn" type="submit" data-i18n="backup_import">{{ translations[language].backup_import }}</button>
+            <p id="backup-status" role="status"></p>
+        </form>
+    </section>
 
     <script>
         var I18N = {{ translations | tojson }};
@@ -326,7 +385,8 @@
         }
 
         function setWindowMode(select) {
-            select.closest('fieldset').querySelectorAll('input').forEach(function (input) {
+            select.closest('fieldset').querySelector('.repeat-days').hidden = select.value !== 'daily';
+            select.closest('fieldset').querySelectorAll('.window-fields input').forEach(function (input) {
                 input.value = '';
                 input.type = select.value === 'daily' ? 'time' : 'datetime-local';
             });
@@ -337,6 +397,9 @@
             document.title = t('admin_title');
             document.querySelectorAll('[data-i18n]').forEach(function (el) {
                 el.textContent = t(el.getAttribute('data-i18n'));
+            });
+            document.querySelectorAll('[data-weekday]').forEach(function (el) {
+                el.textContent = t('weekdays')[Number(el.getAttribute('data-weekday'))];
             });
             document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
                 el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
@@ -355,6 +418,42 @@
                 alert(t('settings_save_error'));
                 window.location.reload();
             });
+        }
+
+        function saveNight() {
+            postSettings({night: {
+                enabled: document.getElementById('night-enabled').checked,
+                start: document.getElementById('night-start').value,
+                end: document.getElementById('night-end').value,
+                brightness: Number(document.getElementById('night-brightness').value),
+                black: document.getElementById('night-black').checked
+            }}).then(function (result) {
+                if (result) document.getElementById('night-status').textContent = t('saved');
+            });
+        }
+
+        async function importBackup() {
+            var file = document.getElementById('backup-file').files[0];
+            var status = document.getElementById('backup-status');
+            var button = document.getElementById('backup-submit');
+            if (!file) return;
+            try {
+                if (file.size > 1024 * 1024) throw new Error('Too large');
+                var data = JSON.parse(await file.text());
+                if (data.version !== 1 || !data.settings || !Array.isArray(data.notes)) throw new Error('Invalid backup');
+                if (!window.confirm(t('backup_confirm'))) return;
+                button.disabled = true;
+                var response = await fetch('/api/backup', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+                });
+                if (!response.ok) throw new Error('Restore failed');
+                status.textContent = t('backup_done');
+                window.location.reload();
+            } catch (error) {
+                status.textContent = t('backup_error');
+            } finally {
+                button.disabled = false;
+            }
         }
 
         function setMode(mode) {

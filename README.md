@@ -20,7 +20,7 @@ Turn an iPad, tablet, or spare screen into a large clock. Open the website to sh
 
 在 iPad 的 Safari 中，可透過「分享 → 加入主畫面」建立入口。若希望持續顯示，請依裝置可用的設定調整自動鎖定與螢幕亮度。
 
-開啟或重新載入線上時鐘需要網路；已載入的頁面可繼續計時。加入主畫面不提供離線快取。也可下載原始碼，以支援本機網頁的瀏覽器開啟 `index.html`，並保留旁邊的 `static/` 資料夾。
+第一次請連線開啟，等頁面顯示「已可離線開啟」後，即可在斷網時重新開啟或重新整理。瀏覽器清除網站資料或回收快取後，需要再次連線準備。也可下載原始碼，以支援本機網頁的瀏覽器開啟 `index.html`，並保留旁邊的 `static/` 資料夾。
 
 ### 選擇使用方式
 
@@ -31,6 +31,8 @@ Turn an iPad, tablet, or spare screen into a large clock. Open the website to sh
 | Google Calendar、手動提醒 | — | ✓ |
 | 亮度、黑畫面、假日標示 | — | ✓ |
 | 顯示語言 | 繁體中文 | 繁中、簡中、英文、日文 |
+| 離線重新開啟 | ✓（先連線準備） | HTTPS 或 localhost，先連線準備 |
+| 自動夜間模式、星期提醒、行程倒數、備份還原 | — | ✓ |
 | 需要主機 | 不需要 | 電腦、NAS、Raspberry Pi 等 |
 
 <a id="self-hosting"></a>
@@ -92,11 +94,27 @@ python app.py
 
 自架版的 `/admin` 可調整亮度、黑畫面、時區、語言及手動提醒。設定會在重新啟動後保留。
 
-手動提醒可設定指定日期時間，或每天固定顯示時段。每天時段支援跨午夜，例如 22:00 至隔天 06:00。開始與結束不可相同；兩欄清空可取消時段限制。時段依後台時區計算，包含開始時間、不包含結束時間。到期提醒只隱藏，不會刪除；一般會在約 5 秒內更新畫面。
+手動提醒可設定指定日期時間，或每週／每日固定顯示時段。固定時段可勾選星期；不勾選代表每天。跨午夜的時段歸屬開始的那一天，例如週一 22:00 至週二 06:00，只需勾選星期一。每天時段支援跨午夜，例如 22:00 至隔天 06:00。開始與結束不可相同；兩欄清空可取消時段限制。時段依後台時區計算，包含開始時間、不包含結束時間。到期提醒只隱藏，不會刪除；一般會在約 5 秒內更新畫面。
 
-未設定時段的提醒，有日期時只在當天顯示，沒有日期則持續顯示。設定時段後，以時段決定顯示範圍。這些限制適用於後台手動提醒。
+未設定時段的提醒，有日期時只在當天顯示，沒有日期則持續顯示。設定時段後，以時段決定顯示範圍。這些限制適用於後台手動提醒。「編輯提醒」可修改文字、日期、時間及顯示區間；「暫停」會保留內容，但停止顯示與倒數，按「恢復」即可啟用。
 
 自架時鐘載入後若暫時失去伺服器連線，會使用可用的時間基準、瀏覽器保存的顯示設定及本機提醒繼續運作。Google Calendar 與伺服器提醒會在重新連線後恢復。畫面右下角的連線按鈕可設定伺服器網址並重新連線。
+
+### 夜間模式、倒數與離線使用
+
+在後台啟用「自動夜間模式」，設定開始、恢復日間時間與夜間亮度，也可選擇夜間黑畫面。排程依後台時區每天執行，包含開始、不包含結束；日間恢復原本亮度，手動黑畫面優先。這是網頁顯示調整，不會改變裝置背光或自動鎖定設定。斷線時會沿用瀏覽器保存的排程。
+
+提醒區下方會顯示下一個行程還有幾分鐘。指定日期提醒使用其提醒時間（未填時間時可使用顯示區間的開始）；每週／每日提醒使用下一次顯示時段的開始；Google Calendar 使用當日有時間的行程。全天事項不以午夜倒數。暫停的提醒不參與倒數。
+
+自架版的離線準備狀態在右下角連線面板中。離線重新開啟需要支援的瀏覽器，以及 HTTPS 或本機 localhost；一般 `http://區網IP` 不支援這項快取，但已載入的頁面仍可繼續計時。快取只包含時鐘頁面與顯示資源，不包含後台、API、私人日曆或伺服器提醒。斷線時仍使用原有瀏覽器本機提醒，重新連線才恢復伺服器資料。
+
+### 備份與還原
+
+在後台下載 JSON 備份，可保存伺服器顯示設定（含夜間排程）與手動提醒（含星期及暫停狀態）。選擇備份檔案並按「匯入並取代」，確認後會取代目前設定與提醒；系統先驗證完整資料才寫入。上限為 1 MiB、1,000 筆提醒，每筆內容最多 1,000 字元。
+
+匯入前的資料會保留在 `webclock_state/before-import.json`，可用相同匯入功能還原；每次匯入會更新這份備份。寫入失敗時會嘗試回復原提醒。若突然斷電或回復失敗，請保留該檔案並在服務恢復後還原。
+
+備份不包含 `.env` 中的私人行事曆網址，也不包含瀏覽器本機提醒；搬移主機時仍須另外保存 `.env`。
 
 ### 資料保存與更新
 
@@ -106,9 +124,9 @@ python app.py
 | --- | --- |
 | `.env` | 行事曆網址與伺服器設定 |
 | `manual_notes.json` | 手動提醒 |
-| `webclock_state/` | 亮度、黑畫面、時區與語言設定 |
+| `webclock_state/` | 顯示與夜間設定、匯入前備份，以及 Docker 版的手動提醒 |
 
-Docker Compose 會將以上資料保存在主機。更新 Docker 安裝可在取得程式更新後，再執行 `docker compose up -d --build`。
+Docker Compose 會將以上資料保存在主機。Docker 首次啟動新版時，會將舊 `manual_notes.json` 複製至 `webclock_state/manual_notes.json`，原檔保留；之後以新位置為準，不會重複覆蓋。Linux／手動安裝仍使用原本的 `manual_notes.json`。更新 Docker 安裝可在取得程式更新後，再執行 `docker compose up -d --build`。
 
 使用 Linux 安裝腳本的服務可執行：
 
@@ -142,7 +160,7 @@ git show origin/main:update_clock.py > "$updater_file" &&
 
 Open **[WebClock](https://kcayut.github.io/webclock/)** on a tablet or spare screen. Landscape orientation makes the most of the large display. Time and timezone follow the device; the date and weekday are displayed in Traditional Chinese.
 
-In Safari on iPad, use **Share → Add to Home Screen** for quick access. Adjust Auto-Lock and brightness in the device settings as needed. Opening or reloading the website requires a connection; an already loaded page keeps ticking. There is no offline cache. A downloaded `index.html` can also be opened in a browser that supports local pages, with the `static/` folder alongside it.
+In Safari on iPad, use **Share → Add to Home Screen** for quick access. Adjust Auto-Lock and brightness in the device settings as needed. Connect once and wait for the offline-ready indicator before reopening or reloading without a connection. Clearing site data or browser cache eviction requires another online visit. A downloaded `index.html` can also be opened in a browser that supports local pages, with the `static/` folder alongside it.
 
 ### Self-hosting
 
@@ -150,27 +168,15 @@ For Google Calendar, reminders, holiday highlighting, brightness and black-scree
 
 Follow the shared [installation commands](#self-hosting): clone the repository, copy `.env.example` to `.env`, and optionally set `ICAL_URL` to your private calendar URL. Choose Docker, the apt/systemd Linux installer, or a manual Python run. Docker uses host port `80`; the other methods default to `5000`. Keep private calendar URLs out of the public repository.
 
-Reminders support a date/time range or a daily time window, including overnight windows. Windows use the admin timezone, include the start, and exclude the end. Expired reminders are hidden rather than deleted. While disconnected from the server, the loaded page uses cached display settings and browser-local reminders; calendar events and server reminders return after reconnection. The bottom-right button opens connection settings.
+Reminders support a date/time range or a weekly/daily time window, including overnight windows. Select weekdays or leave all unchecked for every day. Overnight windows belong to their starting weekday. Edit text, dates and windows in place, or pause and resume without deleting. Windows use the admin timezone, include the start, and exclude the end. Expired reminders are hidden rather than deleted. While disconnected from the server, the loaded page uses cached display settings and browser-local reminders; calendar events and server reminders return after reconnection. The bottom-right button opens connection settings.
 
-Back up `.env`, `manual_notes.json`, and `webclock_state/`. Update a Linux service with `sudo bash update_clock.sh`; updates briefly stop the service and require space to back up `venv/`. Failed updates attempt recovery and retain backup files. For Docker, obtain the updated source and run `docker compose up -d --build`.
+Automatic night mode dims or blacks out the page on a daily schedule in the admin timezone, then restores daytime brightness. Manual black screen takes priority. It changes page appearance, not the hardware backlight. The next-event countdown uses dated reminder times, the next recurring window start, or today's timed calendar events; paused reminders and all-day calendar events are excluded.
 
-## 简体中文
+Offline reopening requires HTTPS or localhost and a completed online setup, shown in the connection panel. Plain LAN HTTP cannot prepare the offline cache. Only the clock shell is cached, never admin/API/calendar responses. Disconnected pages use cached display settings and browser-local reminders; server data returns on reconnection.
 
-### 使用在线时钟
+Download or import a JSON backup from the admin page. Import replaces server display settings and manual reminders after validation and confirmation. Limits: 1 MiB, 1,000 reminders, 1,000 characters per reminder. Private calendar URLs and browser-local reminders are excluded. Pre-import data is retained in `webclock_state/before-import.json` (replaced on each import); failed writes attempt rollback. After interrupted or failed recovery, restore that file through the same import action. Keep `.env` separately when moving hosts.
 
-打开 **[WebClock](https://kcayut.github.io/webclock/)**，即可把平板或闲置屏幕变成大时钟，建议横向摆放。时间和时区跟随设备，日期与星期使用繁体中文。
-
-在 iPad 的 Safari 中可选择「分享 → 添加到主屏幕」，并按需调整自动锁定与亮度。打开或重新加载网站需要网络；已加载的页面可以继续计时，但不提供离线缓存。也可下载 `index.html`，保留旁边的 `static/` 文件夹，以支持本地网页的浏览器打开。
-
-### 自行部署
-
-如需 Google Calendar、手动提醒、节假日标记、亮度和黑屏控制，可在电脑、NAS 或 Raspberry Pi 上运行完整版。管理页面为 `/admin`，支持繁中、简中、英文和日文，时区默认 UTC+8，也可自行选择。显示设置在重启后保留。
-
-按上方[安装步骤](#self-hosting)下载项目，将 `.env.example` 复制为 `.env`；需要日历时填写 `ICAL_URL`，否则留空。可选择 Docker、适用于 apt/systemd 的 Linux 安装脚本，或手动运行 Python。Docker 默认使用主机端口 `80`，其他方式默认为 `5000`。私人日历网址请只保存在自己的配置中。
-
-手动提醒可指定日期时间范围或每天显示时段，支持跨午夜；按管理页面的时区计算，包含开始、不包含结束，到期只隐藏、不删除。服务器暂时断开时，已加载的页面使用缓存的显示设置与浏览器本地提醒继续运行，日历和服务器提醒在重连后恢复。右下角按钮可打开连接设置。
-
-请备份 `.env`、`manual_notes.json` 和 `webclock_state/`。Linux 服务使用 `sudo bash update_clock.sh` 更新，期间会短暂停机，需要预留备份 `venv/` 的空间。更新失败时会尝试恢复并保留备份。Docker 在取得更新后的源代码后，执行 `docker compose up -d --build`。
+Docker copies legacy reminders once into `webclock_state/manual_notes.json`, preserving the original file and using the new location thereafter. Linux/manual installations retain `manual_notes.json`. Back up `.env`, `manual_notes.json`, and `webclock_state/`. Update a Linux service with `sudo bash update_clock.sh`; updates briefly stop the service and require space to back up `venv/`. Failed updates attempt recovery and retain backup files. For Docker, obtain the updated source and run `docker compose up -d --build`.
 
 ## 日本語
 
@@ -178,7 +184,7 @@ Back up `.env`, `manual_notes.json`, and `webclock_state/`. Update a Linux servi
 
 **[WebClock](https://kcayut.github.io/webclock/)** を開くだけで、タブレットや使っていない画面を大きな時計にできます。横向きでの利用がおすすめです。時刻とタイムゾーンは端末の設定に従い、日付と曜日は繁体字中国語で表示します。
 
-iPad の Safari では「共有 → ホーム画面に追加」で入口を作れます。自動ロックと明るさは端末の設定で調整してください。サイトを開く場合や再読み込みにはネット接続が必要です。読み込み済みのページは動作を続けますが、オフラインキャッシュはありません。ダウンロードした `index.html` は、隣の `static/` フォルダーを残したまま、ローカルページ対応ブラウザーで開くこともできます。
+iPad の Safari では「共有 → ホーム画面に追加」で入口を作れます。自動ロックと明るさは端末の設定で調整してください。初回はネット接続し、「已可離線開啟」の表示を待つと、オフラインでも開き直したり再読み込みできます。ブラウザーがサイトデータやキャッシュを削除した場合は、再度接続してください。ダウンロードした `index.html` は、隣の `static/` フォルダーを残したまま、ローカルページ対応ブラウザーで開くこともできます。
 
 ### セルフホスト
 
@@ -186,9 +192,50 @@ Google Calendar、手動リマインダー、休日表示、明るさ・黒画�
 
 上記の[インストール手順](#self-hosting)でソースを取得し、`.env.example` を `.env` にコピーします。カレンダーを使う場合のみ `ICAL_URL` を設定してください。Docker、apt/systemd を使う Linux 用スクリプト、Python の手動実行から選べます。既定のホスト側ポートは Docker が `80`、その他は `5000` です。非公開のカレンダー URL を公開リポジトリに含めないでください。
 
-リマインダーは日時範囲または毎日の表示時間帯を指定でき、日付をまたぐ時間帯にも対応します。管理画面のタイムゾーンを使い、開始を含み、終了は含みません。期限後は削除せず非表示にします。サーバーと切断された場合、読み込み済みのページは保存済み表示設定とブラウザー内のリマインダーで動作を続けます。カレンダーとサーバー側リマインダーは再接続後に戻ります。右下のボタンから接続設定を開けます。
+リマインダーは日時範囲または毎週・毎日の表示時間帯を指定できます。曜日未選択は毎日で、日付をまたぐ時間帯は開始日の曜日に従います。内容や日時を直接編集でき、削除せず一時停止・再開できます。管理画面のタイムゾーンを使い、開始を含み、終了は含みません。期限後は削除せず非表示にします。サーバーと切断された場合、読み込み済みのページは保存済み表示設定とブラウザー内のリマインダーで動作を続けます。カレンダーとサーバー側リマインダーは再接続後に戻ります。右下のボタンから接続設定を開けます。
 
-`.env`、`manual_notes.json`、`webclock_state/` をバックアップしてください。Linux サービスの更新は `sudo bash update_clock.sh` で行います。更新中は一時停止し、`venv/` のバックアップ容量が必要です。失敗時は復元を試み、バックアップを保持します。Docker はソースを更新した後、`docker compose up -d --build` を実行します。
+自動ナイトモードは管理画面のタイムゾーンで毎日暗くするか黒画面にし、終了後は昼間の明るさに戻します。手動の黒画面が優先され、ハードウェアのバックライトは変更しません。次の予定までの分数は、日時付きリマインダー、繰り返し時間帯の次の開始、当日の時刻付きカレンダー予定から表示します。停止中の項目と終日のカレンダー予定は対象外です。
+
+オフラインで開き直すには HTTPS または localhost と、接続中の準備完了が必要です。接続パネルで状態を確認できます。通常の LAN の HTTP はキャッシュに対応しません。時計ページと表示リソースのみを保存し、管理画面・API・カレンダー応答は保存しません。切断中は保存済み設定とブラウザー内のリマインダーを使用し、再接続後にサーバーデータが戻ります。
+
+管理画面から JSON バックアップを保存・読み込みできます。検証と確認後、サーバーの表示設定と手動リマインダーを置き換えます。上限は 1 MiB、1,000 件、1 件あたり 1,000 文字です。非公開カレンダー URL とブラウザー内のリマインダーは含みません。読み込み前のデータは `webclock_state/before-import.json` に保存され、読み込みごとに更新されます。書き込み失敗時は復元を試みます。中断や復元失敗の場合はサービス復旧後に同じ画面からこのファイルを読み込んでください。ホスト移行時は `.env` も別途保存してください。
+
+Docker は旧リマインダーを一度だけ `webclock_state/manual_notes.json` にコピーし、元ファイルを保持したまま新しい保存先を使います。既存の移行先は上書きしません。Linux・手動インストールは従来の `manual_notes.json` を使います。`.env`、`manual_notes.json`、`webclock_state/` をバックアップしてください。Linux サービスの更新は `sudo bash update_clock.sh` で行います。更新中は一時停止し、`venv/` のバックアップ容量が必要です。失敗時は復元を試み、バックアップを保持します。Docker はソースを更新した後、`docker compose up -d --build` を実行します。
+
+## Support WebClock
+
+All WebClock features are currently free to use. If you enjoy the project, you're welcome to support its development. Thank you!
+
+<!-- Brand assets: https://www.paypalobjects.com/paypal-ui/logos/svg/paypal-mark-color.svg | https://storage.ko-fi.com/cdn/cup-border.png | O’Pay and ECPay logos supplied by the project owner -->
+<table>
+  <tr>
+    <td align="center" width="160">
+      <a href="https://www.paypal.com/paypalme/oilstuck">
+        <img src="doc/images/support/paypal.svg" height="48" alt="Support development via PayPal"><br>
+        <strong>PayPal</strong>
+      </a>
+    </td>
+    <td align="center" width="160">
+      <a href="https://ko-fi.com/kcayut">
+        <img src="doc/images/support/ko-fi.png" height="48" alt="Support development via Ko-fi"><br>
+        <strong>Ko-fi</strong>
+      </a>
+    </td>
+    <td align="center" width="220">
+      <a href="https://payment.opay.tw/Broadcaster/Donate/6CF8CF9E519E0ED13E244399607ADDD7">
+        <img src="doc/images/support/opay.png" height="48" alt="Support development via O’Pay"><br>
+        <strong>O’Pay (歐付寶)</strong>
+      </a><br>
+      O’Pay member ID: 2218408
+    </td>
+    <td align="center" width="160">
+      <a href="https://p.ecpay.com.tw/A2FA21C">
+        <img src="doc/images/support/ecpay.png" height="48" alt="Support development via ECPay"><br>
+        <strong>ECPay (綠界科技)</strong>
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## 問題與建議 · Feedback
 
