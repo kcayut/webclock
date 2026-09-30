@@ -28,6 +28,19 @@ class ReminderWindowTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.json['events']
 
+    def test_successful_note_actions_return_to_calendar_tab(self):
+        for method, route, data in [
+            ('POST', '/add', {'note_text': 'reminder'}),
+            ('POST', '/schedule/1', {'note_text': 'edited'}),
+            ('POST', '/toggle/1', {}),
+            ('GET', '/delete/1', {}),
+        ]:
+            with self.subTest(route=route):
+                response = self.client.open(route, method=method, data=data)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers['Location'], '/admin#calendar-title')
+        self.assertEqual(clock.load_notes(), [])
+
     def test_cross_day_boundaries_and_storage(self):
         response = self.client.post('/add', data={
             'note_text': 'meeting', 'note_date': '2026-09-12', 'note_time': '10:00',

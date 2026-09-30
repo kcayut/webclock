@@ -1,6 +1,9 @@
 .git
 venv
 .env
+.env.*
+!.env.example
+.playwright-cli/
 manual_notes.json
 webclock_state
 .webclock-update*

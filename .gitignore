@@ -13,6 +13,7 @@ manual_notes.json
 webclock_state/
 .webclock-update-*/
 .webclock-update.lock
+.playwright-cli/
 *.log
 .DS_Store
 Thumbs.db

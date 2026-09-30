@@ -68,6 +68,21 @@ body {
     font-weight: bold;
 }
 
+/* Older Safari cannot size text with min() or CSS custom properties. */
+@supports not (font-size: min(1vw, 1vh)) {
+    body:lang(en) #date-info { font-size: 11vw; }
+
+    @media (min-aspect-ratio: 7/4) {
+        #time { font-size: 50vh; }
+        #date-info, body:lang(en) #date-info { font-size: 18.5vh; }
+    }
+
+    @media (min-aspect-ratio: 4/3) {
+        body.has-events #time { font-size: 45vh; }
+        body.has-events #date-info { font-size: 16.7vh; }
+    }
+}
+
 @supports (font-size: min(1vw, 1vh)) {
     #time {
         font-size: var(--clock-size);

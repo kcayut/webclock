@@ -1,0 +1,223 @@
+"""Management/device contracts, legacy storage and failure regression checks."""
+from datetime import datetime, timedelta
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import app as clock
+from webclock.services.storage import revision
+
+
+class ServerApiTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        for key, value in [('SETTINGS_FILE', str(self.root / 'settings.json')),
+                           ('NOTES_FILE', str(self.root / 'manual_notes.json'))]:
+            mock = patch.object(clock, key, value)
+            mock.start()
+            self.addCleanup(mock.stop)
+        token = patch.dict(os.environ, DEVICE_API_TOKEN='')
+        token.start()
+        self.addCleanup(token.stop)
+        self.client = clock.app.test_client()
+        self.schedule = dict(id='wake', name='起床', type='alarm', time='07:30', rule={},
+                             enabled=True, skipped_occurrences=[], browser_sound='bell', skip_holidays=False)
+
+    def config(self):
+        return self.client.get('/api/v1/device/config').json
+
+    def test_persist_skip_revisions_and_conditional_sync(self):
+        before = self.config()
+        self.assertEqual(before['schema_version'], 2)
+        self.assertEqual(set(before), {'schema_version', 'timezone', 'config_revision',
+                                       'schedule_revision', 'holiday_revision'})
+        old_etag = self.client.get('/api/v1/device/config').headers['ETag']
+        self.assertEqual(self.client.post('/api/v1/schedules', json=self.schedule).status_code, 201)
+        after = self.config()
+        self.assertNotEqual(before['schedule_revision'], after['schedule_revision'])
+        for field in ('config_revision', 'holiday_revision'):
+            self.assertEqual(before[field], after[field])
+        self.assertEqual(self.client.get('/api/v1/device/config', headers={'If-None-Match': old_etag}).status_code, 200)
+        for route in ('config', 'schedules', 'holidays'):
+            response = self.client.get('/api/v1/device/' + route)
+            self.assertEqual(self.client.get('/api/v1/device/' + route, headers={
+                'If-None-Match': response.headers['ETag']}).status_code, 304)
+        response = self.client.get('/api/v1/device/schedules')
+        self.assertEqual(response.json['schedules'], [self.schedule])
+        self.assertEqual(response.json['revision'], revision([self.schedule]))
+        self.assertEqual(self.client.get('/api/v1/device/schedules?revision=' + after['schedule_revision']).status_code, 304)
+        now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
+        with patch('webclock.api.management.taipei_now', return_value=now):
+            skipped = self.client.post('/api/v1/schedules/wake/skip-next').json
+            self.assertEqual(skipped['skipped']['datetime'], '2026-09-23T07:30:00+08:00')
+            self.assertEqual(skipped['next_event']['datetime'], '2026-09-24T07:30:00+08:00')
+            rows = self.client.get('/api/v1/schedules').json['schedules']
+            self.assertTrue(rows[0]['enabled'])
+            self.assertEqual(rows[0]['next_occurrence'], skipped['next_event']['datetime'])
+        with patch.object(clock, 'get_local_now', return_value=now):
+            self.assertEqual(self.client.get('/api/status').json['next_event']['text'], '起床')
+        self.assertIn('2026-09-23T07:30:00+08:00', (self.root / 'schedules.json').read_text())
+        self.assertEqual(self.client.delete('/api/v1/schedules/wake').status_code, 200)
+        self.assertEqual(self.client.delete('/api/v1/schedules/wake').status_code, 404)
+
+    def test_validation_and_failed_writes_leave_data_unchanged(self):
+        self.client.post('/api/v1/schedules', json=self.schedule)
+        original = (self.root / 'schedules.json').read_bytes()
+        for changes in ({'volume': 70}, {'sound': 'default.wav'}, {'repeat': 'once'}, {'snooze_minutes': 5},
+                        {'rule': {'weekdays': [0]}}, {'time': '7:30'}, {'type': 'unsupported'}, {'extra': 1},
+                        {'browser_sound': 'unknown'}, {'skip_holidays': 'true'},
+                        {'skip_holidays': True, 'rule': {'holiday_only': True}}):
+            response = self.client.put('/api/v1/schedules/wake', json=changes)
+            self.assertEqual(response.status_code, 400, response.json)
+            self.assertEqual((self.root / 'schedules.json').read_bytes(), original)
+        with patch('webclock.services.schedule_service.save_json', side_effect=OSError('full')):
+            with self.assertLogs(clock.app.logger, level='ERROR'):
+                self.assertEqual(self.client.put('/api/v1/schedules/wake', json={'name': 'New'}).status_code, 500)
+        self.assertEqual((self.root / 'schedules.json').read_bytes(), original)
+        self.assertEqual(self.client.post('/api/v1/schedules', json=self.schedule).status_code, 400)
+        self.assertEqual(self.client.post('/api/v1/schedules', json=[]).status_code, 400)
+
+    def test_private_routes_and_device_token(self):
+        for route in ('/api/v1/schedules', '/api/v1/browser-alarms', '/api/v1/devices', '/api/v1/device/config', '/schedules'):
+            self.assertEqual(self.client.get(route, headers={'Origin': 'https://evil.invalid'}).status_code, 403)
+            self.assertNotIn('Access-Control-Allow-Origin', self.client.get(route).headers)
+        with patch.dict(os.environ, DEVICE_API_TOKEN='test-only'):
+            for route, method, data in [('config', 'GET', None), ('schedules', 'GET', None),
+                                        ('holidays', 'GET', None), ('register', 'POST', {'id': 'one', 'name': 'One'}),
+                                        ('status', 'POST', {'id': 'one'})]:
+                url = '/api/v1/device/' + route
+                self.assertEqual(self.client.open(url, method=method, json=data).status_code, 401)
+                response = self.client.open(url, method=method, json=data, headers={'Authorization': 'Bearer test-only'})
+                self.assertIn(response.status_code, (200, 201))
+                self.assertEqual(response.headers['X-Content-Type-Options'], 'nosniff')
+        self.assertEqual(self.client.post('/api/v1/schedules', data='x' * (1024 * 1024 + 1),
+                                         content_type='application/json').status_code, 413)
+
+    def test_client_registration_shared_sync_heartbeat_and_ack(self):
+        self.client.post('/api/v1/schedules', json=self.schedule)
+        for device_id in ('bedroom', 'office'):
+            self.assertEqual(self.client.post('/api/v1/device/register', json={'id': device_id, 'name': device_id}).status_code, 201)
+        response = self.client.post('/api/v1/devices/bedroom/commands', json={'action': 'sync'})
+        self.assertEqual(response.status_code, 202)
+        command = response.json['command']
+        self.assertEqual(self.client.post('/api/v1/devices/bedroom/commands', json={'action': 'sync'}).json['command'], command)
+        self.assertEqual(self.client.post('/api/v1/device/status', json={'id': 'office'}).json['commands'], [])
+        report = self.client.post('/api/v1/device/status', json={'id': 'bedroom'}).json
+        self.assertEqual(report['commands'], [command])
+        self.assertTrue(report['device']['online'])
+        config = self.config()
+        revisions = {key: value for key, value in config.items() if key.endswith('_revision')}
+        report = self.client.post('/api/v1/device/status', json={
+            'id': 'bedroom', **revisions, 'acknowledged_commands': [command['id']]}).json
+        self.assertEqual(report['commands'], [])
+        self.assertEqual(report['device']['schedule_revision'], config['schedule_revision'])
+        devices = self.client.get('/api/v1/devices').json['devices']
+        self.assertEqual(len(devices), 2)
+        self.assertEqual(self.client.post('/api/v1/device/status', json={'id': 'unregistered'}).status_code, 404)
+        for action in ('test_sound', 'restart', 'unknown'):
+            self.assertEqual(self.client.post('/api/v1/devices/bedroom/commands', json={'action': action}).status_code, 400)
+
+    def test_legacy_records_survive_edits_without_exposing_device_settings(self):
+        legacy = dict({key: value for key, value in self.schedule.items()
+                       if key not in ('browser_sound', 'skip_holidays')},
+                      sound='missing.wav', volume=25, repeat='once', snooze_minutes=10)
+        path = self.root / 'schedules.json'
+        path.write_text(json.dumps([legacy]))
+        before = path.read_bytes()
+        response = self.client.get('/api/v1/device/schedules').json
+        self.assertEqual(response['schedules'], [self.schedule])
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.client.get('/api/v1/browser-alarms').json['alarms'][0]['sound'], 'bell')
+        self.assertEqual(self.client.put('/api/v1/schedules/wake', json={
+            'name': 'Updated', 'browser_sound': 'beep', 'skip_holidays': True}).status_code, 200)
+        stored = json.loads(path.read_text())[0]
+        self.assertEqual(stored, dict(legacy, name='Updated', browser_sound='beep', skip_holidays=True))
+        self.assertEqual(self.client.post('/api/v1/schedules', json=dict(self.schedule, id='second')).status_code, 201)
+        self.assertEqual(json.loads(path.read_text())[0], stored)
+        self.assertFalse((self.root / 'sounds').exists())
+
+    def test_browser_alarms_keep_current_minute_and_local_dismissal(self):
+        for row in (self.schedule, dict(self.schedule, id='second', browser_sound='digital'),
+                    dict(self.schedule, id='disabled', enabled=False),
+                    dict(self.schedule, id='text', type='reminder')):
+            self.assertEqual(self.client.post('/api/v1/schedules', json=row).status_code, 201)
+        now = datetime.fromisoformat('2026-09-23T07:30:08+08:00')
+        with patch('webclock.api.management.taipei_now', return_value=now) as current:
+            response = self.client.get('/api/v1/browser-alarms')
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            data = response.json
+            self.assertEqual(data['server_timestamp'], int(now.timestamp() * 1000))
+            self.assertEqual(data['enabled_count'], 2)
+            self.assertEqual(data['enabled_ids'], ['second', 'wake'])
+            self.assertTrue(data['holiday_known'])
+            self.assertEqual(data['holiday_coverage'], clock.holiday_service.coverage)
+            self.assertEqual([row['id'] for row in data['alarms']], ['second', 'wake'])
+            for row in data['alarms']:
+                self.assertEqual(set(row), {'occurrence_id', 'id', 'name', 'starts_at', 'sound'})
+                self.assertEqual(row['starts_at'], int(now.replace(second=0).timestamp() * 1000))
+                self.assertEqual(row['occurrence_id'], row['id'] + '@2026-09-23T07:30:00+08:00')
+            self.assertEqual([row['sound'] for row in data['alarms']], ['digital', 'bell'])
+            self.assertEqual(self.client.get('/api/v1/browser-alarms').json, data)
+            current.return_value = now.replace(second=59, microsecond=999999)
+            self.assertEqual(self.client.get('/api/v1/browser-alarms').json['alarms'], data['alarms'])
+            current.return_value = now.replace(second=0) + timedelta(minutes=1)
+            self.assertTrue(all(row['starts_at'] > data['server_timestamp']
+                                for row in self.client.get('/api/v1/browser-alarms').json['alarms']))
+        self.assertEqual(self.client.post('/api/v1/browser-alarms', json={'dismiss': 'wake'}).status_code, 405)
+        self.assertEqual(self.client.get('/api/v1/device/schedules').json['schedules'][0]['skipped_occurrences'], [])
+        self.assertEqual(self.client.put('/api/v1/schedules/wake', json={'enabled': False}).status_code, 200)
+        self.assertEqual(self.client.get('/api/v1/browser-alarms').json['enabled_ids'], ['second'])
+        self.assertEqual(self.client.delete('/api/v1/schedules/second').status_code, 200)
+        self.assertEqual(self.client.get('/api/v1/browser-alarms').json['enabled_ids'], [])
+
+    def test_browser_alarms_exclude_unknown_holidays_without_losing_enabled_count(self):
+        self.client.post('/api/v1/schedules', json=dict(self.schedule, skip_holidays=True, browser_sound='silent'))
+        now = datetime.fromisoformat('2026-09-25T07:30:08+08:00')
+        with patch('webclock.api.management.taipei_now', return_value=now) as current:
+            data = self.client.get('/api/v1/browser-alarms').json
+            self.assertEqual(data['alarms'][0]['starts_at'], int(datetime.fromisoformat('2026-09-29T07:30:00+08:00').timestamp() * 1000))
+            self.assertEqual(data['alarms'][0]['sound'], 'silent')
+            current.return_value = datetime.fromisoformat('2028-01-03T07:30:08+08:00')
+            data = self.client.get('/api/v1/browser-alarms').json
+            self.assertEqual(data['enabled_count'], 1)
+            self.assertEqual(data['enabled_ids'], ['wake'])
+            self.assertEqual(data['alarms'], [])
+            self.assertFalse(data['holiday_known'])
+
+    def test_legacy_entrypoint_languages_and_management_only_surface(self):
+        from webclock import app as implementation
+        self.assertIs(clock, implementation)
+        for language in clock.SUPPORTED_LANGUAGES:
+            with patch.dict(clock.display_settings, language=language):
+                for route in ('/', '/admin', '/schedules'):
+                    response = self.client.get(route)
+                    self.assertEqual(response.status_code, 200, route)
+                    self.assertIn('lang="' + language + '"', response.text)
+                for removed in ('enable-audio', 'sound-form', 'schedule-volume', 'schedule-snooze', 'ringing'):
+                    self.assertNotIn('id="' + removed + '"', response.text)
+        for route in ('/api/v1/sounds', '/api/v1/sounds/default.wav', '/api/v1/device/sounds'):
+            self.assertEqual(self.client.get(route).status_code, 404)
+        self.assertEqual(self.client.get('/api/v1/device/status').status_code, 405)
+        self.assertEqual(self.client.post('/api/v1/device/schedules', json=self.schedule).status_code, 405)
+        response = self.client.get('/sw.js')
+        self.assertEqual(response.status_code, 200)
+        response.close()
+
+    def test_invalid_stored_schedule_is_not_reassigned_or_overwritten(self):
+        path = self.root / 'schedules.json'
+        for rows in ([{'name': 'missing ID', 'time': '07:30'}], [self.schedule, self.schedule],
+                     [dict(self.schedule, unexpected=True)]):
+            original = json.dumps(rows)
+            path.write_text(original)
+            self.assertEqual(self.client.get('/api/v1/device/config').status_code, 400)
+            self.assertEqual(self.client.post('/api/v1/schedules', json=self.schedule).status_code, 400)
+            self.assertEqual(path.read_text(), original)
+
+
+if __name__ == '__main__':
+    unittest.main()

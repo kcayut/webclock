@@ -32,7 +32,7 @@ function clockDisplaySettings(settings, utcMs, timezoneOffset) {
 }
 
 function clockCountdown(event, utcMs, template) {
-    if (!event || !Number.isFinite(event.starts_at) || event.starts_at <= utcMs) return '';
+    if (!event || typeof event.starts_at !== 'number' || !isFinite(event.starts_at) || event.starts_at <= utcMs) return '';
     var minutes = Math.ceil((event.starts_at - utcMs) / 60000);
     return template.replace('{text}', function () { return event.text; }).replace('{minutes}', String(minutes));
 }

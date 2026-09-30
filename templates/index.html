@@ -10,6 +10,45 @@
     <title>{{ translations[language].app_title }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='clock.css') }}">
     <style>
+        #alarm-bell {
+            display: none; position: fixed; top: 8px; right: 8px; z-index: 140;
+            width: 44px; height: 44px; padding: 9px; border: 1px solid #777;
+            border-radius: 50%; background: #111; color: #e8b45a; cursor: pointer;
+        }
+        #alarm-bell.sound-ready { color: #fff; border-color: #bbb; }
+        #alarm-status {
+            display: none; position: fixed; top: 48px; right: 10px; z-index: 140;
+            max-width: 70%; color: #e8b45a; background: #111; padding: 4px 8px;
+            font-size: 13px; text-align: right;
+        }
+        #alarm-flash {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 135; pointer-events: none; border: 12px solid #e00000;
+            box-shadow: inset 0 0 45px 12px #c00000;
+        }
+        .alarm-ringing { cursor: pointer; }
+        .alarm-ringing #list-container { visibility: hidden; }
+        .alarm-ringing #alarm-flash {
+            display: block;
+            -webkit-animation: alarm-edge 2s ease-in-out infinite;
+            animation: alarm-edge 2s ease-in-out infinite;
+        }
+        @-webkit-keyframes alarm-edge { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
+        @keyframes alarm-edge { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
+        .alarm-steady #alarm-flash { -webkit-animation: none; animation: none; opacity: 0.8; }
+        @media (prefers-reduced-motion: reduce) {
+            .alarm-ringing #alarm-flash { -webkit-animation: none; animation: none; opacity: 0.8; }
+        }
+        #alarm-message {
+            display: none; position: fixed; left: 8%; right: 8%; bottom: 12%; z-index: 140;
+            color: #fff; background: #300; border: 1px solid #ef5350; border-radius: 8px;
+            padding: 16px; text-align: center; font-size: 22px; line-height: 1.5;
+            word-wrap: break-word;
+        }
+        #alarm-prompt { font-size: 18px; color: #ffcaca; }
+        #alarm-help { font-size: 12px; line-height: 1.5; }
+        #alarm-manage { color: #9cc7ff; }
+        #connection-panel #alarm-motion { width: auto; }
         #list-container {
             width: 95%;
             height: 25vh;
@@ -89,10 +128,9 @@
             opacity: 0 !important;
         }
 
-        #clock-container, #list-container { opacity: var(--display-opacity, 1); }
         #next-event {
             position: absolute; bottom: 8px; left: 0; right: 24%;
-            color: #f39c12; font-size: clamp(14px, 3.2vh, 26px);
+            color: #f39c12; font-size: 3.2vh; font-size: clamp(14px, 3.2vh, 26px);
             overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
         }
         #event-counter {
@@ -162,7 +200,8 @@
             position: fixed;
             right: 10px;
             bottom: 46px;
-            width: min(340px, calc(100vw - 20px));
+            width: 340px;
+            max-width: calc(100vw - 20px);
             color: #ddd;
             background: rgba(12, 12, 12, 0.94);
             border: 1px solid #333;
@@ -258,6 +297,12 @@
 </head>
 
 <body>
+    <button id="alarm-bell" type="button" aria-label="{{ translations[language].alarm_set }}">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4M12 2v2"/></svg>
+    </button>
+    <div id="alarm-status" role="status"></div>
+    <div id="alarm-flash" aria-hidden="true"></div>
+    <div id="alarm-message" role="alert"><div id="alarm-name"></div><div id="alarm-prompt"></div></div>
     <div id="clock-container">
         <div id="time">00:00</div>
         <div id="date-info">
@@ -293,10 +338,12 @@
             <button type="button" onclick="addLocalEvent()">Add</button>
         </div>
         <div id="local-events-list"></div>
+        <p><a id="alarm-manage" href="/schedules">{{ translations[language].alarm_manage }}</a></p>
+        <label><input id="alarm-motion" type="checkbox" checked> <span id="alarm-motion-label">{{ translations[language].alarm_flash }}</span></label>
+        <p id="alarm-help">{{ translations[language].alarm_sound_hint }}</p>
     </div>
 
     <script src="{{ url_for('static', filename='clock.js') }}"></script>
-    <script src="{{ url_for('static', filename='offline.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
         var currentLanguage = {{ language | tojson }};
@@ -420,7 +467,8 @@
         function applyDisplay() {
             var effective = clockDisplaySettings(activeSettings, getClockUtcMs(), timezoneOffset);
             document.body.classList.toggle('force-black', effective.mode === 'black');
-            document.body.style.setProperty('--display-opacity', effective.brightness / 100);
+            document.getElementById('clock-container').style.opacity = effective.brightness / 100;
+            document.getElementById('list-container').style.opacity = effective.brightness / 100;
         }
 
         function showNotice(message) {
@@ -819,18 +867,22 @@
             applyScrolling(nextItem);
         }
 
+        // Start the clock before optional settings, reminders or network work.
+        setInterval(updateClock, 1000);
+        updateClock();
+        document.addEventListener('visibilitychange', updateClock);
+        window.addEventListener('pageshow', updateClock);
         applySettings(getStoredSettings());
         renderLocalEventsEditor();
         setConnectionStatus('Connecting...', false);
-        document.addEventListener('visibilitychange', updateClock);
-        window.addEventListener('pageshow', updateClock);
-        setInterval(updateClock, 1000);
         setInterval(fetchStatus, 5000);
         setInterval(syncStandardTime, 6 * 60 * 60 * 1000);
-        updateClock();
         syncStandardTime();
         fetchStatus();
     </script>
+    <script src="{{ url_for('static', filename='offline.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='alarms.js') }}"></script>
 </body>
 
 </html>

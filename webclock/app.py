@@ -1,0 +1,853 @@
+from flask import Flask, render_template, jsonify, request, redirect, url_for, abort, send_from_directory
+from datetime import datetime, timezone, timedelta
+import requests
+from icalendar import Calendar
+import recurring_ical_events
+import json
+import os
+import time
+import hashlib
+import re
+from uuid import uuid4
+from math import ceil
+from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
+from dotenv import load_dotenv
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+from webclock.services.storage import load_json, save_json
+from webclock.services.holiday_service import HolidayService
+from webclock.services.schedule_service import next_event, read_schedules
+from webclock.api import register_api
+from webclock.translations.common import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, UI_TRANSLATIONS
+
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / '.env')
+
+ICAL_URL = os.getenv('ICAL_URL', "")
+STATE_DIR = Path(os.getenv('WEBCLOCK_STATE_DIR', str(ROOT / 'webclock_state')))
+NOTES_FILE = os.getenv('NOTES_FILE', str(STATE_DIR / 'manual_notes.json'))
+SETTINGS_FILE = str(STATE_DIR / 'settings.json')
+CACHE_DURATION = 300
+
+app = Flask(__name__, root_path=str(ROOT))
+holiday_service = HolidayService()
+calendar_feed_cache = {}
+MAX_CALENDAR_SOURCES = 20
+MAX_CALENDAR_QUERY_DAYS = 366
+MAX_CALENDAR_EVENTS = 10000
+MAX_CALENDAR_QUERY_CACHE = 3
+
+
+@app.after_request
+def add_cors_headers(response):
+    if request.path == '/api/calendar':
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    if request.path.startswith('/api/v1/') or request.path == '/schedules':
+        return response
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
+
+DEFAULT_NIGHT = {'enabled': False, 'start': '22:00', 'end': '07:00', 'brightness': 15, 'black': False}
+DEFAULT_SETTINGS = {
+    'mode': 'normal',
+    'brightness': 100,
+    'timezone_offset': 8,
+    'language': DEFAULT_LANGUAGE,
+}
+# ponytail: single-process file storage; use a database before adding writer processes.
+settings_lock = RLock()
+
+
+def validate_settings(data):
+    if not isinstance(data, dict) or set(data) - (set(DEFAULT_SETTINGS) | {'night'}):
+        raise ValueError('Invalid settings object')
+    result = dict(data)
+    for key, low, high in (('brightness', 0, 100), ('timezone_offset', -12, 14)):
+        if key in result:
+            value = result[key]
+            if type(value) not in (int, str):
+                raise ValueError('Invalid ' + key)
+            result[key] = int(value)
+            if not low <= result[key] <= high:
+                raise ValueError('Invalid ' + key)
+    if 'mode' in result and result['mode'] not in ('normal', 'black'):
+        raise ValueError('Invalid display mode')
+    if 'language' in result and result['language'] not in SUPPORTED_LANGUAGES:
+        raise ValueError('Invalid language')
+    if 'night' in result:
+        night = result['night']
+        if not isinstance(night, dict) or set(night) != set(DEFAULT_NIGHT):
+            raise ValueError('Invalid night settings')
+        if type(night['enabled']) is not bool or type(night['black']) is not bool:
+            raise ValueError('Invalid night switch')
+        if type(night['brightness']) is not int or not 0 <= night['brightness'] <= 100:
+            raise ValueError('Invalid night brightness')
+        for key in ('start', 'end'):
+            validate_time(night[key])
+        if night['start'] == night['end']:
+            raise ValueError('Night times must differ')
+    return result
+
+
+def validate_time(value):
+    if not isinstance(value, str) or datetime.strptime(value, '%H:%M').strftime('%H:%M') != value:
+        raise ValueError('Invalid time')
+    return value
+
+
+def load_display_settings():
+    try:
+        with open(SETTINGS_FILE, encoding='utf-8') as f:
+            saved = validate_settings(json.load(f))
+    except FileNotFoundError:
+        saved = {}
+    return dict(DEFAULT_SETTINGS, **saved)
+
+
+def save_display_settings(settings):
+    save_json(SETTINGS_FILE, settings)
+
+
+def migrate_notes(legacy_path):
+    # Docker's old single-file bind mount cannot be replaced atomically.
+    # Copy it once into the already-persistent state directory; keep the original.
+    if not os.path.exists(NOTES_FILE) and os.path.isfile(legacy_path):
+        with open(legacy_path, encoding='utf-8') as f:
+            content = f.read()
+        data = json.loads(content) if content.strip() else []
+        if not isinstance(data, list):
+            raise ValueError('Invalid legacy reminders')
+        save_json(NOTES_FILE, data)
+
+
+migrate_notes(str(ROOT / 'manual_notes.json'))
+
+display_settings = load_display_settings()
+
+
+def get_local_now():
+    offset = display_settings.get('timezone_offset', 8)
+    tz = timezone(timedelta(hours=offset))
+    return datetime.now(tz)
+
+
+def load_notes():
+    with settings_lock:
+        try:
+            with open(NOTES_FILE, encoding='utf-8') as f:
+                content = f.read()
+                data = json.loads(content) if content.strip() else []
+        except FileNotFoundError:
+            return []
+        for note in data:
+            note.setdefault('due_date', '')
+        return sorted(data, key=lambda note: note['due_date'] or '9999')
+
+
+def parse_display_window(values):
+    mode = values.get('display_mode', 'range')
+    if mode not in ('range', 'daily'):
+        raise ValueError('Invalid display mode')
+    start = values.get('display_start', '')
+    end = values.get('display_end', '')
+    if not start and not end:
+        return '', ''
+    for value in (start, end):
+        parsed = datetime.strptime(value, '%H:%M' if mode == 'daily' else '%Y-%m-%dT%H:%M')
+        normalized = parsed.strftime('%H:%M') if mode == 'daily' else parsed.isoformat(timespec='minutes')
+        if normalized != value:
+            raise ValueError('Invalid display datetime')
+    if end == start or (mode == 'range' and end < start):
+        raise ValueError('Invalid display window order')
+    return start, end
+
+
+def save_note(text, due_date, display_start='', display_end='', display_mode='range', weekdays=None):
+    with settings_lock:
+        notes = load_notes()
+        new_id = 1 if not notes else max(n['id'] for n in notes) + 1
+        notes.append({'id': new_id, 'text': text, 'due_date': due_date,
+                      'display_start': display_start, 'display_end': display_end,
+                      'display_mode': display_mode, 'weekdays': weekdays or [], 'enabled': True})
+        save_json(NOTES_FILE, notes)
+
+
+def delete_note(note_id):
+    with settings_lock:
+        notes = [n for n in load_notes() if n['id'] != int(note_id)]
+        save_json(NOTES_FILE, notes)
+
+
+def validate_note(note):
+    if not isinstance(note, dict) or set(note) - {
+        'id', 'text', 'due_date', 'display_start', 'display_end', 'display_mode', 'weekdays', 'enabled'
+    }:
+        raise ValueError('Invalid reminder')
+    if not isinstance(note.get('text'), str) or not 1 <= len(note['text'].strip()) <= 1000:
+        raise ValueError('Invalid text')
+    start, end = parse_display_window(note)
+    due = note.get('due_date', '')
+    if not isinstance(due, str):
+        raise ValueError('Invalid date')
+    if due:
+        fmt = '%Y-%m-%d %H:%M' if len(due) > 10 else '%Y-%m-%d'
+        if datetime.strptime(due, fmt).strftime(fmt) != due:
+            raise ValueError('Invalid date')
+    days = note.get('weekdays', [])
+    if not isinstance(days, list) or len(days) > 7 or any(type(day) is not int or not 0 <= day <= 6 for day in days):
+        raise ValueError('Invalid weekdays')
+    if type(note.get('enabled', True)) is not bool:
+        raise ValueError('Invalid enabled flag')
+    return dict(note, text=note['text'].strip(), due_date=due, display_start=start, display_end=end,
+                display_mode=note.get('display_mode', 'range'), weekdays=sorted(set(days)),
+                enabled=note.get('enabled', True))
+
+
+def note_from_form(existing=None):
+    note = dict(existing or {})
+    note.update(display_mode=request.form.get('display_mode', 'range'),
+                display_start=request.form.get('display_start', ''),
+                display_end=request.form.get('display_end', ''))
+    if 'note_text' in request.form:
+        date = request.form.get('note_date', '')
+        clock_time = request.form.get('note_time', '')
+        if clock_time and not date:
+            raise ValueError('Time requires a date')
+        note.update(text=request.form['note_text'], due_date=date + (' ' + clock_time if clock_time else ''))
+    # Old clients editing only a window preserve an existing weekday selection.
+    if 'weekdays_present' in request.form:
+        note['weekdays'] = [int(day) for day in request.form.getlist('weekdays')]
+    if note['display_mode'] != 'daily':
+        note['weekdays'] = []
+    return validate_note(note)
+
+
+def note_visible(note, now):
+    if not note.get('enabled', True):
+        return False
+    start, end = parse_display_window(note)
+    if note.get('display_mode') == 'daily':
+        clock_time = now.strftime('%H:%M')
+        # An overnight window belongs to the day it starts, even after midnight.
+        anchor = now - timedelta(days=1) if start and start > end and clock_time < end else now
+        if note.get('weekdays') and anchor.weekday() not in note['weekdays']:
+            return False
+        return not start or (start <= clock_time < end if start < end else clock_time >= start or clock_time < end)
+    if start:
+        return start <= now.isoformat(timespec='minutes')[:16] < end
+    return not note.get('due_date') or note['due_date'].startswith(now.strftime('%Y-%m-%d'))
+
+
+def next_note_time(note, now):
+    if not note.get('enabled', True):
+        return None
+    start, _ = parse_display_window(note)
+    if note.get('display_mode') == 'daily':
+        if not start:
+            return None
+        for offset in range(8):
+            day = now + timedelta(days=offset)
+            if note.get('weekdays') and day.weekday() not in note['weekdays']:
+                continue
+            candidate = datetime.strptime(day.strftime('%Y-%m-%d') + ' ' + start, '%Y-%m-%d %H:%M').replace(tzinfo=now.tzinfo)
+            if candidate > now:
+                return candidate
+    else:
+        due = note.get('due_date', '')
+        value = due if len(due) > 10 else start.replace('T', ' ')
+        if value:
+            candidate = datetime.strptime(value, '%Y-%m-%d %H:%M').replace(tzinfo=now.tzinfo)
+            if candidate > now and note_visible(note, candidate):
+                return candidate
+    return None
+
+
+def normalize_calendar_url(value):
+    if not isinstance(value, str) or len(value) > 4096:
+        raise ValueError('Invalid calendar URL')
+    value = value.strip()
+    if not value:
+        return ''
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError('Invalid calendar URL')
+    parts = urlsplit(value)
+    if (parts.scheme not in ('http', 'https', 'webcal') or not parts.hostname
+            or parts.username is not None or parts.password is not None
+            or parts.fragment or '\\' in value or parts.port == 0):
+        raise ValueError('Invalid calendar URL')
+    return urlunsplit(parts._replace(scheme='https' if parts.scheme == 'webcal' else parts.scheme))
+
+
+def calendar_provider(url):
+    host = urlsplit(url).hostname or ''
+    if host == 'icloud.com' or host.endswith('.icloud.com'):
+        return 'apple'
+    if host == 'google.com' or host.endswith('.google.com'):
+        return 'google'
+    return 'ics'
+
+
+def validate_calendar_sources(sources, create_ids=False):
+    if not isinstance(sources, list) or len(sources) > MAX_CALENDAR_SOURCES:
+        raise ValueError('Invalid calendar sources')
+    result = []
+    seen = set()
+    for source in sources:
+        if not isinstance(source, dict) or set(source) - {'id', 'name', 'provider', 'url', 'display_enabled'}:
+            raise ValueError('Invalid calendar source')
+        source_id = source.get('id', '')
+        if create_ids and source_id == '':
+            source_id = uuid4().hex
+        if (not isinstance(source_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', source_id)
+                or source_id == 'local' or source_id in seen):
+            raise ValueError('Invalid calendar source ID')
+        seen.add(source_id)
+        name = source.get('name')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+            raise ValueError('Invalid calendar source name')
+        provider = source.get('provider', 'ics')
+        if provider not in ('apple', 'google', 'ics'):
+            raise ValueError('Invalid calendar provider')
+        enabled = source.get('display_enabled', True)
+        if type(enabled) is not bool:
+            raise ValueError('Invalid calendar display flag')
+        url = normalize_calendar_url(source.get('url'))
+        if not url:
+            raise ValueError('Missing calendar URL')
+        result.append(dict(id=source_id, name=name.strip(), provider=provider, url=url,
+                           display_enabled=enabled))
+    return result
+
+
+def load_calendar_settings():
+    # Missing state keeps the old .env subscription; a saved empty list disables it.
+    data = load_json(Path(SETTINGS_FILE).parent / 'calendar.json', {'url': ICAL_URL})
+    if not isinstance(data, dict):
+        raise ValueError('Invalid calendar settings')
+    if 'sources' not in data:
+        url = normalize_calendar_url(data['url'])
+        provider = calendar_provider(url)
+        names = {'google': 'Google Calendar', 'apple': 'Apple Calendar', 'ics': 'Calendar'}
+        sources = [dict(id='legacy', name=names[provider], provider=provider, url=url,
+                        display_enabled=True)] if url else []
+        return dict(sources=sources, local_display_enabled=True)
+    enabled = data.get('local_display_enabled', True)
+    if type(enabled) is not bool:
+        raise ValueError('Invalid local display flag')
+    return dict(sources=validate_calendar_sources(data['sources']), local_display_enabled=enabled)
+
+
+def get_calendar_sources():
+    # Private server-side catalogue. Only /api/calendar may expose its URLs.
+    with settings_lock:
+        return load_calendar_settings()['sources']
+
+
+def get_calendar_url():
+    sources = get_calendar_sources()
+    return sources[0]['url'] if sources else ''
+
+
+def calendar_settings_response(settings):
+    # Keep the old single-URL management client compatible during upgrades.
+    errors = []
+    for source in settings['sources']:
+        cached = calendar_feed_cache.get((str(Path(SETTINGS_FILE).parent), source['url']), {})
+        if cached.get('error'):
+            errors.append(dict(id=source['id'], error=cached['error']))
+    return dict(settings, url=settings['sources'][0]['url'] if settings['sources'] else '', errors=errors)
+
+
+def calendar_event(source_id, uid, text, start, end, all_day, query_start):
+    zone = query_start.tzinfo
+    if all_day and not isinstance(start, datetime):
+        start = datetime.combine(start, datetime.min.time(), tzinfo=zone)
+        end = datetime.combine(end, datetime.min.time(), tzinfo=zone)
+    start = start.replace(tzinfo=zone) if start.tzinfo is None else start.astimezone(zone)
+    end = end.replace(tzinfo=zone) if end.tzinfo is None else end.astimezone(zone)
+    return dict(source_id=source_id, uid=uid, text=text,
+                time='' if all_day or start.date() < query_start.date() else start.strftime('%H:%M'),
+                starts_at=int(start.timestamp() * 1000), ends_at=int(end.timestamp() * 1000),
+                all_day=all_day, start_date=start.date().isoformat(), end_date=end.date().isoformat())
+
+
+def calendar_event_overlaps(event, start, end):
+    first, last = int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+    return event['starts_at'] < last and (event['ends_at'] > first or
+            (event['ends_at'] == event['starts_at'] and event['starts_at'] >= first))
+
+
+def local_calendar_events(start, end):
+    events = []
+    zone = get_local_now().tzinfo
+    for note in load_notes():
+        if not note.get('enabled', True):
+            continue
+        try:
+            due = note.get('due_date', '')
+            window_start, window_end = parse_display_window(note)
+            windows = []
+            if note.get('display_mode') == 'daily':
+                if not window_start:
+                    continue
+                day = (start.astimezone(zone) - timedelta(days=1)).date()
+                while day <= end.astimezone(zone).date():
+                    begins = datetime.strptime(day.isoformat() + ' ' + window_start, '%Y-%m-%d %H:%M').replace(tzinfo=zone)
+                    finishes = datetime.strptime(day.isoformat() + ' ' + window_end, '%Y-%m-%d %H:%M').replace(tzinfo=zone)
+                    if finishes <= begins:
+                        finishes += timedelta(days=1)
+                    if note_visible(note, begins):
+                        windows.append((begins, finishes, False))
+                    day += timedelta(days=1)
+            elif len(due) > 10:
+                begins = datetime.strptime(due, '%Y-%m-%d %H:%M').replace(tzinfo=zone)
+                if note_visible(note, begins):
+                    windows.append((begins, begins, False))
+            elif window_start:
+                begins = datetime.fromisoformat(window_start).replace(tzinfo=zone)
+                finishes = datetime.fromisoformat(window_end).replace(tzinfo=zone)
+                windows.append((begins, finishes, False))
+            elif due:
+                begins = datetime.strptime(due, '%Y-%m-%d').replace(tzinfo=zone)
+                windows.append((begins, begins + timedelta(days=1), True))
+            # A reminder without a date or daily window is not a scheduled event.
+            for begins, finishes, all_day in windows:
+                event = calendar_event('local', str(note['id']), note['text'], begins, finishes, all_day, start)
+                if calendar_event_overlaps(event, start, end):
+                    events.append(event)
+        except (ValueError, TypeError, KeyError):
+            continue
+    return events
+
+
+def check_calendar_expansion(cal, start, end):
+    # Conservative upper bound before the library allocates its occurrence list.
+    # BY* filters can reduce this estimate; exceeding it is an explicit limit.
+    budget = 0
+    periods = {'YEARLY': 365 * 86400, 'MONTHLY': 28 * 86400, 'WEEKLY': 7 * 86400,
+               'DAILY': 86400, 'HOURLY': 3600, 'MINUTELY': 60, 'SECONDLY': 1}
+    for component in cal.walk('VEVENT'):
+        rules = component.get('rrule', [])
+        rules = rules if isinstance(rules, list) else [rules]
+        budget += 1
+        for rule in rules:
+            frequency = str(rule['FREQ'][0]).upper()
+            interval = max(1, int(rule.get('INTERVAL', [1])[0]))
+            duration = component.get('duration')
+            duration = duration.dt.total_seconds() if duration else 0
+            if component.get('dtend') is not None:
+                duration = (component['dtend'].dt - component['dtstart'].dt).total_seconds()
+            span = (end - start).total_seconds() + max(0, duration)
+            count = ceil(span / (periods[frequency] * interval)) + 2
+            day_selectors = {'BYDAY', 'BYMONTHDAY', 'BYYEARDAY', 'BYWEEKNO'} & set(rule)
+            if frequency == 'YEARLY':
+                days = 366 if day_selectors else len(rule.get('BYMONTH', [1]))
+                if 'BYYEARDAY' in rule:
+                    days = min(days, len(rule['BYYEARDAY']))
+                if 'BYMONTHDAY' in rule:
+                    days = min(days, len(rule['BYMONTHDAY']) * len(rule.get('BYMONTH', range(12))))
+                count *= days
+            elif frequency == 'MONTHLY' and day_selectors:
+                days = min(31, len(rule.get('BYMONTHDAY', range(31))))
+                if 'BYDAY' in rule:
+                    days = min(days, sum(1 if str(day)[:-2] else 5 for day in rule['BYDAY']))
+                count *= days
+            elif frequency == 'WEEKLY' and 'BYDAY' in rule:
+                count *= min(7, len(rule['BYDAY']))
+            if periods[frequency] >= 86400:
+                count *= len(rule.get('BYHOUR', [1]))
+            if periods[frequency] >= 3600:
+                count *= len(rule.get('BYMINUTE', [1]))
+            if periods[frequency] >= 60:
+                count *= len(rule.get('BYSECOND', [1]))
+            budget += min(count, int(rule.get('COUNT', [count])[0]))
+        for dates in ('rdate', 'exdate'):
+            values = component.get(dates, [])
+            values = values if isinstance(values, list) else [values]
+            budget += sum(len(value.dts) for value in values)
+        if budget > MAX_CALENDAR_EVENTS:
+            raise OverflowError('Calendar occurrence limit exceeded')
+
+
+def fetch_calendar_source(url):
+    key = (str(Path(SETTINGS_FILE).parent), url)
+    cached = calendar_feed_cache.get(key)
+    current_time = time.time()
+    if cached is not None and current_time - cached['fetched_at'] < CACHE_DURATION:
+        return cached
+    # Failed refreshes replace the expired feed, so it cannot trigger stale alarms.
+    cached = dict(fetched_at=current_time, calendar=None, queries={}, error=None)
+    calendar_feed_cache[key] = cached
+    try:
+        response = requests.get(url, timeout=(2, 3))
+        response.raise_for_status()
+        if len(response.content) > 2 * 1024 * 1024:
+            raise OverflowError('Calendar feed size limit exceeded')
+        cal = Calendar.from_ical(response.content)
+        if len(cal.subcomponents) > MAX_CALENDAR_EVENTS:
+            raise OverflowError('Calendar component limit exceeded')
+        for component in cal.walk('VEVENT'):
+            if (component.get('dtstart') is None and component.get('recurrence-id') is not None
+                    and str(component.get('status', '')).upper() == 'CANCELLED'):
+                component['DTSTART'] = component['RECURRENCE-ID']
+        cal.subcomponents = [component for component in cal.subcomponents
+                             if component.name != 'VEVENT' or component.get('dtstart') is not None]
+        cached['calendar'] = cal
+    except Exception as error:
+        # Request errors can contain the private subscription URL; never log it.
+        cached['error'] = ('event_limit' if isinstance(error, OverflowError) else
+                           'fetch_failed' if isinstance(error, requests.RequestException) else 'invalid_feed')
+        app.logger.warning('Calendar sync failed (%s)', type(error).__name__)
+    return cached
+
+
+def get_calendar_events(start=None, end=None, source_ids=None):
+    # Serialize source edits and fetches so an in-flight removed feed cannot reappear.
+    with settings_lock:
+        return fetch_calendar_events(start, end, source_ids)
+
+
+def fetch_calendar_events(start=None, end=None, source_ids=None):
+    if start is None:
+        start = get_local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if not isinstance(start, datetime) or start.utcoffset() is None:
+        raise ValueError('Calendar query requires a timezone')
+    if end is None:
+        end = start + timedelta(days=1)
+    if not isinstance(end, datetime) or end.utcoffset() is None:
+        raise ValueError('Calendar query requires a timezone')
+    end = end.astimezone(start.tzinfo)
+    if end <= start or end - start > timedelta(days=MAX_CALENDAR_QUERY_DAYS):
+        raise ValueError('Invalid calendar query range')
+    if source_ids is not None and (not isinstance(source_ids, (list, tuple, set))
+                                  or any(not isinstance(value, str) for value in source_ids)):
+        raise ValueError('Invalid calendar source selection')
+    try:
+        sources = get_calendar_sources()
+    except (OSError, ValueError, KeyError):
+        app.logger.warning('Could not read calendar settings')
+        sources = []
+    active_keys = {(str(Path(SETTINGS_FILE).parent), source['url']) for source in sources}
+    for key in list(calendar_feed_cache):
+        if key not in active_keys:
+            del calendar_feed_cache[key]
+    selected = set(source_ids) if source_ids is not None else {
+        source['id'] for source in sources if source['display_enabled']}
+    events = local_calendar_events(start, end) if 'local' in selected else []
+    selected_urls = {source['url'] for source in sources if source['id'] in selected}
+    pending = [url for url in selected_urls if time.time() - calendar_feed_cache.get(
+        (str(Path(SETTINGS_FILE).parent), url), {}).get('fetched_at', 0) >= CACHE_DURATION]
+    if len(pending) > 1:
+        # One slow provider should not serialize every other calendar download.
+        with ThreadPoolExecutor(max_workers=min(MAX_CALENDAR_SOURCES, len(pending))) as pool:
+            list(pool.map(fetch_calendar_source, pending))
+    for source in sources:
+        if source['id'] not in selected:
+            continue
+        cached = fetch_calendar_source(source['url'])
+        if cached['calendar'] is None:
+            continue
+        query_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        query_end = end.replace(hour=0, minute=0, second=0, microsecond=0)
+        if query_end < end:
+            query_end += timedelta(days=1)
+        query_key = (query_start.isoformat(), query_end.isoformat(), str(start.tzinfo))
+        try:
+            if query_key not in cached['queries']:
+                if len(cached['queries']) >= MAX_CALENDAR_QUERY_CACHE:
+                    cached['queries'].pop(next(iter(cached['queries'])))
+                # Cache failures too; a frequent poll must not repeat expensive bad queries.
+                cached['queries'][query_key] = []
+                check_calendar_expansion(cached['calendar'], query_start, query_end)
+                components = recurring_ical_events.of(cached['calendar'], skip_bad_series=True).between(query_start, query_end)
+                if len(components) > MAX_CALENDAR_EVENTS:
+                    raise OverflowError('Calendar occurrence limit exceeded')
+                cached['queries'][query_key] = components
+            for component in cached['queries'][query_key]:
+                if component.get('dtstart') is None or str(component.get('status', '')).upper() == 'CANCELLED':
+                    continue
+                begins = component['dtstart'].dt
+                all_day = not isinstance(begins, datetime)
+                finishes = component.get('dtend')
+                finishes = finishes.dt if finishes is not None else begins + (timedelta(days=1) if all_day else timedelta())
+                uid = str(component.get('uid', '')) or hashlib.sha256(component.to_ical()).hexdigest()
+                event = calendar_event(source['id'], uid, str(component.get('summary', '')),
+                                       begins, finishes, all_day, start)
+                if calendar_event_overlaps(event, start, end):
+                    events.append(event)
+        except Exception as error:
+            cached['error'] = 'event_limit' if isinstance(error, OverflowError) else 'invalid_feed'
+            app.logger.warning('Calendar events failed (%s)', type(error).__name__)
+    return sorted(events, key=lambda event: (event['starts_at'], event['source_id'], event['uid']))
+
+
+def template_context():
+    language = display_settings.get('language', DEFAULT_LANGUAGE)
+    if language not in SUPPORTED_LANGUAGES:
+        language = DEFAULT_LANGUAGE
+    return {
+        'language': language,
+        'languages': SUPPORTED_LANGUAGES,
+        'translations': UI_TRANSLATIONS,
+    }
+
+
+@app.route('/')
+def index():
+    context = template_context()
+    keys = ('app_title', 'loading', 'notice_close', 'weekdays', 'countdown', 'page_error',
+            'standard_time_unavailable', 'status_parse_failed', 'server_unavailable', 'server_timeout',
+            'offline_ready', 'offline_unavailable', 'offline_failed')
+    context['translations'] = {
+        language: {key: value for key, value in pack.items() if key in keys or key.startswith('alarm_')}
+        for language, pack in context['translations'].items()
+    }
+    return render_template('index.html', **context)
+
+
+@app.route('/admin')
+def admin(error=None, editing_id=None):
+    return render_template(
+        'admin.html',
+        notes=load_notes(),
+        settings={'night': DEFAULT_NIGHT, **display_settings},
+        error=error,
+        editing_id=editing_id,
+        **template_context()
+    )
+
+
+@app.route('/api/control', methods=['POST'])
+def control():
+    try:
+        changes = validate_settings(request.get_json())
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid settings'}), 400
+    with settings_lock:
+        updated = dict(display_settings, **changes)
+        try:
+            save_display_settings(updated)
+        except OSError:
+            app.logger.exception('Could not save display settings')
+            return jsonify({'error': 'Could not save settings'}), 500
+        display_settings.update(updated)
+        return jsonify({'status': 'ok', 'settings': display_settings})
+
+
+@app.route('/api/calendar', methods=['GET', 'POST', 'PATCH'])
+def calendar_settings():
+    if request.headers.get('Origin', request.host_url.rstrip('/')) != request.host_url.rstrip('/'):
+        abort(403)
+    with settings_lock:
+        try:
+            current = load_calendar_settings()
+        except (OSError, ValueError, KeyError):
+            return jsonify(error='load_failed'), 500
+        if request.method == 'GET':
+            return jsonify(calendar_settings_response(current))
+        data = request.get_json(silent=True)
+        try:
+            if not isinstance(data, dict):
+                raise ValueError('Invalid calendar settings')
+            if request.method == 'PATCH':
+                if not data or set(data) - {'local_display_enabled', 'sources'}:
+                    raise ValueError('Invalid visibility settings')
+                updated = current
+                changes = data.get('sources', [])
+                if not isinstance(changes, list) or len(changes) > MAX_CALENDAR_SOURCES:
+                    raise ValueError('Invalid visibility sources')
+                by_id = {source['id']: source for source in updated['sources']}
+                seen = set()
+                for change in changes:
+                    if (not isinstance(change, dict) or set(change) != {'id', 'display_enabled'}
+                            or not isinstance(change['id'], str) or change['id'] not in by_id
+                            or change['id'] in seen or type(change['display_enabled']) is not bool):
+                        raise ValueError('Invalid visibility source')
+                    seen.add(change['id'])
+                    by_id[change['id']]['display_enabled'] = change['display_enabled']
+            elif set(data) == {'url'}:
+                # A legacy client edits the first subscription without deleting later sources.
+                updated = current
+                url = normalize_calendar_url(data['url'])
+                if url and updated['sources']:
+                    updated['sources'][0]['url'] = url
+                elif url:
+                    updated['sources'] = [dict(id='legacy', name='Calendar', provider=calendar_provider(url),
+                                               url=url, display_enabled=True)]
+                elif updated['sources']:
+                    updated['sources'].pop(0)
+            else:
+                if 'sources' not in data or set(data) - {'sources', 'local_display_enabled', 'url', 'errors'}:
+                    raise ValueError('Invalid calendar settings')
+                updated = dict(sources=validate_calendar_sources(data['sources'], create_ids=True),
+                               local_display_enabled=current['local_display_enabled'])
+            if 'local_display_enabled' in data:
+                if type(data['local_display_enabled']) is not bool:
+                    raise ValueError('Invalid local display flag')
+                updated['local_display_enabled'] = data['local_display_enabled']
+        except (ValueError, TypeError):
+            return jsonify(error='invalid_url' if isinstance(data, dict) and set(data) == {'url'} else 'invalid_settings'), 400
+        try:
+            save_json(Path(SETTINGS_FILE).parent / 'calendar.json', updated)
+        except OSError:
+            return jsonify(error='save_failed'), 500
+        return jsonify(status='ok', **calendar_settings_response(updated))
+
+
+@app.route('/add', methods=['POST'])
+def add():
+    try:
+        note = note_from_form()
+    except (ValueError, TypeError):
+        return admin(error='window_error'), 400
+    save_note(note['text'], note['due_date'], note['display_start'], note['display_end'],
+              note['display_mode'], note['weekdays'])
+    return redirect(url_for('admin', _anchor='calendar-title'))
+
+
+@app.route('/schedule/<int:id>', methods=['POST'])
+def schedule(id):
+    with settings_lock:
+        notes = load_notes()
+        note = next((note for note in notes if note['id'] == id), None)
+        if note is None:
+            abort(404)
+        try:
+            updated = note_from_form(note)
+        except (ValueError, TypeError):
+            return admin(error='window_error', editing_id=id), 400
+        note.update(updated)
+        save_json(NOTES_FILE, notes)
+    return redirect(url_for('admin', _anchor='calendar-title'))
+
+
+@app.route('/toggle/<int:id>', methods=['POST'])
+def toggle(id):
+    with settings_lock:
+        notes = load_notes()
+        note = next((note for note in notes if note['id'] == id), None)
+        if note is None:
+            abort(404)
+        note['enabled'] = not note.get('enabled', True)
+        save_json(NOTES_FILE, notes)
+    return redirect(url_for('admin', _anchor='calendar-title'))
+
+
+@app.route('/api/backup', methods=['GET', 'POST'])
+def backup():
+    if request.headers.get('Origin', request.host_url.rstrip('/')) != request.host_url.rstrip('/'):
+        abort(403)
+    with settings_lock:
+        if request.method == 'GET':
+            response = jsonify(version=1, settings=display_settings, notes=load_notes())
+            response.headers['Content-Disposition'] = 'attachment; filename="webclock-backup.json"'
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+        if request.content_length is None or request.content_length > 1024 * 1024:
+            return jsonify(error='Backup too large'), 413
+        try:
+            data = request.get_json()
+            if not isinstance(data, dict) or set(data) != {'version', 'settings', 'notes'} or type(data['version']) is not int or data['version'] != 1:
+                raise ValueError('Unknown backup format')
+            settings = dict(DEFAULT_SETTINGS, **validate_settings(data['settings']))
+            if not {'mode', 'brightness', 'timezone_offset', 'language'} <= set(data['settings']):
+                raise ValueError('Incomplete settings')
+            if not isinstance(data['notes'], list) or len(data['notes']) > 1000:
+                raise ValueError('Invalid notes')
+            notes = [validate_note(note) for note in data['notes']]
+            ids = [note.get('id') for note in notes]
+            if any(type(i) is not int or i < 1 for i in ids) or len(set(ids)) != len(ids):
+                raise ValueError('Invalid reminder IDs')
+        except (ValueError, TypeError, KeyError):
+            return jsonify(error='Invalid backup'), 400
+        previous_notes = load_notes()
+        try:
+            # Retain the previous data even if interrupted between the two file replacements.
+            save_json(os.path.join(os.path.dirname(SETTINGS_FILE), 'before-import.json'),
+                      dict(version=1, settings=display_settings, notes=previous_notes))
+            save_json(NOTES_FILE, notes)
+            try:
+                save_display_settings(settings)
+            except OSError:
+                save_json(NOTES_FILE, previous_notes)
+                raise
+        except OSError:
+            app.logger.exception('Backup restore failed; previous data retained in before-import.json')
+            return jsonify(error='Could not restore backup'), 500
+        display_settings.clear()
+        display_settings.update(settings)
+        return jsonify(status='ok')
+
+
+@app.route('/sw.js')
+def service_worker():
+    response = send_from_directory(app.root_path, 'sw.js', mimetype='application/javascript')
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.route('/delete/<int:id>')
+def delete(id):
+    delete_note(id)
+    return redirect(url_for('admin', _anchor='calendar-title'))
+
+
+@app.route('/api/status')
+def status():
+    now = get_local_now()
+    server_timestamp = int(now.timestamp() * 1000)
+    is_holiday = holiday_service.is_holiday(now.date())
+
+    manual_events = []
+    upcoming = []
+    try:
+        show_local = load_calendar_settings()['local_display_enabled']
+    except (OSError, ValueError, KeyError):
+        show_local = True
+    for note in load_notes() if show_local else []:
+        try:
+            if note_visible(note, now):
+                due = note.get('due_date', '')
+                manual_events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else ''})
+            candidate = next_note_time(note, now)
+            if candidate:
+                upcoming.append({'text': note['text'], 'starts_at': int(candidate.timestamp() * 1000)})
+        except (ValueError, TypeError):
+            continue
+
+    smart_event = next_event(read_schedules(Path(SETTINGS_FILE).parent), holiday_service, now, get_calendar_events)
+    if smart_event:
+        upcoming.append({'text': smart_event['name'],
+                         'starts_at': int(datetime.fromisoformat(smart_event['datetime']).timestamp() * 1000)})
+
+    calendar_events = get_calendar_events()
+    for event in calendar_events:
+        if not event.get('all_day') and (event.get('starts_at') or 0) > server_timestamp:
+            upcoming.append({'text': event['text'], 'starts_at': event['starts_at']})
+    all_events = [{'text': event['text'], 'time': event['time']} for event in calendar_events] + manual_events
+    all_events.sort(key=lambda event: event['time'] or '99:99')
+
+    return jsonify({
+        # Calendar I/O may take time; do not send the clock's pre-fetch timestamp.
+        'server_timestamp': int(get_local_now().timestamp() * 1000),
+        'is_holiday': is_holiday,
+        'events': all_events,
+        'next_event': min(upcoming, key=lambda event: event['starts_at']) if upcoming else None,
+        'settings': display_settings,
+    })
+
+
+register_api(app, lambda: Path(SETTINGS_FILE).parent, holiday_service, template_context,
+             calendar_events=lambda **query: get_calendar_events(**query),
+             calendar_sources=lambda: get_calendar_sources())
+
+
+def main():
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('HOST', '0.0.0.0')
+    app.run(host=host, port=port)

@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,17 @@ class ClockFeaturesTest(unittest.TestCase):
         now = datetime.fromisoformat(value).replace(tzinfo=timezone(timedelta(hours=8)))
         with patch.object(clock, 'get_local_now', return_value=now), patch.object(clock, 'get_calendar_events', return_value=[]):
             return self.client.get('/api/status').json
+
+    def test_clock_keeps_language_switching_without_management_labels(self):
+        page = self.client.get('/').text
+        labels = json.loads(re.search(r'var I18N = (.*);', page).group(1))
+        self.assertEqual(set(labels), set(clock.SUPPORTED_LANGUAGES))
+        for language, pack in labels.items():
+            self.assertNotIn('calendar_url', pack)
+            self.assertNotIn('backup_title', pack)
+            for key in ['weekdays', 'countdown', 'offline_ready', 'offline_unavailable', 'offline_failed']:
+                self.assertEqual(pack[key], clock.UI_TRANSLATIONS[language][key])
+        self.assertIn('calendar_url', self.client.get('/admin').text)
 
     def test_weekday_overnight_edit_pause_and_countdown(self):
         fields = dict(note_text='garbage', display_mode='daily', display_start='22:00', display_end='06:00',
@@ -120,10 +132,8 @@ class ClockFeaturesTest(unittest.TestCase):
         now = datetime(2026, 9, 17, 9, 45, tzinfo=timezone(timedelta(hours=8)))
         with patch.object(clock, 'get_local_now', return_value=now), \
              patch.object(clock, 'ICAL_URL', 'https://calendar.example/test.ics'), \
-             patch.object(clock, 'last_google_fetch_time', 0), \
-             patch.object(clock, 'last_google_fetch_date', None), \
-             patch.object(clock, 'cached_google_events', []), \
-             patch.object(clock.requests, 'get', return_value=SimpleNamespace(content=payload)):
+             patch.object(clock, 'calendar_feed_cache', {}), \
+             patch.object(clock.requests, 'get', return_value=SimpleNamespace(content=payload, raise_for_status=lambda: None)):
             data = self.client.get('/api/status').json
         self.assertEqual(data['next_event'], {'text': 'Call', 'starts_at': int(now.timestamp() * 1000) + 900000})
         self.assertEqual(data['events'], [{'text': 'Call', 'time': '10:00'}, {'text': 'Holiday', 'time': ''}])

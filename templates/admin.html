@@ -5,208 +5,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ translations[language].admin_title }}</title>
-    <style>
-        * { box-sizing: border-box; }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            padding: 20px;
-            max-width: 640px;
-            margin: 0 auto;
-            background: #f5f5f7;
-            color: #1d1d1f;
-        }
-
-        h2,
-        h3 {
-            margin: 0 0 14px;
-        }
-
-        .control-panel,
-        .input-group,
-        li {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-        }
-
-        .control-panel {
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .btn {
-            flex: 1;
-            min-height: 44px;
-            padding: 10px 12px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: 0.2s;
-            background: #e7e7ea;
-            color: #1d1d1f;
-        }
-
-        .btn.active {
-            background: #007bff;
-            color: white;
-        }
-
-        .btn-black {
-            background: #333;
-            color: white;
-        }
-
-        .btn-black.active {
-            background: #000;
-            box-shadow: inset 0 0 0 2px #007bff;
-        }
-
-        .field {
-            margin-top: 15px;
-        }
-
-        .field label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-
-        .slider-container {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        input[type=range] {
-            flex: 1;
-            height: 6px;
-        }
-
-        input[type="text"],
-        input[type="date"],
-        input[type="time"],
-        input[type="datetime-local"],
-        select {
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-            border: 1px solid #d2d2d7;
-            border-radius: 8px;
-            background: white;
-        }
-
-        .input-group {
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .submit-btn {
-            padding: 12px;
-            font-size: 16px;
-            background: #28a745;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-
-        ul {
-            list-style: none;
-            padding: 0;
-        }
-
-        li {
-            margin-top: 10px;
-            padding: 15px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
-        }
-
-        .note-text {
-            overflow-wrap: anywhere;
-            min-width: 0;
-            flex: 1;
-        }
-
-        fieldset {
-            margin: 10px 0 0;
-            padding: 0;
-            border: 0;
-            min-width: 0;
-        }
-
-        legend { margin-bottom: 10px; font-weight: 600; }
-        .window-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-        .window-fields label { display: block; margin-bottom: 6px; }
-        .window-fields input { min-width: 0; }
-        details { width: 100%; min-width: 0; }
-        summary { cursor: pointer; }
-        .weekday-options { display: flex; flex-wrap: wrap; gap: 8px 12px; }
-        .weekday-options label { display: flex; align-items: center; gap: 5px; min-height: 32px; }
-        .weekday-options input { width: auto; }
-        .help { color: #646469; font-size: 14px; line-height: 1.5; }
-        button, summary, a { touch-action: manipulation; }
-        input[type="file"] { max-width: 100%; }
-        .note-actions { display: flex; align-items: center; gap: 8px; }
-        .paused { border-left: 4px solid #888; }
-        .window-tag { display: block; margin-top: 6px; font-size: 13px; color: #555; }
-        .form-error { color: #b42318; }
-
-        @media (max-width: 520px) {
-            .window-fields { grid-template-columns: minmax(0, 1fr); }
-        }
-
-        .time-tag {
-            font-size: 12px;
-            color: #6e6e73;
-            background: #eee;
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-right: 8px;
-        }
-
-        .delete-btn {
-            background: #ff3b30;
-            color: white;
-            text-decoration: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            white-space: nowrap;
-        }
-    </style>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
 </head>
 
-<body>
+<body class="management" data-management-page="admin" data-initial-panel="{{ 'calendar' if error else 'display' }}">
+    {% include 'management_nav.html' %}
     {% macro window_fields(values, suffix) %}
     <fieldset>
         <legend data-i18n="display_window">{{ translations[language].display_window }}</legend>
         {% set mode = values.get('display_mode', 'range') %}
         <label for="display-mode-{{ suffix }}" data-i18n="display_mode">{{ translations[language].display_mode }}</label>
-        <select id="display-mode-{{ suffix }}" name="display_mode" onchange="setWindowMode(this)" style="margin: 6px 0 10px;">
+        <select id="display-mode-{{ suffix }}" name="display_mode" onchange="setWindowMode(this)">
             <option value="range" {% if mode == 'range' %}selected{% endif %} data-i18n="range_mode">{{ translations[language].range_mode }}</option>
             <option value="daily" {% if mode == 'daily' %}selected{% endif %} data-i18n="daily_mode">{{ translations[language].daily_mode }}</option>
         </select>
-        <div class="window-fields">
-            <div>
+        <div class="window-fields fields">
+            <div class="field">
                 <label for="display-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
                 <input id="display-start-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_start" value="{{ values.get('display_start', '') }}">
             </div>
-            <div>
+            <div class="field">
                 <label for="display-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
                 <input id="display-end-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_end" value="{{ values.get('display_end', '') }}">
             </div>
@@ -226,34 +45,53 @@
     </fieldset>
     {% endmacro %}
     {% macro note_fields(values, suffix) %}
+        <div class="field">
         <label for="note-text-{{ suffix }}" data-i18n="event_text">{{ translations[language].event_text }}</label>
         <input id="note-text-{{ suffix }}" type="text" name="note_text" maxlength="1000" value="{{ values.get('note_text', values.get('text', '')) }}" required>
+        </div>
+        <div class="fields">
+        <div class="field">
         <label for="note-date-{{ suffix }}" data-i18n="date_optional">{{ translations[language].date_optional }}</label>
         <input id="note-date-{{ suffix }}" type="date" name="note_date" value="{{ values.get('note_date', values.get('due_date', '')[:10]) }}">
+        </div>
+        <div class="field">
         <label for="note-time-{{ suffix }}" data-i18n="time_optional">{{ translations[language].time_optional }}</label>
         <input id="note-time-{{ suffix }}" type="time" name="note_time" value="{{ values.get('note_time', values.get('due_date', '')[11:]) }}">
+        </div>
+        </div>
     {% endmacro %}
-    <h2 data-i18n="admin_title">{{ translations[language].admin_title }}</h2>
-    <div class="control-panel">
-        <h3 data-i18n="display_control">{{ translations[language].display_control }}</h3>
-        <div class="btn-group">
-            <button class="btn {% if settings.mode == 'normal' %}active{% endif %}" onclick="setMode('normal')"
+    <main id="management-main" class="management-content" tabindex="-1">
+    <section class="management-panel{{ ' is-current' if not error else '' }}" data-management-panel="display" aria-labelledby="display-title">
+        <div class="page-heading">
+            <div>
+                <h1 id="display-title" class="page-title" data-i18n="management_display">{{ translations[language].management_display }}</h1>
+                <p class="page-description" data-i18n="management_display_hint">{{ translations[language].management_display_hint }}</p>
+            </div>
+        </div>
+    <div class="panel">
+        <h2 data-i18n="display_control">{{ translations[language].display_control }}</h2>
+        <div class="fields">
+        <div class="field">
+        <div id="display-mode-controls" class="mode-controls">
+            <button id="mode-normal" type="button" class="btn {% if settings.mode == 'normal' %}active{% endif %}" onclick="setMode('normal')" aria-pressed="{{ 'true' if settings.mode == 'normal' else 'false' }}"
                 data-i18n="normal_display">{{ translations[language].normal_display }}</button>
-            <button class="btn btn-black {% if settings.mode == 'black' %}active{% endif %}" onclick="setMode('black')"
+            <button id="mode-black" type="button" class="btn btn-black {% if settings.mode == 'black' %}active{% endif %}" onclick="setMode('black')" aria-pressed="{{ 'true' if settings.mode == 'black' else 'false' }}"
                 data-i18n="black_screen">{{ translations[language].black_screen }}</button>
         </div>
-
+        </div>
         <div class="field">
-            <label><span data-i18n="brightness">{{ translations[language].brightness }}</span>: <span
+            <label for="brightness-control"><span data-i18n="brightness">{{ translations[language].brightness }}</span>: <span
                     id="bright-val">{{ settings.brightness }}</span>%</label>
             <div class="slider-container">
                 <span data-i18n="dark">{{ translations[language].dark }}</span>
-                <input type="range" min="0" max="100" value="{{ settings.brightness }}"
+                <input id="brightness-control" type="range" min="0" max="100" value="{{ settings.brightness }}"
                     oninput="setBrightness(this.value)">
                 <span data-i18n="bright">{{ translations[language].bright }}</span>
             </div>
         </div>
 
+        </div>
+        <div class="fields">
         <div class="field">
             <label for="timezone-select" data-i18n="timezone">{{ translations[language].timezone }}</label>
             <select id="timezone-select" onchange="setTimezone(this.value)">
@@ -295,42 +133,64 @@
                 {% endfor %}
             </select>
         </div>
+        </div>
     </div>
 
-    <form class="control-panel" id="night-form" onsubmit="event.preventDefault(); saveNight()">
-        <h3 data-i18n="night_title">{{ translations[language].night_title }}</h3>
-        <label><input id="night-enabled" type="checkbox" {% if settings.night.enabled %}checked{% endif %}> <span data-i18n="night_enabled">{{ translations[language].night_enabled }}</span></label>
-        <div class="window-fields field">
-            <div><label for="night-start" data-i18n="night_start">{{ translations[language].night_start }}</label><input id="night-start" type="time" value="{{ settings.night.start }}" required></div>
-            <div><label for="night-end" data-i18n="night_end">{{ translations[language].night_end }}</label><input id="night-end" type="time" value="{{ settings.night.end }}" required></div>
+    <form class="panel" id="night-form" onsubmit="event.preventDefault(); saveNight()">
+        <h2 data-i18n="night_title">{{ translations[language].night_title }}</h2>
+        <label class="check"><input id="night-enabled" type="checkbox" {% if settings.night.enabled %}checked{% endif %}> <span data-i18n="night_enabled">{{ translations[language].night_enabled }}</span></label>
+        <div class="window-fields fields">
+            <div class="field"><label for="night-start" data-i18n="night_start">{{ translations[language].night_start }}</label><input id="night-start" type="time" value="{{ settings.night.start }}" required></div>
+            <div class="field"><label for="night-end" data-i18n="night_end">{{ translations[language].night_end }}</label><input id="night-end" type="time" value="{{ settings.night.end }}" required></div>
         </div>
         <div class="field">
             <label for="night-brightness"><span data-i18n="night_brightness">{{ translations[language].night_brightness }}</span>: <output id="night-value">{{ settings.night.brightness }}</output>%</label>
             <input id="night-brightness" type="range" min="0" max="100" value="{{ settings.night.brightness }}" oninput="document.getElementById('night-value').textContent = this.value">
         </div>
-        <label><input id="night-black" type="checkbox" {% if settings.night.black %}checked{% endif %}> <span data-i18n="night_black">{{ translations[language].night_black }}</span></label>
+        <label class="check"><input id="night-black" type="checkbox" {% if settings.night.black %}checked{% endif %}> <span data-i18n="night_black">{{ translations[language].night_black }}</span></label>
         <p class="help" data-i18n="night_hint">{{ translations[language].night_hint }}</p>
-        <button class="submit-btn" type="submit" data-i18n="save">{{ translations[language].save }}</button>
-        <span id="night-status" role="status"></span>
+        <div class="actions">
+            <button class="primary" type="submit" data-i18n="save">{{ translations[language].save }}</button>
+            <span id="night-status" role="status"></span>
+        </div>
     </form>
 
-    <hr style="border: 0; border-top: 1px solid #ddd; margin: 30px 0;">
+    </section>
 
+    <section class="management-panel{{ ' is-current' if error else '' }}" data-management-panel="calendar" aria-labelledby="calendar-title">
+    <div class="page-heading">
+        <div>
+            <h1 id="calendar-title" class="page-title" data-i18n="calendar_title">{{ translations[language].calendar_title }}</h1>
+            <p class="page-description" data-i18n="calendar_hint">{{ translations[language].calendar_hint }}</p>
+        </div>
+    </div>
+    <form id="calendar-display-form" class="panel calendar-display-settings">
+        <h2 data-i18n="calendar_display_sources">{{ translations[language].calendar_display_sources }}</h2>
+        <p class="help" data-i18n="calendar_display_hint">{{ translations[language].calendar_display_hint }}</p>
+        <fieldset id="calendar-display-fields" disabled>
+            <div id="calendar-display-list" class="calendar-display-list"></div>
+            <div class="actions"><button id="calendar-display-save" type="submit" data-i18n="calendar_save_display">{{ translations[language].calendar_save_display }}</button></div>
+        </fieldset>
+        <p id="calendar-display-status" role="status" aria-live="polite" data-i18n="loading">{{ translations[language].loading }}</p>
+        <p id="calendar-source-errors" class="form-error" role="status" aria-live="polite"></p>
+        <button id="calendar-retry" type="button" data-i18n="calendar_retry" hidden>{{ translations[language].calendar_retry }}</button>
+    </form>
+    <section class="panel">
     <h2 data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
+    <p class="help" data-i18n="manual_events_hint">{{ translations[language].manual_events_hint }}</p>
     {% if error %}<p class="form-error" role="alert" data-i18n="{{ error }}">{{ translations[language][error] }}</p>{% endif %}
-    <div class="input-group">
         {% set draft = request.form if request.endpoint == 'add' else {} %}
-        <form action="/add" method="POST" style="display: flex; flex-direction: column; gap: 10px;">
+        <form action="/add" method="POST">
             {{ note_fields(draft, 'add') }}
             {{ window_fields(draft, 'add') }}
-            <button type="submit" class="submit-btn" data-i18n="add">{{ translations[language].add }}</button>
+            <div class="actions"><button type="submit" class="primary" data-i18n="add">{{ translations[language].add }}</button></div>
         </form>
-    </div>
+    </section>
 
-    <h3 style="margin-top: 24px;" data-i18n="current_list">{{ translations[language].current_list }}</h3>
-    <ul>
+    <h2 class="section-title" data-i18n="current_list">{{ translations[language].current_list }}</h2>
+    <ul class="note-list cards">
         {% for note in notes %}
-        <li class="{{ 'paused' if not note.get('enabled', True) else '' }}">
+        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}">
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
@@ -344,33 +204,69 @@
             </div>
             <div class="note-actions">
                 <form action="/toggle/{{ note.id }}" method="POST"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
-            <a href="/delete/{{ note.id }}" class="delete-btn" data-i18n="delete">{{ translations[language].delete }}</a>
+            <a href="/delete/{{ note.id }}" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</a>
             </div>
             <details {% if editing_id == note.id %}open{% endif %}>
                 <summary data-i18n="edit_note">{{ translations[language].edit_note }}</summary>
                 <form action="/schedule/{{ note.id }}" method="POST">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
-                    <button type="submit" class="submit-btn" data-i18n="save">{{ translations[language].save }}</button>
+                    <div class="actions"><button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button></div>
                 </form>
             </details>
         </li>
         {% else %}
-        <li style="justify-content: center; color: #999;" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
+        <li class="empty" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
         {% endfor %}
     </ul>
+    <details id="calendar-source-settings" class="panel calendar-source-settings">
+        <summary>
+            <span data-i18n="calendar_sources">{{ translations[language].calendar_sources }}</span>
+            <span id="calendar-source-summary" role="status" aria-live="polite"></span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+    <form id="calendar-form">
+        <fieldset id="calendar-source-fields" disabled>
+            {% for provider in ['apple', 'google', 'ics'] %}
+            <section class="calendar-provider" aria-labelledby="calendar-provider-{{ provider }}">
+                <h3 id="calendar-provider-{{ provider }}" data-i18n="calendar_provider_{{ provider }}">{{ translations[language]['calendar_provider_' + provider] }}</h3>
+                <p class="help" data-i18n="calendar_help_{{ provider }}">{{ translations[language]['calendar_help_' + provider] }}</p>
+                <div id="calendar-sources-{{ provider }}" class="calendar-source-list"></div>
+                <button type="button" data-calendar-add="{{ provider }}" data-i18n="calendar_add_source">{{ translations[language].calendar_add_source }}</button>
+            </section>
+            {% endfor %}
+            <p class="help" data-i18n="calendar_privacy">{{ translations[language].calendar_privacy }}</p>
+            <div class="actions"><button id="calendar-save" type="submit" class="primary" data-i18n="calendar_save_sources">{{ translations[language].calendar_save_sources }}</button></div>
+        </fieldset>
+        <p id="calendar-status" role="status" aria-live="polite"></p>
+    </form>
+    </details>
+    </section>
 
-    <section class="control-panel">
-        <h3 data-i18n="backup_title">{{ translations[language].backup_title }}</h3>
-        <p class="help" data-i18n="backup_hint">{{ translations[language].backup_hint }}</p>
-        <p><a href="/api/backup" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
+    <section class="management-panel" data-management-panel="backup" aria-labelledby="backup-title">
+        <div class="page-heading">
+            <div>
+                <h1 id="backup-title" class="page-title" data-i18n="backup_title">{{ translations[language].backup_title }}</h1>
+                <p class="page-description" data-i18n="backup_hint">{{ translations[language].backup_hint }}</p>
+            </div>
+        </div>
+        <section class="panel">
+        <h2 data-i18n="backup_export">{{ translations[language].backup_export }}</h2>
+        <p><a class="btn primary" href="/api/backup" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
+        </section>
+        <section class="panel">
+        <h2 data-i18n="backup_import">{{ translations[language].backup_import }}</h2>
         <form onsubmit="event.preventDefault(); importBackup()">
+            <div class="field">
             <label for="backup-file" data-i18n="backup_file">{{ translations[language].backup_file }}</label>
             <input id="backup-file" type="file" accept=".json,application/json" required>
-            <button id="backup-submit" class="submit-btn" type="submit" data-i18n="backup_import">{{ translations[language].backup_import }}</button>
+            </div>
+            <div class="actions"><button id="backup-submit" class="primary" type="submit" data-i18n="backup_import">{{ translations[language].backup_import }}</button></div>
             <p id="backup-status" role="status"></p>
         </form>
+        </section>
     </section>
+    </main>
 
     <script>
         var I18N = {{ translations | tojson }};
@@ -395,6 +291,7 @@
         function applyLanguage() {
             document.documentElement.lang = currentLanguage;
             document.title = t('admin_title');
+            document.querySelector('.management-navigation').setAttribute('aria-label', t('management_navigation'));
             document.querySelectorAll('[data-i18n]').forEach(function (el) {
                 el.textContent = t(el.getAttribute('data-i18n'));
             });
@@ -404,6 +301,7 @@
             document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
                 el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
             });
+            if (window.CalendarSettings) window.CalendarSettings.applyLanguage();
         }
 
         function postSettings(payload) {
@@ -457,14 +355,12 @@
         }
 
         function setMode(mode) {
-            document.querySelectorAll('.btn').forEach(function (button) {
-                button.classList.remove('active');
+            ['normal', 'black'].forEach(function (value) {
+                var button = document.getElementById('mode-' + value);
+                var selected = mode === value;
+                button.classList.toggle('active', selected);
+                button.setAttribute('aria-pressed', String(selected));
             });
-            if (mode === 'normal') {
-                document.querySelector('.btn:first-child').classList.add('active');
-            } else {
-                document.querySelector('.btn-black').classList.add('active');
-            }
             postSettings({ mode: mode });
         }
 
@@ -484,6 +380,8 @@
             postSettings({ language: language });
         }
     </script>
+    <script defer src="{{ url_for('static', filename='calendar-settings.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='management.js') }}"></script>
 </body>
 
 </html>

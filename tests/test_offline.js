@@ -54,7 +54,11 @@ async function checkScope(scope) {
         assert.equal(await (await fetchPage(scope + 'index.html')).text(), 'fresh:' + scope);
         assert.ok((await (await fetchPage(scope + 'static/clock.js')).text()).startsWith('installed:'));
     }
-    for (const path of ['admin', 'api/status', 'api/backup', 'private.ics', 'unknown']) {
+    for (const path of ['admin', 'api/status', 'api/backup', 'private.ics', 'unknown',
+        'schedules', 'static/schedules.js', 'static/schedules.css', 'api/v1/schedules',
+        'static/alarms.js', 'static/alarm-audio.js', 'api/v1/browser-alarms',
+        'static/management.js', 'static/management.css', 'static/calendar-settings.js', 'api/calendar',
+        'api/v1/device/config', 'api/v1/device/schedules', 'api/v1/devices']) {
         assert.equal(await fetchPage(scope + path), undefined, path);
     }
     assert.equal(await fetchPage(scope, 'POST'), undefined);
