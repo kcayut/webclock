@@ -39,7 +39,8 @@ class ClockFeaturesTest(unittest.TestCase):
         for language, pack in labels.items():
             self.assertNotIn('calendar_url', pack)
             self.assertNotIn('backup_title', pack)
-            for key in ['weekdays', 'countdown', 'offline_ready', 'offline_unavailable', 'offline_failed']:
+            self.assertNotIn('countdown', pack)
+            for key in ['weekdays', 'offline_ready', 'offline_unavailable', 'offline_failed']:
                 self.assertEqual(pack[key], clock.UI_TRANSLATIONS[language][key])
         self.assertIn('calendar_url', self.client.get('/admin').text)
 

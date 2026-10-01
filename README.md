@@ -37,7 +37,7 @@ WebClock 最初為初代 iPad mini 設計，時鐘頁持續以舊平板能簡單
 | 亮度、黑畫面、假日標示 | — | ✓ |
 | 顯示語言 | 繁體中文 | 繁中、簡中、英文、日文 |
 | 離線重新開啟 | ✓（先連線準備） | HTTPS 或 localhost，先連線準備 |
-| 自動夜間模式、星期提醒、行程倒數、備份還原 | — | ✓ |
+| 自動夜間模式、星期提醒、備份還原 | — | ✓ |
 | 需要主機 | 不需要 | 電腦、NAS、Raspberry Pi 等 |
 
 <a id="self-hosting"></a>
@@ -118,7 +118,7 @@ python app.py
 
 手動提醒可設定指定日期時間，或每週／每日固定顯示時段。固定時段可勾選星期；不勾選代表每天。跨午夜的時段歸屬開始的那一天，例如週一 22:00 至週二 06:00，只需勾選星期一。每天時段支援跨午夜，例如 22:00 至隔天 06:00。開始與結束不可相同；兩欄清空可取消時段限制。時段依後台時區計算，包含開始時間、不包含結束時間。到期提醒只隱藏，不會刪除；一般會在約 5 秒內更新畫面。
 
-未設定時段的提醒，有日期時只在當天顯示，沒有日期則持續顯示。設定時段後，以時段決定顯示範圍。這些限制適用於後台手動提醒。「編輯提醒」可修改文字、日期、時間及顯示區間；「暫停」會保留內容，但停止顯示與倒數，按「恢復」即可啟用。
+未設定時段的提醒，有日期時只在當天顯示，沒有日期則持續顯示。設定時段後，以時段決定顯示範圍。這些限制適用於後台手動提醒。「編輯提醒」可修改文字、日期、時間及顯示區間；「暫停」會保留內容，但停止顯示，按「恢復」即可啟用。
 
 自架時鐘載入後若暫時失去伺服器連線，會使用可用的時間基準、瀏覽器保存的顯示設定及本機提醒繼續運作。訂閱行事曆與伺服器提醒會在重新連線後恢復。畫面右下角的連線按鈕可設定伺服器網址並重新連線。
 
@@ -135,11 +135,11 @@ python app.py
 
 時鐘頁約每 15 秒更新每個鬧鐘的下次時間。短暫斷線時，已載入的下次鬧鐘仍可觸發；重新開頁或取得後續週期需恢復連線。超過 60 秒才恢復處理的過期鬧鐘不會補響。假日資料超出涵蓋範圍時，依賴假日的鬧鐘不猜測日期；可在管理頁查看資料範圍。
 
-### 夜間模式、倒數與離線使用
+### 夜間模式與離線使用
 
 在後台啟用「自動夜間模式」，設定開始、恢復日間時間與夜間亮度，也可選擇夜間黑畫面。排程依後台時區每天執行，包含開始、不包含結束；日間恢復原本亮度，手動黑畫面優先。這是網頁顯示調整，不會改變裝置背光或自動鎖定設定。斷線時會沿用瀏覽器保存的排程。
 
-提醒區下方會顯示下一個行程還有幾分鐘。指定日期提醒使用其提醒時間（未填時間時可使用顯示區間的開始）；每週／每日提醒使用下一次顯示時段的開始；訂閱行事曆使用當日有時間的行程。全天事項不以午夜倒數。暫停的提醒不參與倒數。
+手動提醒依設定的顯示區間、星期與啟用狀態顯示在時鐘頁。
 
 自架版的離線準備狀態在右下角連線面板中。離線重新開啟需要支援的瀏覽器，以及 HTTPS 或本機 localhost；一般 `http://區網IP` 不支援這項快取，但已載入的頁面仍可繼續計時。快取只包含時鐘頁面與顯示資源，不包含後台、API、私人日曆或伺服器提醒。斷線時仍使用原有瀏覽器本機提醒，重新連線才恢復伺服器資料。
 
@@ -219,7 +219,7 @@ On the iPad clock page, tap the bell to enable sound and hear a short confirmati
 
 The page refreshes each alarm's next occurrence about every 15 seconds. A loaded next occurrence can fire during a brief disconnection, but reopening the page or loading later occurrences requires a connection. Alarms processed over 60 seconds late are not replayed. Holiday-dependent alarms do not guess dates outside the available calendar coverage.
 
-Automatic night mode dims or blacks out the page on a daily schedule in the admin timezone, then restores daytime brightness. Manual black screen takes priority. It changes page appearance, not the hardware backlight. The next-event countdown uses dated reminder times, the next recurring window start, or today's timed calendar events; paused reminders and all-day calendar events are excluded.
+Automatic night mode dims or blacks out the page on a daily schedule in the admin timezone, then restores daytime brightness. Manual black screen takes priority. It changes page appearance, not the hardware backlight. Manual reminders appear according to their configured display windows, weekdays and enabled state.
 
 Offline reopening requires HTTPS or localhost and a completed online setup, shown in the connection panel. Plain LAN HTTP cannot prepare the offline cache. Only the clock shell is cached, never admin/API/calendar responses. Disconnected pages use cached display settings and browser-local reminders; server data returns on reconnection.
 

@@ -600,7 +600,7 @@ def template_context():
 @app.route('/')
 def index():
     context = template_context()
-    keys = ('app_title', 'loading', 'notice_close', 'weekdays', 'countdown', 'page_error',
+    keys = ('app_title', 'loading', 'notice_close', 'weekdays', 'page_error',
             'standard_time_unavailable', 'status_parse_failed', 'server_unavailable', 'server_timeout',
             'offline_ready', 'offline_unavailable', 'offline_failed')
     context['translations'] = {

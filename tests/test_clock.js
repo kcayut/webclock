@@ -76,40 +76,46 @@ settings.mode = 'normal';
 settings.night.start = '10:00'; settings.night.end = '12:00';
 assert.equal(context.clockDisplaySettings(settings, Date.parse('2026-09-17T03:00:00Z'), 8).brightness, 12);
 assert.equal(context.clockDisplaySettings(settings, Date.parse('2026-09-17T04:00:00Z'), 8).brightness, 80);
-assert.equal(context.clockCountdown({text: '$& meeting', starts_at: 900000}, 0, '{text} in {minutes} minutes'), '$& meeting in 15 minutes');
-assert.equal(context.clockCountdown({text: 'meeting', starts_at: 900000}, 899999, '{minutes}'), '1');
-assert.equal(context.clockCountdown({text: 'meeting', starts_at: 900000}, 900000, '{minutes}'), '');
-assert.equal(context.clockCountdown(null, 0, '{minutes}'), '');
-for (const starts_at of ['900000', null, NaN, Infinity]) {
-    assert.equal(context.clockCountdown({text: 'invalid', starts_at}, 0, '{minutes}'), '');
-}
-console.log('Night schedule boundaries, manual override, daytime restoration and countdown checks passed.');
+console.log('Night schedule boundaries, manual override and daytime restoration checks passed.');
 
 // Run the self-hosted page with the APIs available to an old, offline browser.
 const template = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
 const serverScript = template.match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace('{{ translations | tojson }}', JSON.stringify({'zh-TW': {
         weekdays: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
-        countdown: '{text}：{minutes} 分鐘',
     }}))
     .replace('{{ language | tojson }}', '"zh-TW"');
 function checkLegacyPage(failOptionalEditor) {
     const elements = {};
     const ticks = [];
-    const node = id => elements[id] || (elements[id] = {
-        style: {}, classList: {add() {}, remove() {}, toggle() {}},
-        querySelectorAll: () => [], querySelector: () => null,
-        setAttribute() {}, getAttribute: () => '',
-    });
+    function makeNode() {
+        const classes = new Set();
+        return {
+            style: {}, children: [],
+            classList: {
+                add: name => classes.add(name), remove: name => classes.delete(name),
+                toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
+                contains: name => classes.has(name),
+            },
+            appendChild(child) { this.children.push(child); },
+            removeChild(child) { this.children.splice(this.children.indexOf(child), 1); },
+            querySelectorAll(selector) { return this.children.filter(child => selector === '.event-row' && child.className === 'event-row'); },
+            querySelector: () => null,
+            setAttribute() {}, getAttribute: () => '',
+        };
+    }
+    const node = id => elements[id] || (elements[id] = makeNode());
     const legacy = vm.createContext({
         Date: DeviceDate, Intl: undefined, Promise: undefined, fetch: undefined,
         navigator: {},
         document: {
             body: node('body'), documentElement: {},
             getElementById(id) {
+                assert.notEqual(id, 'next-event', 'clock must not render a countdown outside reminder display windows');
                 if (failOptionalEditor && id === 'local-events-list') throw new Error('optional editor failed');
                 return node(id);
             },
+            createElement: makeNode,
             addEventListener() {}, querySelectorAll: () => [], querySelector: () => null,
         },
         window: {
@@ -138,9 +144,21 @@ function checkLegacyPage(failOptionalEditor) {
             next_event: {text: 'Meeting', starts_at: now + 300000}});
         assert.equal(node('clock-container').style.opacity, 0.35);
         assert.equal(node('list-container').style.opacity, 0.35);
-        assert.equal(node('next-event').textContent, 'Meeting：5 分鐘');
+        assert.equal(node('list-container').style.display, 'none');
+        assert.equal(node('body').classList.contains('has-events'), false);
+        assert.equal(elements['next-event'], undefined);
+        legacy.enterServerMode({events: [{text: 'Visible reminder', time: '08:10'}]});
+        assert.equal(node('list-container').style.display, 'block');
+        assert.equal(node('body').classList.contains('has-events'), true);
+        assert.equal(node('event-counter').textContent, '1 / 1');
+        assert.deepEqual(node('list-container').children[0].children[0].children.map(child => child.textContent),
+            ['08:10', 'Visible reminder']);
         legacy.enterStandaloneMode();
         tick.callback();
+        assert.equal(node('list-container').style.display, 'none');
+        assert.equal(node('body').classList.contains('has-events'), false);
+        assert.equal(node('list-container').children.length, 0);
+        assert.equal(elements['next-event'], undefined);
     }
     vm.runInContext(fs.readFileSync(path.join(root, 'static/offline.js'), 'utf8'), legacy);
     assert.match(node('time').textContent, /^\d\d:\d\d$/);
@@ -148,6 +166,7 @@ function checkLegacyPage(failOptionalEditor) {
 checkLegacyPage(false);
 checkLegacyPage(true);
 for (const page of [html, template]) {
+    assert.doesNotMatch(page, /id="next-event"/);
     assert.ok(page.indexOf('offline.js') > page.indexOf('setInterval(update'), 'optional offline script loads after clock startup');
 }
-console.log('Legacy startup checks passed: no modern APIs/storage/network response, optional UI failure, brightness and countdown.');
+console.log('Legacy startup checks passed: no modern APIs/storage/network response, optional UI failure, brightness and reminders without countdown.');

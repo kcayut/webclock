@@ -50,6 +50,7 @@
         #alarm-manage { color: #9cc7ff; }
         #connection-panel #alarm-motion { width: auto; }
         #list-container {
+            display: none;
             width: 95%;
             height: 25vh;
             flex-shrink: 0;
@@ -128,11 +129,6 @@
             opacity: 0 !important;
         }
 
-        #next-event {
-            position: absolute; bottom: 8px; left: 0; right: 24%;
-            color: #f39c12; font-size: 3.2vh; font-size: clamp(14px, 3.2vh, 26px);
-            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-        }
         #event-counter {
             position: absolute;
             bottom: 5px;
@@ -313,7 +309,6 @@
 
     <div id="list-container">
         <div id="event-counter"></div>
-        <div id="next-event"></div>
     </div>
 
     <div id="notice">
@@ -357,8 +352,6 @@
         var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
         var connectionMode = 'server';
         var activeSettings = {};
-        var nextEvent = null;
-        var visibleEvents = [];
         var lastServerStatus = 'Connecting...';
 
         function t(key) {
@@ -533,32 +526,8 @@
             renderClock(getClockUtcMs(), timezoneOffset, t('weekdays'));
             applyDisplay();
             if (connectionMode === 'standalone') {
-                nextEvent = getNextLocalEvent();
                 renderList(getLocalEventsForToday());
             }
-            updateCountdown();
-        }
-
-        function updateCountdown() {
-            var text = clockCountdown(nextEvent, getClockUtcMs(), t('countdown'));
-            var node = document.getElementById('next-event');
-            node.textContent = text;
-            node.title = text;
-            var hasContent = visibleEvents.length > 0 || !!text;
-            document.body.classList.toggle('has-events', hasContent);
-            document.getElementById('list-container').style.display = hasContent ? 'block' : 'none';
-        }
-
-        function getNextLocalEvent() {
-            var today = getClockDateString();
-            var now = getClockUtcMs();
-            var next = null;
-            getLocalEventsForToday().forEach(function (event) {
-                if (!event.time) return;
-                var instant = Date.parse(today + 'T' + event.time + ':00Z') - timezoneOffset * 3600000;
-                if (instant > now && (!next || instant < next.starts_at)) next = {text: event.text, starts_at: instant};
-            });
-            return next;
         }
 
         function syncStandardTime() {
@@ -609,7 +578,6 @@
 
         function enterStandaloneMode(message) {
             connectionMode = 'standalone';
-            nextEvent = getNextLocalEvent();
             applySettings(getStoredSettings());
             renderList(getLocalEventsForToday());
             updateClock();
@@ -618,7 +586,6 @@
 
         function enterServerMode(data) {
             connectionMode = 'server';
-            nextEvent = data.next_event || null;
             if (data.settings) {
                 applySettings(data.settings);
                 saveSettings(data.settings);
@@ -786,8 +753,7 @@
         var carouselInterval = null;
 
         function renderList(events) {
-            visibleEvents = events || [];
-            updateCountdown();
+            document.body.classList.toggle('has-events', !!(events && events.length));
             var newJson = JSON.stringify(events);
             if (newJson === currentEventsJson) return;
             currentEventsJson = newJson;
@@ -800,7 +766,7 @@
 
             var counterDiv = document.getElementById('event-counter');
             if (!events || events.length === 0) {
-                container.style.display = clockCountdown(nextEvent, getClockUtcMs(), t('countdown')) ? 'block' : 'none';
+                container.style.display = 'none';
                 counterDiv.textContent = "";
                 return;
             }
