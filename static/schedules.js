@@ -9,7 +9,7 @@
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
     let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null;
-    let pauseRequest = 0;
+    let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null;
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
     const displayTime = value => window.WebClockTime.format(value, timeFormat, document.documentElement.lang);
     const refreshTimeInputs = () => window.WebClockTimeInputs.refresh($("schedule-form"), timeFormat, document.documentElement.lang);
@@ -105,7 +105,7 @@
     async function api(path, options) {
         const response = await fetch("/api/v1" + path, Object.assign({cache: "no-store"}, options));
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || t("request_failed"));
+        if (!response.ok) throw new Error(data.error === "Occurrence already skipped; wait for resume" ? t("pause_pending") : data.error || t("request_failed"));
         return data;
     }
     const json = (method, body) => ({method: method, headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
@@ -143,6 +143,8 @@
         });
     }
     const isRecurringAlarm = schedule => schedule.type === "alarm" && !schedule.rule.dates && !schedule.calendar_link;
+    const pendingSkip = schedule => schedule.enabled && serverNow() !== null &&
+        (schedule.skipped_occurrences || []).find(value => Date.parse(value) >= serverNow());
     function resumeMessage(value, key = "resume_saved") {
         return format(key, {datetime: eventTime(value), duration: remainingTime(value)});
     }
@@ -166,14 +168,15 @@
             syncServerTime(result.server_time);
             occurrence = result.skipped_occurrence;
             $("pause-skipped").textContent = occurrence ? format("pause_skip", {datetime: eventTime(occurrence)}) : "";
-            $("pause-resume").textContent = result.next_occurrence ? resumeMessage(result.next_occurrence, "resume_at") : t("resume_unavailable");
+            $("pause-resume").textContent = result.next_occurrence && occurrence ? resumeMessage(occurrence, "resume_at") : t("resume_unavailable");
             $("pause-once").disabled = !occurrence || !result.next_occurrence;
-        }).catch(() => {
-            if (request === pauseRequest) $("pause-resume").textContent = t("pause_preview_failed");
+        }).catch(error => {
+            if (request === pauseRequest) $("pause-resume").textContent = error.message === t("pause_pending") ? error.message : t("pause_preview_failed");
         });
         return choice;
     }
     async function skipSchedule(schedule, expected) {
+        if (pendingSkip(schedule)) throw new Error(t("pause_pending"));
         let result;
         try {
             result = await api("/schedules/" + encodeURIComponent(schedule.id) + "/skip-next", expected ? json("POST", {expected_occurrence: expected}) : {method: "POST"});
@@ -186,7 +189,7 @@
             next_occurrence: result.next_event ? result.next_event.datetime : null,
             skipped_occurrences: (latest.skipped_occurrences || []).concat(result.skipped.datetime)
         }) : null);
-        notice(result.next_event && schedule.type === "alarm" ? resumeMessage(result.next_event.datetime) : format("skipped", {datetime: eventTime(result.skipped.datetime)}));
+        notice(result.next_event && isRecurringAlarm(schedule) ? resumeMessage(result.skipped.datetime) : format("skipped", {datetime: eventTime(result.skipped.datetime)}));
         await loadSchedules();
     }
     function acceptScheduleChange(id, updated) {
@@ -206,32 +209,37 @@
         const otherList = $("other-schedule-list");
         list.replaceChildren();
         otherList.replaceChildren();
+        nextPauseEnd = null;
         schedules.forEach(schedule => {
-            const row = node("li", undefined, "schedule-row" + (schedule.enabled ? "" : " disabled"));
+            const skip = pendingSkip(schedule), paused = isRecurringAlarm(schedule) && skip;
+            const enabled = schedule.enabled && !paused;
+            if (skip) nextPauseEnd = nextPauseEnd === null ? Date.parse(skip) : Math.min(nextPauseEnd, Date.parse(skip));
+            const row = node("li", undefined, "schedule-row" + (enabled ? "" : " disabled"));
             const details = node("div", undefined, "schedule-details");
             const description = ruleText(schedule.rule, schedule.skip_holidays, schedule.calendar_link) + " · " +
                 (schedule.type === "alarm" ? t("sound_" + (schedule.browser_sound || "bell")) : t(schedule.type));
             details.append(node("h3", schedule.name), node("p", description));
             if (schedule.calendar_link) details.append(node("p", calendarText(schedule.calendar_link)));
             const next = nextTime(schedule.next_occurrence);
-            const pendingSkip = schedule.enabled && schedule.next_occurrence && isRecurringAlarm(schedule) && serverNow() !== null &&
-                (schedule.skipped_occurrences || []).some(value => Date.parse(value) >= serverNow());
-            details.append(node("p", pendingSkip ? resumeMessage(schedule.next_occurrence, "resume_at") : schedule.type === "alarm" ? format("next_ring", {datetime: next}) : t("next") + ": " + next, "schedule-next"));
+            if (paused) details.append(node("p", resumeMessage(paused, "resume_at"), "schedule-next"));
+            details.append(node("p", schedule.type === "alarm" ? format("next_ring", {datetime: next}) : t("next") + ": " + next, "schedule-next"));
             const actions = node("div", undefined, "schedule-row-actions");
-            const toggle = action(t(schedule.enabled ? "disable" : "enable"), async () => {
-                if (schedule.enabled && isRecurringAlarm(schedule)) {
+            const toggle = action(t(enabled ? "disable" : "enable"), async () => {
+                if (enabled && isRecurringAlarm(schedule)) {
                     const choice = await choosePause(schedule);
                     if (!choice) return;
                     if (choice.skip) { await skipSchedule(schedule, choice.skip); return; }
                 }
-                const updated = await api("/schedules/" + encodeURIComponent(schedule.id), json("PUT", {enabled: !schedule.enabled}));
+                const data = {enabled: !enabled};
+                if (paused) data.skipped_occurrences = schedule.skipped_occurrences.filter(value => Date.parse(value) < serverNow());
+                const updated = await api("/schedules/" + encodeURIComponent(schedule.id), json("PUT", data));
                 acceptScheduleChange(schedule.id, updated);
                 await loadSchedules();
             }, "schedule-toggle");
             toggle.setAttribute("role", "switch");
-            toggle.setAttribute("aria-checked", String(schedule.enabled));
+            toggle.setAttribute("aria-checked", String(enabled));
             toggle.setAttribute("aria-label", t("enabled") + " · " + schedule.name);
-            toggle.title = t(schedule.enabled ? "disable" : "enable");
+            toggle.title = t(enabled ? "disable" : "enable");
             actions.append(toggle, action(t("edit"), () => edit(schedule)));
             const byEvent = schedule.calendar_link && schedule.calendar_link.mode === "event";
             const shownTime = byEvent ? t("calendar_event_time") : displayTime(schedule.time);
@@ -265,8 +273,13 @@
         const schedule = schedules.find(item => item.id === $("schedule-id").value);
         actions.hidden = !schedule;
         if (!schedule) return;
+        const paused = isRecurringAlarm(schedule) && pendingSkip(schedule) || null;
+        if (editorPausedUntil !== paused) {
+            $("schedule-enabled").checked = schedule.enabled && !paused;
+            editorPausedUntil = paused;
+        }
         const skip = action(t("skip_next"), () => skipSchedule(schedule));
-        skip.disabled = !schedule.enabled || !schedule.next_occurrence;
+        skip.disabled = !schedule.enabled || !schedule.next_occurrence || !!pendingSkip(schedule);
         actions.append(skip, action(t("delete"), async () => {
             if (!window.confirm(format("delete_confirm", {name: schedule.name}))) return;
             await api("/schedules/" + encodeURIComponent(schedule.id), {method: "DELETE"});
@@ -349,6 +362,7 @@
     }
     function edit(schedule, type = "alarm") {
         $("schedule-form").reset();
+        editorPausedUntil = null;
         if (!schedule) $("schedule-time").value = "07:30";
         $("schedule-rule").value = !schedule && type === "alarm" ? "once" : "every_day";
         $("schedule-date-picker").value = "";
@@ -444,7 +458,11 @@
             if (rule.dates.some(value => !validDate(value))) throw new Error(t("select_date"));
         } else if (mode !== "every_day" && mode !== "once") rule[mode] = true;
         if ($("schedule-skip-holidays").checked && mode === "holiday_only") throw new Error(t("holiday_conflict"));
-        const data = {rule: rule, enabled: $("schedule-enabled").checked, skip_holidays: $("schedule-skip-holidays").checked};
+        const data = {rule: rule, enabled: $("schedule-enabled").checked || !!editorPausedUntil, skip_holidays: $("schedule-skip-holidays").checked};
+        if (editorPausedUntil && $("schedule-enabled").checked) {
+            const schedule = schedules.find(item => item.id === id);
+            data.skipped_occurrences = schedule.skipped_occurrences.filter(value => Date.parse(value) < serverNow());
+        }
         ["name", "type", "time"].forEach(key => data[key] = $("schedule-" + key).value);
         data.name = data.name.trim() || t(data.type);
         if (data.type === "alarm") data.browser_sound = $("schedule-sound").value;
@@ -490,7 +508,7 @@
             try {
                 await loadSchedules();
                 const latest = schedules.find(schedule => schedule.id === saved.id);
-                notice(latest && latest.next_occurrence ? (data.skip_next ? resumeMessage(latest.next_occurrence) : format("saved_next", {duration: remainingTime(latest.next_occurrence)})) : t("saved") + " · " + t(data.enabled ? "none" : "disabled"));
+                notice(latest && latest.next_occurrence ? (data.skip_next ? resumeMessage(data.skip_next) : format("saved_next", {duration: remainingTime(latest.next_occurrence)})) : t("saved") + " · " + t(data.enabled ? "none" : "disabled"));
             } catch (error) { notice(t("saved") + " · " + t("preview_failed")); }
         } catch (error) { $("form-error").textContent = error.message === "Occurrence changed; preview again" ? t("pause_stale") : error.message || t("request_failed"); }
         finally { button.disabled = false; }
@@ -548,6 +566,9 @@
     }
     refresh();
     setInterval(refresh, 15000);
-    setInterval(renderEditorTime, 1000);
+    setInterval(() => {
+        if (nextPauseEnd !== null && serverNow() > nextPauseEnd) renderSchedules();
+        renderEditorTime();
+    }, 1000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }());

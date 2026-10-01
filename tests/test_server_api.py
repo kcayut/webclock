@@ -164,9 +164,43 @@ class ServerApiTest(unittest.TestCase):
             self.assertEqual(response.status_code, 400, response.json)
             self.assertEqual(path.read_bytes(), original)
             response = self.client.post('/api/v1/schedules/wake/skip-next', json={'expected_occurrence': resumed})
+            self.assertEqual(response.status_code, 400, response.json)
+            self.assertEqual(response.json['error'], 'Occurrence already skipped; wait for resume')
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_pending_skip_cannot_accumulate_until_original_time_passes(self):
+        self.client.post('/api/v1/schedules', json=self.schedule)
+        path = self.root / 'schedules.json'
+        now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
+        skipped = '2026-09-23T07:30:00+08:00'
+        resumed = '2026-09-24T07:30:00+08:00'
+        with patch('webclock.api.management.taipei_now', return_value=now) as current:
+            response = self.client.post('/api/v1/schedules/wake/skip-next')
+            self.assertEqual(response.status_code, 200, response.json)
+            self.assertEqual(response.json['skipped']['datetime'], skipped)
+            saved, before = path.read_bytes(), self.config()['schedule_revision']
+            for stamp in (now, datetime.fromisoformat(skipped)):
+                current.return_value = stamp
+                for method, url, payload in [
+                    ('post', '/api/v1/schedules/preview', {'id': 'wake', 'skip_next': True}),
+                    ('put', '/api/v1/schedules/wake', {'name': 'Changed', 'skip_next': resumed}),
+                    ('post', '/api/v1/schedules/wake/skip-next', {}),
+                    ('post', '/api/v1/schedules/wake/skip-next', {'expected_occurrence': skipped}),
+                ]:
+                    with self.subTest(stamp=stamp, method=method, payload=payload):
+                        response = getattr(self.client, method)(url, json=payload)
+                        self.assertEqual(response.status_code, 400, response.json)
+                        self.assertEqual(response.json['error'], 'Occurrence already skipped; wait for resume')
+                        self.assertEqual(path.read_bytes(), saved)
+                        self.assertEqual(self.config()['schedule_revision'], before)
+            # The old skip remains through its minute so browser polling cannot ring it.
+            current.return_value = datetime.fromisoformat(skipped) + timedelta(seconds=1)
+            alarms = self.client.get('/api/v1/browser-alarms').json
+            self.assertEqual(alarms['alarms'][0]['occurrence_id'], 'wake@' + resumed)
+            response = self.client.post('/api/v1/schedules/wake/skip-next')
             self.assertEqual(response.status_code, 200, response.json)
             self.assertEqual(response.json['skipped']['datetime'], resumed)
-            self.assertEqual(response.json['next_event']['datetime'], '2026-10-09T08:00:00+08:00')
+            self.assertEqual(json.loads(path.read_text())[0]['skipped_occurrences'], [skipped, resumed])
 
     def test_skip_preview_boundaries_and_stale_requests_do_not_change_storage(self):
         self.client.post('/api/v1/schedules', json=self.schedule)

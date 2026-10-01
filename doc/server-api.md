@@ -68,7 +68,7 @@ webclock_state/              私人執行資料，不進 Git
 - `browser_sound`：`bell`、`beep`、`digital` 或 `silent`。這是網頁專用音色，和舊硬體 `sound` 欄位分開；`silent` 保留視覺提示。
 - 星期採 ISO：星期一 `1` 至星期日 `7`。與舊手動提醒 API 的 `0–6` 不同。
 - 排程固定採 `Asia/Taipei`，與大字時鐘的顯示時區分開。
-- `skipped_occurrences` 是含時區的完整時間；跳過下一次不會關閉排程，可連續跳過。
+- `skipped_occurrences` 是含時區的完整時間；跳過下一次仍保留排程 `enabled=true`，管理畫面在原定響鈴時間過後恢復啟用顯示。已有尚未到期的略過時間時，不可再跳過另一日期；略過預覽、修改及跳過 API 回 400 `Occurrence already skipped; wait for resume`。
 - 管理 API 的 `next_occurrence`、`next_event` 為預覽結果，不是已執行記錄或事件佇列。
 
 鬧鐘可選填 `calendar_link`，未提供或 `null` 時維持固定時間規則：

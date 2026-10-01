@@ -38,6 +38,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             raise ValueError('Selected calendar source no longer exists')
 
     def skip_occurrence(row, event, now, expected=None):
+        if any(datetime.fromisoformat(value) >= now for value in row['skipped_occurrences']):
+            raise ValueError('Occurrence already skipped; wait for resume')
         if expected is not None and (event is None or event['datetime'] != expected):
             raise ValueError('Occurrence changed; preview again')
         if event is None:
