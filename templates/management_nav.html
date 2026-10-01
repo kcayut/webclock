@@ -11,7 +11,7 @@
 <a class="skip-link" href="#management-main"><span data-i18n="management_skip_content">{{ m.management_skip_content }}</span></a>
 <aside class="management-sidebar">
     <a class="management-brand" href="/admin#display" aria-label="WebClock">
-        <svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="18" cy="18" r="15"/><path d="M18 9v10l6 4"/></svg>
+        <img src="{{ url_for('static', filename='brand/logo.svg', v=2) }}" width="38" height="38" alt="" aria-hidden="true">
         <span>WebClock</span>
     </a>
     <nav class="management-navigation" aria-label="{{ m.management_navigation }}">

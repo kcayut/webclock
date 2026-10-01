@@ -9,6 +9,9 @@ const template = fs.readFileSync(path.join(__dirname, "../templates/schedules.ht
 const source = fs.readFileSync(path.join(__dirname, "../static/schedules.js"), "utf8");
 assert.doesNotMatch(template, /schedule-(volume|repeat|snooze)|sound-form|enable-audio|ringing/);
 assert.match(template, /alarm-audio\.js/);
+assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
+assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
+assert.ok(template.indexOf("time-inputs.js") < template.indexOf("schedules.js"));
 const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "07:30", rule: {},
     skipped_occurrences: [], next_occurrence: "2026-10-01T07:30:00+08:00"};
 const nextDate = "2026-10-02T07:30:00+08:00";
@@ -16,9 +19,13 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function element(tag = "div") {
+    const classes = new Set();
     return {
         tag, textContent: "", className: "", disabled: false, hidden: false, value: "", checked: false,
-        children: [], listeners: {}, attributes: {}, classList: {toggle() {}},
+        children: [], listeners: {}, attributes: {}, classList: {
+            toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+            contains(name) { return classes.has(name); }
+        },
         append(...children) {
             children.forEach(child => {
                 if (child.parentNode) child.parentNode.children = child.parentNode.children.filter(item => item !== child);
@@ -56,14 +63,17 @@ $("schedule-form").querySelector = selector => {
 $("schedule-form").reset = () => {
     ["id", "name", "dates"].forEach(key => $("schedule-" + key).value = "");
     $("schedule-type").value = "alarm";
-    $("schedule-time").value = "07:30";
+    // The time helper makes this canonical field hidden; native reset keeps its current value.
     $("schedule-rule").value = "every_day";
     $("schedule-sound").value = "bell";
     $("schedule-skip-holidays").checked = false;
     $("schedule-enabled").checked = true;
     weekdays.forEach(input => input.checked = false);
 };
-const pending = [], requests = [], intervals = [], navigation = {};
+const pending = [], requests = [], intervals = [], navigation = {}, inputRefreshes = [];
+const body = element("body");
+body.setAttribute("data-initial-panel", "alarms");
+body.setAttribute("data-time-format", "24h");
 class WrongDeviceDate extends Date {
     constructor(...args) { super(...(args.length ? args : ['2040-01-01T00:00:00Z'])); }
     static now() { return Date.parse('2040-01-01T00:00:00Z'); }
@@ -71,7 +81,7 @@ class WrongDeviceDate extends Date {
 const context = vm.createContext({
     console, Date: WrongDeviceDate, Set, Map, Number, JSON, Object, Array, Promise,
     document: {
-        documentElement: {lang: "en"}, body: {getAttribute: () => "alarms"},
+        documentElement: {lang: "en"}, body,
         getElementById: $, createElement: element, addEventListener() {},
         querySelectorAll(selector) {
             if (selector === '[data-management-panel]') return [$("alarms-panel"), $("devices-panel")];
@@ -82,6 +92,10 @@ const context = vm.createContext({
         }
     },
     window: {confirm: () => true, location: {hash: ""}, scrollTo() {},
+        WebClockTimeInputs: {refresh(root, format, language) {
+            assert.equal(root, $("schedule-form"));
+            inputRefreshes.push({format, language, required: $("schedule-time").required, disabled: $("schedule-time").disabled});
+        }},
         addEventListener(type, handler) { navigation[type] = handler; }},
     fetch(url, options) {
         return new Promise(resolve => {
@@ -96,6 +110,7 @@ const probe = `globalThis.qa = {loadSchedules, loadDevices, get: () => schedules
 const instrumented = source.replace("    refresh();\n    setInterval", "    " + probe + "\n    refresh();\n    setInterval");
 assert.notEqual(instrumented, source, "Management state probe must attach");
 // Audio support is optional: initialization, forms and commands must work without it.
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../static/time-format.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../static/management.js"), "utf8"), context);
 vm.runInContext(instrumented, context);
 function showPanel(name) {
@@ -114,8 +129,8 @@ function reply(request, data, ok = true) {
     request.resolve({ok, json: async () => data});
 }
 const catalog = [{id: 'local', name: 'Local', provider: 'local'}, {id: 'work', name: 'Work calendar', provider: 'apple'}];
-function scheduleReply(request, schedules, serverTime = '2026-09-30T10:00:00+08:00', calendarSources = catalog) {
-    reply(request, {schedules, calendar_sources: calendarSources, server_time: serverTime, day: {date: "2026-09-30", type: "workday"}, holiday_coverage: {start: "2023-01-01", end: "2027-12-31"}});
+function scheduleReply(request, schedules, serverTime = '2026-09-30T10:00:00+08:00', calendarSources = catalog, timeFormat = "24h") {
+    reply(request, {schedules, calendar_sources: calendarSources, time_format: timeFormat, server_time: serverTime, day: {date: "2026-09-30", type: "workday"}, holiday_coverage: {start: "2023-01-01", end: "2027-12-31"}});
 }
 function descendants(root) { return root.children.flatMap(child => [child, ...descendants(child)]); }
 function calendarInput(id) { return descendants($("schedule-calendar-sources")).find(input => input.name === 'calendar-source' && input.value === id); }
@@ -163,9 +178,38 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
         assert.equal($("next-event").textContent, expected + ' · Morning');
         assert.ok(content($("schedule-list")).includes('Next ring: ' + expected));
     }
+    await button("schedule-list", "edit").trigger("click");
+    $("schedule-name").value = "Unsaved time draft";
+    $("schedule-time").value = "13:45";
+    const beforeFormatChange = inputRefreshes.length;
+    for (const [time, expected] of [["00:00", "12:00 AM"], ["12:00", "12:00 PM"], ["13:45", "01:45 PM"]]) {
+        const request = qa.loadSchedules();
+        scheduleReply(take("/schedules"), [{...row, time, next_occurrence: "2026-10-01T" + time + ":00+08:00"}], '2026-09-30T10:00:00+08:00', catalog, "12h");
+        await request;
+        assert.equal($("next-event").textContent, "Tomorrow " + expected + " · Morning");
+        const displayedTime = $("schedule-list").children[0].children[0];
+        assert.equal(displayedTime.attributes["aria-label"], expected);
+        assert.deepEqual(displayedTime.children.map(part => part.textContent), expected.split(" "));
+        assert.equal(displayedTime.children[1].className, "schedule-time-period", "English places the small AM / PM after the time");
+        assert.equal($("schedule-name").value, "Unsaved time draft", "Changing the clock format preserves editor text");
+        assert.equal($("schedule-time").value, "13:45", "Changing the clock format preserves canonical time");
+    }
+    assert.equal(body.getAttribute("data-time-format"), "12h");
+    assert.equal(inputRefreshes.length, beforeFormatChange + 1, "Unchanged format polls preserve incomplete input drafts");
+    assert.match(content($("device-list")), /10:00 AM/, "Format changes redraw previously fetched device timestamps");
+    context.document.documentElement.lang = "zh-TW";
+    const chinese = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [{...row, time: "12:00", next_occurrence: "2026-10-01T00:00:00+08:00"}], '2026-09-30T10:00:00+08:00', catalog, "12h");
+    await chinese;
+    assert.equal($("next-event").textContent, "Tomorrow 上午 12:00 · Morning");
+    assert.equal($("schedule-list").children[0].children[0].attributes["aria-label"], "下午 12:00");
+    assert.equal($("schedule-list").children[0].children[0].children[0].className, "schedule-time-period", "Chinese places the small period before the time");
+    context.document.documentElement.lang = "en";
     const restored = qa.loadSchedules();
     scheduleReply(take('/schedules'), [row]);
     await restored;
+    assert.equal(body.getAttribute("data-time-format"), "24h");
+    assert.doesNotMatch(content($("device-list")), /10:00 AM/);
 
     const oldPoll = qa.loadSchedules();
     const oldResponse = take("/schedules");
@@ -196,6 +240,7 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
 
     await button("schedule-list", "edit").trigger("click");
     assert.equal($("editor").parentNode, $("alarms-panel"));
+    assert.equal($("alarms-panel").classList.contains("is-editing"), true);
     $("schedule-name").value = "Unsaved draft";
     showPanel("devices");
     assert.equal($("alarms-panel").hidden, true);
@@ -231,6 +276,7 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     scheduleReply(take("/schedules"), [edited]);
     await editing;
     assert.equal($("editor").hidden, true);
+    assert.equal($("alarms-panel").classList.contains("is-editing"), false);
     assert.match(content($("schedule-list")), /skip_holidays.*sound_digital/);
     assert.match(content($("schedule-list")), /Next ring: Tomorrow 07:30/);
     await button("schedule-list", "edit").trigger("click");
@@ -240,6 +286,8 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     showPanel("devices");
     await $("add-other-schedule").trigger("click");
     assert.equal($("editor").parentNode, $("devices-panel"));
+    assert.equal($("alarms-panel").classList.contains("is-editing"), false);
+    assert.equal($("devices-panel").classList.contains("is-editing"), true);
     assert.equal($("schedule-type").value, "reminder");
     assert.equal($("schedule-type-field").hidden, false);
     assert.equal($("schedule-sound-field").hidden, true);
@@ -266,7 +314,9 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     assert.equal($("add-other-schedule").focused, true, "Saving device schedules returns focus to their add button");
 
     showPanel("alarms");
+    $("schedule-time").value = "23:45";
     await $("add-schedule").trigger("click");
+    assert.equal($("schedule-time").value, "07:30", "A new alarm must not inherit a cancelled canonical time");
     assert.equal($("schedule-sound").value, "bell");
     assert.equal($("schedule-skip-holidays").checked, false);
     $("schedule-rule").value = "holiday_only";
@@ -275,11 +325,28 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     assert.equal($("form-error").textContent, "holiday_conflict");
     assert.equal(pending.length, 0, "Contradictory holiday options must not send a request");
     $("schedule-rule").value = "dates";
+    await $("schedule-rule").trigger("change");
+    assert.equal($("schedule-date-picker").disabled, false);
+    $("schedule-dates").value = "2026-10-03";
+    for (const invalid of ["", "2026-02-30", "not-a-date"]) {
+        $("schedule-date-picker").value = invalid;
+        await $("add-schedule-date").trigger("click");
+        assert.equal($("form-error").textContent, "select_date");
+        assert.equal($("schedule-dates").value, "2026-10-03", "Invalid selections preserve entered dates");
+    }
+    $("schedule-date-picker").value = "2026-10-10";
+    await $("add-schedule-date").trigger("click");
+    assert.equal($("schedule-dates").value, "2026-10-03, 2026-10-10");
+    assert.equal($("form-error").textContent, "");
+    await $("add-schedule-date").trigger("click");
+    assert.equal($("schedule-dates").value, "2026-10-03, 2026-10-10", "Adding a date twice does not duplicate it");
+    assert.equal(pending.length, 0, "Picking a date only changes the draft");
     $("schedule-dates").value = "2026-02-30";
     await $("schedule-form").trigger("submit");
     assert.equal($("form-error").textContent, "select_date");
     assert.equal(pending.length, 0, "Invalid dates must not send a request");
     await $("cancel-edit").trigger("click");
+    assert.equal($("alarms-panel").classList.contains("is-editing"), false);
     assert.equal($("add-schedule").focused, true);
 
     showPanel("devices");
@@ -306,11 +373,16 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
 
     showPanel("alarms");
     await $("add-schedule").trigger("click");
+    assert.equal($("schedule-date-picker").value, "", "Opening another editor clears the date picker");
+    assert.equal($("schedule-date-picker").disabled, true, "Hidden date picker cannot block native form validation");
     $("schedule-name").value = "Linked alarm";
     $("schedule-calendar-mode").value = "event";
     await $("schedule-calendar-mode").trigger("change");
     assert.equal($("schedule-time-field").hidden, true);
+    assert.equal($("schedule-event-time").hidden, false);
     assert.equal($("schedule-time").required, false);
+    assert.equal($("schedule-time").disabled, true);
+    assert.equal(inputRefreshes.at(-1).disabled, true, "Event mode also disables the visible time controls");
     assert.equal($("schedule-offset-field").hidden, false);
     assert.equal($("calendar-source-field").hidden, false);
     await $("schedule-form").trigger("submit");
@@ -322,8 +394,10 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     await $("schedule-form").trigger("submit");
     assert.equal($("form-error").textContent, "calendar_offset_error");
     $("schedule-offset").value = "15";
+    $("schedule-time").value = "";
     const linking = $("schedule-form").trigger("submit");
     const linkedRequest = take("/schedules", "POST");
+    assert.equal(JSON.parse(linkedRequest.options.body).time, "07:30", "An event-relative alarm does not require an unused fixed time");
     const link = {mode: "event", source_ids: ["local", "work"], offset_minutes: 15};
     assert.deepEqual(JSON.parse(linkedRequest.options.body).calendar_link, link);
     const linked = {...row, name: "Linked alarm", calendar_link: link};
@@ -348,6 +422,8 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     $("schedule-calendar-mode").value = "day";
     await $("schedule-calendar-mode").trigger("change");
     assert.equal($("schedule-time-field").hidden, false);
+    assert.equal($("schedule-time").disabled, false);
+    assert.equal(inputRefreshes.at(-1).required, true);
     assert.equal($("schedule-offset-field").hidden, true);
     const changingDay = $("schedule-form").trigger("submit");
     const dayRequest = take("/schedules/alarm", "PUT");

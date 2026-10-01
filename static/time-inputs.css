@@ -1,0 +1,6 @@
+.time-input-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.time-input-control input.time-input-hour, .time-input-control input.time-input-minute { flex: 0 0 64px; width: 64px; min-width: 0; text-align: center; font-variant-numeric: tabular-nums; }
+.time-input-control select.time-input-period { width: auto; min-width: 80px; }
+.time-input-control input.time-input-date { flex: 1 0 100%; width: 100%; }
+.time-input-control [hidden] { display: none !important; }
+.time-input-separator { flex: 0 0 auto; }

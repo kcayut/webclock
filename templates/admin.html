@@ -5,11 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ translations[language].admin_title }}</title>
-    <link rel="icon" href="data:,">
+    {% include 'brand_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='time-inputs.css') }}">
 </head>
 
-<body class="management" data-management-page="admin" data-initial-panel="{{ 'calendar' if error else 'display' }}">
+<body class="management" data-management-page="admin" data-time-format="{{ time_format }}" data-initial-panel="{{ 'calendar' if error else 'display' }}">
     {% include 'management_nav.html' %}
     {% macro window_fields(values, suffix) %}
     <fieldset>
@@ -134,6 +135,15 @@
             </select>
         </div>
         </div>
+        <div class="field time-format-setting">
+            <label for="time-format-select" data-i18n="time_format">{{ translations[language].time_format }}</label>
+            <select id="time-format-select" onchange="setTimeFormat(this.value)">
+                <option value="24h" data-i18n="time_format_24">{{ translations[language].time_format_24 }}</option>
+                <option value="12h" data-i18n="time_format_12">{{ translations[language].time_format_12 }}</option>
+            </select>
+            <p class="help" data-i18n="time_format_hint">{{ translations[language].time_format_hint }}</p>
+            <p id="time-format-status" role="status" aria-live="polite"></p>
+        </div>
     </div>
 
     <form class="panel" id="night-form" onsubmit="event.preventDefault(); saveNight()">
@@ -192,14 +202,14 @@
         {% for note in notes %}
         <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}">
             <div class="note-text">
-                {% if note.due_date %}<span class="time-tag">{{ note.due_date }}</span>{% endif %}
+                {% if note.due_date %}<span class="time-tag" data-time-value="{{ note.due_date }}">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
                 {% if not note.get('enabled', True) %}<span data-i18n="paused">{{ translations[language].paused }}</span>{% endif %}
                 {% if note.get('weekdays') and note.get('display_mode') == 'daily' %}
                 <span class="window-tag">{% for day in note.weekdays %}<span data-weekday="{{ (day + 1) % 7 }}">{{ translations[language].weekdays[(day + 1) % 7] }}</span> {% endfor %}</span>
                 {% endif %}
                 {% if note.display_start and note.display_end %}
-                <span class="window-tag"><span data-i18n="{{ 'daily_mode' if note.display_mode == 'daily' else 'range_mode' }}">{{ translations[language]['daily_mode' if note.display_mode == 'daily' else 'range_mode'] }}</span>: {{ note.display_start | replace('T', ' ') }} ~ {{ note.display_end | replace('T', ' ') }}</span>
+                <span class="window-tag"><span data-i18n="{{ 'daily_mode' if note.display_mode == 'daily' else 'range_mode' }}">{{ translations[language]['daily_mode' if note.display_mode == 'daily' else 'range_mode'] }}</span>: <span data-time-value="{{ note.display_start }}">{{ note.display_start | replace('T', ' ') }}</span> ~ <span data-time-value="{{ note.display_end }}">{{ note.display_end | replace('T', ' ') }}</span></span>
                 {% endif %}
             </div>
             <div class="note-actions">
@@ -268,9 +278,12 @@
     </section>
     </main>
 
+    <script src="{{ url_for('static', filename='time-format.js') }}"></script>
+    <script src="{{ url_for('static', filename='time-inputs.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
         var currentLanguage = {{ language | tojson }};
+        var currentTimeFormat = {{ time_format | tojson }};
 
         document.getElementById('timezone-select').value = "{{ settings.timezone_offset }}";
         document.getElementById('language-select').value = currentLanguage;
@@ -282,10 +295,11 @@
 
         function setWindowMode(select) {
             select.closest('fieldset').querySelector('.repeat-days').hidden = select.value !== 'daily';
-            select.closest('fieldset').querySelectorAll('.window-fields input').forEach(function (input) {
+            select.closest('fieldset').querySelectorAll('.window-fields input[name]').forEach(function (input) {
                 input.value = '';
                 input.type = select.value === 'daily' ? 'time' : 'datetime-local';
             });
+            applyTimeFormat(currentTimeFormat);
         }
 
         function applyLanguage() {
@@ -302,9 +316,43 @@
                 el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
             });
             if (window.CalendarSettings) window.CalendarSettings.applyLanguage();
+            applyTimeFormat(currentTimeFormat);
         }
 
-        function postSettings(payload) {
+        function applyTimeFormat(format) {
+            currentTimeFormat = format === '12h' ? '12h' : '24h';
+            document.body.setAttribute('data-time-format', currentTimeFormat);
+            document.getElementById('time-format-select').value = currentTimeFormat;
+            WebClockTimeInputs.refresh(document, currentTimeFormat, currentLanguage);
+            document.querySelectorAll('[data-time-value]').forEach(function (el) {
+                el.textContent = WebClockTime.format(el.getAttribute('data-time-value'), currentTimeFormat, currentLanguage);
+            });
+        }
+
+        function setTimeFormat(format) {
+            var select = document.getElementById('time-format-select');
+            select.disabled = true;
+            return postSettings({time_format: format}, true).then(function (result) {
+                if (result) {
+                    applyTimeFormat(format);
+                    document.getElementById('time-format-status').textContent = t('saved');
+                } else select.value = currentTimeFormat;
+                select.disabled = false;
+            });
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden || document.getElementById('time-format-select').disabled) return;
+            fetch('/api/status', {cache: 'no-store'}).then(function (response) {
+                if (!response.ok) throw new Error('Settings unavailable');
+                return response.json();
+            }).then(function (data) {
+                if (data.settings && data.settings.time_format !== currentTimeFormat) applyTimeFormat(data.settings.time_format);
+            }).catch(function () {});
+        });
+        applyTimeFormat(currentTimeFormat);
+
+        function postSettings(payload, keepDraft) {
             return fetch('/api/control', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -314,7 +362,7 @@
                 return response.json();
             }).catch(function () {
                 alert(t('settings_save_error'));
-                window.location.reload();
+                if (!keepDraft) window.location.reload();
             });
         }
 

@@ -1,12 +1,18 @@
 // A null offset follows the device timezone, including daylight saving changes.
-function renderClock(utcMs, timezoneOffset, weekDays) {
+function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language) {
     var deviceTime = new Date(utcMs);
     var offset = timezoneOffset === null ? -deviceTime.getTimezoneOffset() / 60 : timezoneOffset;
     var targetTime = new Date(utcMs + offset * 3600000);
-    var h = String(targetTime.getUTCHours()).replace(/^(\d)$/, '0$1');
+    var hour = targetTime.getUTCHours();
+    var h = String(timeFormat === '12h' ? hour % 12 || 12 : hour).replace(/^(\d)$/, '0$1');
     var m = String(targetTime.getUTCMinutes()).replace(/^(\d)$/, '0$1');
 
     document.getElementById('time').textContent = h + ':' + m;
+    var period = document.getElementById('time-period');
+    if (period) {
+        period.textContent = timeFormat === '12h' ? window.WebClockTime.period(hour, language) : '';
+        period.style.display = timeFormat === '12h' ? 'block' : 'none';
+    }
     document.getElementById('date-part').textContent = (targetTime.getUTCMonth() + 1) + '/' + targetTime.getUTCDate();
     document.getElementById('day-part').textContent = weekDays[targetTime.getUTCDay()];
 }

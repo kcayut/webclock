@@ -1,5 +1,7 @@
 # WebClock Server：集中管理與裝置 API
 
+**繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../README.md)
+
 本專案負責管理排程、台灣工作日資料、裝置登錄、同步版本及最後回報，並讓自架時鐘頁執行網頁鬧鐘。
 `/schedules` 編輯與預覽鬧鐘排程，時鐘頁 `/` 播放內建音色並顯示紅邊提示；`/admin` 分開管理顯示設定、訂閱行事曆與文字提醒。
 
@@ -186,7 +188,7 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 - `webclock_state/sounds/`、`webclock_state/fake-device/` 等既有使用者資料不會自動刪除。Server 不再讀取它們。
 - 舊根目錄 `manual_notes.json` 仍會首次複製到狀態目錄，保留原檔。`NOTES_FILE` 和 `WEBCLOCK_STATE_DIR` 仍可覆寫路徑。
 
-請備份整個狀態目錄、提醒檔和 `.env`。`/admin` 的 JSON 匯出仍只包含顯示設定與手動提醒，不含智慧排程或裝置資料。Linux 更新器會備份預設路徑和服務實際設定的 `WEBCLOCK_STATE_DIR`、`NOTES_FILE`，失敗時嘗試一起回復程式、套件與資料。Docker 的自訂路徑仍需自行掛載及備份。操作方式與首次升級步驟見 [README](../README.md#資料保存與更新)。
+請備份整個狀態目錄、提醒檔和 `.env`。`/admin` 的 JSON 匯出仍只包含顯示設定與手動提醒，不含智慧排程或裝置資料。Linux 更新器會備份預設路徑和服務實際設定的 `WEBCLOCK_STATE_DIR`、`NOTES_FILE`，失敗時嘗試一起回復程式、套件與資料。Docker 的自訂路徑仍需自行掛載及備份。操作方式與首次升級步驟見[繁體中文使用指南](guide.md#備份資料與更新)。
 
 目前用單一 Server process 寫入 JSON，最多 1000 筆排程、100 台裝置；增加多個 worker 前需改用支援跨程序交易的儲存方式。
 

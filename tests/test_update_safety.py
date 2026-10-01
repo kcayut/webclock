@@ -29,7 +29,7 @@ class SettingsTest(unittest.TestCase):
         self.client = clock.app.test_client()
 
     def test_save_reload_and_invalid_inputs(self):
-        expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en'}
+        expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en', 'time_format': '24h'}
         self.assertEqual(self.client.post('/api/control', json=expected).status_code, 200)
         self.assertEqual(clock.load_display_settings(), expected)
         previous = self.path.read_bytes()
@@ -147,6 +147,27 @@ class UpdaterTest(unittest.TestCase):
     def test_success_preserves_night_schedule(self):
         self.settings['night'] = dict(clock.DEFAULT_NIGHT, enabled=True)
         self.test_success_preserves_settings_and_data()
+
+    def test_success_preserves_time_format(self):
+        self.settings['time_format'] = '12h'
+        self.test_success_preserves_settings_and_data()
+
+    def test_saved_time_format_default_and_invalid_values(self):
+        state = self.project / 'webclock_state'
+        state.mkdir()
+        settings = state / 'settings.json'
+        settings.write_text(json.dumps(self.settings))
+        layout = state, self.project / 'manual_notes.json'
+        before = settings.read_bytes()
+        updater.check_saved_data(layout, layout, dict(self.settings, time_format='24h'))
+        self.assertEqual(settings.read_bytes(), before)
+        for value in ('12h', 'invalid', None):
+            with self.assertRaises(RuntimeError):
+                updater.check_saved_data(layout, layout, dict(self.settings, time_format=value))
+        with patch.object(updater, 'http_json', return_value={'settings': dict(self.settings, time_format='24h'), 'events': []}), \
+             patch.object(updater, 'service_property', side_effect=lambda key: '123' if key == 'MainPID' else 'active'), \
+             patch.object(updater.time, 'sleep'):
+            updater.wait_healthy('http://localhost', self.settings)
 
     def test_unhealthy_service_rolls_back(self):
         with patch.object(updater, 'wait_healthy', side_effect=[RuntimeError('crash'), None]):

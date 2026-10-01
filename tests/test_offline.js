@@ -53,6 +53,14 @@ async function checkScope(scope) {
         assert.equal(await (await fetchPage(scope + '?test=1')).text(), 'fresh:' + scope);
         assert.equal(await (await fetchPage(scope + 'index.html')).text(), 'fresh:' + scope);
         assert.ok((await (await fetchPage(scope + 'static/clock.js')).text()).startsWith('installed:'));
+        assert.ok((await (await fetchPage(scope + 'static/time-format.js')).text()).startsWith('installed:'));
+        assert.ok((await (await fetchPage(scope + 'static/time-inputs.js')).text()).startsWith('installed:'));
+        assert.ok((await (await fetchPage(scope + 'static/time-inputs.css')).text()).startsWith('installed:'));
+        for (const icon of ['logo.svg', 'icon-32.png', 'apple-touch-icon.png', 'favicon.ico']) {
+            const url = scope + 'static/brand/' + icon;
+            assert.ok((await (await fetchPage(url)).text()).startsWith('installed:'));
+            assert.equal(await (await fetchPage(url + '?v=2')).text(), 'installed:' + url);
+        }
     }
     for (const path of ['admin', 'api/status', 'api/backup', 'private.ics', 'unknown',
         'schedules', 'static/schedules.js', 'static/schedules.css', 'api/v1/schedules',

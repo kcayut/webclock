@@ -27,6 +27,7 @@ const context = vm.createContext({
     Promise: undefined,
 });
 vm.runInContext('Number.isFinite = undefined;', context);
+vm.runInContext(fs.readFileSync(path.join(root, 'static/time-format.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), context);
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 for (const [, script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
@@ -60,6 +61,21 @@ assert.equal(nodes.time.textContent, '12:35');
 context.renderClock(Date.parse('2026-09-14T20:00:00Z'), 8,
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
 assert.deepEqual(Object.values(nodes).map(node => node.textContent), ['04:00', '9/15', 'Tue']);
+nodes['time-period'] = {style: {}};
+for (const [instant, language, time, period] of [
+    ['2026-10-01T00:05:00Z', 'zh-TW', '12:05', '上午'],
+    ['2026-10-01T12:05:00Z', 'zh-TW', '12:05', '下午'],
+    ['2026-10-01T23:59:00Z', 'en', '11:59', 'PM'],
+    ['2026-10-01T01:05:00Z', 'ja', '01:05', '午前'],
+]) {
+    context.renderClock(Date.parse(instant), 0, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], '12h', language);
+    assert.equal(nodes.time.textContent, time);
+    assert.equal(nodes['time-period'].textContent, period);
+    assert.equal(nodes['time-period'].style.display, 'block');
+}
+context.renderClock(Date.parse('2026-10-01T23:59:00Z'), 0, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+assert.equal(nodes.time.textContent, '23:59');
+assert.equal(nodes['time-period'].style.display, 'none');
 console.log('Clock checks passed: device timezone, DST, date rollover, resume, server override, no network.');
 
 // Night mode follows configured wall time; it restores the user's daytime value.
@@ -83,11 +99,16 @@ const template = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8'
 const serverScript = template.match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace('{{ translations | tojson }}', JSON.stringify({'zh-TW': {
         weekdays: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
+        server_unavailable: 'Server unavailable', server_timeout: 'Server timed out',
+        status_parse_failed: 'Unreadable response', page_error: 'Page error',
     }}))
     .replace('{{ language | tojson }}', '"zh-TW"');
 function checkLegacyPage(failOptionalEditor) {
     const elements = {};
     const ticks = [];
+    const requests = [];
+    const storage = {};
+    let storageAvailable = false;
     function makeNode() {
         const classes = new Set();
         return {
@@ -120,16 +141,25 @@ function checkLegacyPage(failOptionalEditor) {
         },
         window: {
             location: {origin: 'http://clock.example'}, addEventListener() {},
-            localStorage: {getItem() { throw new Error('storage unavailable'); }, setItem() {}},
+            localStorage: {
+                getItem(key) { if (!storageAvailable) throw new Error('storage unavailable'); return storage[key] || null; },
+                setItem(key, value) { storage[key] = value; },
+            },
         },
         setInterval: (callback, delay) => ticks.push({callback, delay}),
         setTimeout() {}, clearTimeout() {},
         XMLHttpRequest: function () {
-            this.open = () => assert.match(node('time').textContent, /^\d\d:\d\d$/);
+            this.open = (method, url) => {
+                assert.match(node('time').textContent, /^\d\d:\d\d$/);
+                assert.equal(method, 'GET');
+                assert.match(url, /^http:\/\/clock\.example\/api\/status\?nocache=\d+$/);
+                requests.push(this);
+            };
             this.send = () => {}; // A stalled request must never hold up the clock.
         },
     });
     vm.runInContext('Number.isFinite = undefined;', legacy);
+    vm.runInContext(fs.readFileSync(path.join(root, 'static/time-format.js'), 'utf8'), legacy);
     vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), legacy);
     if (failOptionalEditor) assert.throws(() => vm.runInContext(serverScript, legacy), /optional editor failed/);
     else vm.runInContext(serverScript, legacy);
@@ -140,6 +170,61 @@ function checkLegacyPage(failOptionalEditor) {
     tick.callback();
     assert.notEqual(node('time').textContent, before);
     if (!failOptionalEditor) {
+        assert.deepEqual(ticks.map(timer => timer.delay), [1000, 5000], 'clock only polls its own status server');
+        assert.equal(requests.length, 1, 'startup makes one status request and no external time request');
+        function reply(xhr, data, status = 200) {
+            Object.assign(xhr, {readyState: 4, status, responseText: typeof data === 'string' ? data : JSON.stringify(data)});
+            xhr.onreadystatechange();
+        }
+        function newRequest() {
+            legacy.fetchStatus();
+            return requests[requests.length - 1];
+        }
+        let serverNow = Date.parse('2026-10-01T00:00:00Z');
+        now = serverNow + 2 * 3600000; // The device clock is deliberately two hours fast.
+        reply(requests[0], {events: [], server_timestamp: serverNow});
+        assert.equal(legacy.getClockUtcMs(), serverNow);
+        assert.equal(node('time').textContent, '08:00');
+        now += 30000;
+        serverNow += 120000;
+        reply(newRequest(), {events: [], server_timestamp: serverNow});
+        assert.equal(legacy.getClockUtcMs(), serverNow, 'every status reply replaces the previous time base');
+        assert.equal(node('time').textContent, '08:02');
+        for (const [fail, message] of [
+            [xhr => reply(xhr, '', 503), 'Server unavailable'],
+            [xhr => xhr.onerror(), 'Server unavailable'],
+            [xhr => xhr.ontimeout(), 'Server timed out'],
+            [xhr => reply(xhr, '{broken'), 'Unreadable response'],
+        ]) {
+            fail(newRequest());
+            assert.equal(node('notice').style.display, 'block');
+            assert.equal(node('notice-text').textContent, message);
+            const offlineTime = legacy.getClockUtcMs();
+            now += 60000;
+            tick.callback();
+            assert.equal(legacy.getClockUtcMs(), offlineTime + 60000, 'the corrected clock advances while disconnected');
+            legacy.hideNotice(true);
+            assert.equal(node('notice').style.display, 'none');
+            serverNow += 60000;
+            reply(newRequest(), {events: [], server_timestamp: serverNow});
+            assert.equal(node('notice').style.display, 'none', 'recovery clears the connection warning');
+            assert.equal(legacy.lastNoticeKey, '');
+            assert.equal(legacy.noticeMutedUntil, 0);
+            fail(newRequest());
+            assert.equal(node('notice').style.display, 'block', 'a new failure after recovery is not muted');
+            assert.equal(node('notice-text').textContent, message);
+            reply(newRequest(), {events: [], server_timestamp: serverNow});
+            assert.equal(node('notice').style.display, 'none', 'recovery also clears a visible connection warning');
+        }
+        legacy.window.onerror();
+        assert.equal(node('notice-text').textContent, 'Page error');
+        reply(newRequest(), {events: [], server_timestamp: serverNow});
+        assert.equal(node('notice').style.display, 'block', 'status recovery preserves unrelated page errors');
+        assert.equal(node('notice-text').textContent, 'Page error');
+        for (const invalid of [NaN, Infinity, -Infinity, '123', null, undefined, 0, -1]) {
+            legacy.enterServerMode({events: [], server_timestamp: invalid});
+            assert.equal(legacy.getClockUtcMs(), serverNow, 'invalid timestamps must not replace the corrected time base');
+        }
         legacy.enterServerMode({events: [], settings: {brightness: 35},
             next_event: {text: 'Meeting', starts_at: now + 300000}});
         assert.equal(node('clock-container').style.opacity, 0.35);
@@ -153,7 +238,49 @@ function checkLegacyPage(failOptionalEditor) {
         assert.equal(node('event-counter').textContent, '1 / 1');
         assert.deepEqual(node('list-container').children[0].children[0].children.map(child => child.textContent),
             ['08:10', 'Visible reminder']);
+        legacy.enterServerMode({events: [{text: 'Visible reminder', time: '08:10'}],
+            settings: {time_format: '12h', language: 'zh-TW', timezone_offset: 8},
+            server_timestamp: Date.parse('2026-10-01T04:00:00Z')});
+        assert.equal(node('time').textContent, '12:00');
+        assert.equal(node('time-period').textContent, '下午');
+        assert.equal(node('body').classList.contains('uses-12-hour'), true);
+        assert.equal(node('list-container').children[0].children[0].children[0].textContent, '上午 08:10',
+            'unchanged events redraw when the display format changes');
+        assert.equal(JSON.parse(storage['webclock.settings']).time_format, '12h');
+        storageAvailable = true;
+        legacy.saveLocalEvents([{id: 1, text: 'Offline reminder', time: '13:10'}]);
         legacy.enterStandaloneMode();
+        assert.equal(node('time-period').textContent, '下午', 'offline mode keeps the saved display format');
+        assert.equal(node('local-events-list').children[0].children[0].textContent, '下午 01:10 Offline reminder');
+        assert.equal(node('list-container').children[0].children[0].children[0].textContent, '下午 01:10');
+        assert.equal(JSON.parse(storage['webclock.localEvents'])[0].time, '13:10', 'formatting never changes stored reminder time');
+        legacy.saveLocalEvents([]);
+        const reminderForm = node('local-event-form');
+        const reminderText = node('local-event-text');
+        const reminderTime = node('local-event-time');
+        let validTime = false, focusedInvalid = 0, reportedInvalid = 0;
+        reminderForm.checkValidity = () => validTime;
+        reminderForm.querySelector = selector => {
+            assert.equal(selector, ':invalid');
+            return {focus() { focusedInvalid += 1; }};
+        };
+        reminderText.value = 'Keep this draft';
+        reminderTime.value = '13:10'; // A partial proxy edit retains the last valid canonical time.
+        legacy.addLocalEvent();
+        assert.equal(focusedInvalid, 1, 'old browsers focus the invalid field without reportValidity');
+        reminderForm.reportValidity = () => { reportedInvalid += 1; };
+        legacy.addLocalEvent();
+        assert.equal(reportedInvalid, 1);
+        assert.equal(JSON.parse(storage['webclock.localEvents']).length, 0, 'incomplete time must not save the previous valid time');
+        assert.equal(reminderText.value, 'Keep this draft');
+        assert.equal(reminderTime.value, '13:10');
+        validTime = true;
+        reminderTime.value = '14:25';
+        legacy.addLocalEvent();
+        assert.equal(JSON.parse(storage['webclock.localEvents'])[0].time, '14:25');
+        assert.equal(reminderText.value, '');
+        assert.equal(reminderTime.value, '');
+        legacy.saveLocalEvents([]);
         tick.callback();
         assert.equal(node('list-container').style.display, 'none');
         assert.equal(node('body').classList.contains('has-events'), false);
@@ -169,4 +296,7 @@ for (const page of [html, template]) {
     assert.doesNotMatch(page, /id="next-event"/);
     assert.ok(page.indexOf('offline.js') > page.indexOf('setInterval(update'), 'optional offline script loads after clock startup');
 }
+assert.match(template, /<form id="local-event-form"[^>]*onsubmit="addLocalEvent\(\); return false;">[\s\S]*?<button type="submit">Add<\/button>[\s\S]*?<\/form>/,
+    'the real Add action uses native form validation for the time input proxies');
 console.log('Legacy startup checks passed: no modern APIs/storage/network response, optional UI failure, brightness and reminders without countdown.');
+console.log('Server time checks passed: no external time API, repeated calibration, offline ticking, invalid timestamps and connection-warning recovery.');

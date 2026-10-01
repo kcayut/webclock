@@ -166,7 +166,7 @@ class MigrationTest(unittest.TestCase):
         for name, content in self.before.items():
             self.assertEqual((self.project / name).read_bytes(), content, name)
         self.assertEqual(json.loads((self.project / 'webclock_state/manual_notes.json').read_text()), self.notes)
-        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], self.settings)
+        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], dict(self.settings, time_format='24h'))
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
         self.assertEqual(updater.http_json(self.url + '/api/v1/schedules')['schedules'], [])
         schedule = updater.http_json(self.url + '/api/v1/schedules', {
@@ -183,7 +183,7 @@ class MigrationTest(unittest.TestCase):
 
         def fail_after_writing(project, url, layout, expected_notes, configuration):
             real_verify(project, url, layout, expected_notes, configuration)
-            changed_settings = dict(self.settings, brightness=72)
+            changed_settings = dict(self.settings, brightness=72, time_format='12h')
             changed_notes = [dict(self.notes[0], text='新版已改寫提醒')]
             self.assertEqual(updater.http_json(url + '/api/backup', {
                 'version': 1, 'settings': changed_settings, 'notes': changed_notes,
@@ -240,7 +240,7 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual((self.project / name).read_bytes(), content, name)
         self.assertEqual(notes.read_bytes(), self.before['manual_notes.json'])
         self.assertEqual(json.loads((state / 'settings.json').read_text()), self.settings)
-        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], self.settings)
+        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], dict(self.settings, time_format='24h'))
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
         schedule = updater.http_json(self.url + '/api/v1/schedules', {
             'name': '外部資料目錄排程', 'time': '07:00',

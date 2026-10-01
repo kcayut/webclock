@@ -40,6 +40,7 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertNotIn('calendar_url', pack)
             self.assertNotIn('backup_title', pack)
             self.assertNotIn('countdown', pack)
+            self.assertNotIn('standard_time_unavailable', pack)
             for key in ['weekdays', 'offline_ready', 'offline_unavailable', 'offline_failed']:
                 self.assertEqual(pack[key], clock.UI_TRANSLATIONS[language][key])
         self.assertIn('calendar_url', self.client.get('/admin').text)
@@ -72,6 +73,33 @@ class ClockFeaturesTest(unittest.TestCase):
                         dict(fields, note_date='2026-02-30'), dict(fields, note_date='')]:
             self.assertEqual(self.client.post('/schedule/1', data=invalid).status_code, 400)
             self.assertEqual(Path(clock.NOTES_FILE).read_bytes(), before)
+
+    def test_time_format_persistence_api_and_legacy_backup(self):
+        legacy = {key: value for key, value in clock.DEFAULT_SETTINGS.items() if key != 'time_format'}
+        Path(clock.SETTINGS_FILE).write_text(json.dumps(legacy))
+        self.assertEqual(clock.load_display_settings()['time_format'], '24h')
+        original_config = self.client.get('/api/v1/device/config').json
+        for value in ('12h', '24h'):
+            self.assertEqual(self.client.post('/api/control', json={'time_format': value}).status_code, 200)
+            self.assertEqual(clock.load_display_settings()['time_format'], value)
+            self.assertEqual(clock.template_context()['time_format'], value)
+            self.assertEqual(self.client.get('/api/v1/schedules').json['time_format'], value)
+            self.assertEqual(self.status_at('2026-10-01T10:30')['settings']['time_format'], value)
+            self.assertEqual(self.client.get('/api/v1/device/config').json, original_config)
+        backup = self.client.get('/api/backup').json
+        backup['settings']['time_format'] = '12h'
+        self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
+        self.assertEqual(self.client.get('/api/backup').json, backup)
+        before = Path(clock.SETTINGS_FILE).read_bytes()
+        for value in ('', '24', 'invalid', None, 12, True, []):
+            self.assertEqual(self.client.post('/api/control', json={'time_format': value}).status_code, 400)
+            invalid = copy.deepcopy(backup)
+            invalid['settings']['time_format'] = value
+            self.assertEqual(self.client.post('/api/backup', json=invalid).status_code, 400)
+            self.assertEqual(Path(clock.SETTINGS_FILE).read_bytes(), before)
+        backup['settings'].pop('time_format')
+        self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
+        self.assertEqual(clock.load_display_settings()['time_format'], '24h')
 
     def test_night_and_backup_roundtrip_validation_rollback(self):
         night = dict(enabled=True, start='22:00', end='07:00', brightness=12, black=True)

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <title>WebClock</title>
+  <desc>A clear analog clock at ten past ten, with four hour marks and a mint quarter-hour arc.</desc>
+  <rect width="64" height="64" rx="8" fill="#27645e"/>
+  <circle cx="32" cy="32" r="26" fill="#f6faf9"/>
+  <path d="M32 7.2a24.8 24.8 0 0 1 24.8 24.8" stroke="#b9ddd4" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M32 10v3.8M54 32h-3.8M32 54v-3.8M10 32h3.8" stroke="#27645e" stroke-width="1.9" stroke-linecap="round"/>
+  <path d="M21 24.5 32 32 48.5 21.5" stroke="#27645e" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="2.5" fill="#b9ddd4"/>
+</svg>

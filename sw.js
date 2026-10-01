@@ -1,9 +1,10 @@
 // Bump this version whenever the offline shell changes.
-const VERSION = 'v4';
+const VERSION = 'v8';
 const BASE = new URL('./', self.location.href);
 const PREFIX = 'webclock-' + BASE.pathname + '-';
 const CACHE = PREFIX + VERSION;
-const SHELL = ['', 'static/clock.css', 'static/clock.js', 'static/offline.js'].map(path => new URL(path, BASE).href);
+const SHELL = ['', 'static/clock.css', 'static/time-format.js', 'static/time-inputs.js', 'static/time-inputs.css', 'static/clock.js', 'static/offline.js',
+    'static/brand/logo.svg', 'static/brand/icon-32.png', 'static/brand/apple-touch-icon.png', 'static/brand/favicon.ico'].map(path => new URL(path, BASE).href);
 
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(

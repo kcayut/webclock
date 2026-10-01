@@ -70,7 +70,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
                        next_event=min(upcoming, key=lambda event: (event['datetime'], event['id']), default=None),
                        calendar_sources=source_catalog(),
                        day=holidays.get_day_type(now.date()), server_time=now.isoformat(),
-                       holiday_coverage=holidays.export()['coverage'], timezone='Asia/Taipei')
+                       holiday_coverage=holidays.export()['coverage'], timezone='Asia/Taipei',
+                       time_format=template_context()['time_format'])
 
     @api.route('/api/v1/schedules/<schedule_id>', methods=['PUT', 'DELETE'])
     def schedule_item(schedule_id):

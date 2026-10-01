@@ -67,6 +67,12 @@ def http_json(url, data=None, headers=None):
         return json.load(response)
 
 
+def settings_match(saved, expected):
+    # Older releases omit the 24-hour display default; leave their files intact.
+    return (isinstance(saved, dict) and isinstance(expected, dict)
+            and {'time_format': '24h', **saved} == {'time_format': '24h', **expected})
+
+
 def wait_healthy(url, expected):
     deadline = time.monotonic() + 60
     last_pid, stable = None, 0
@@ -76,7 +82,7 @@ def wait_healthy(url, expected):
             if service_property('ActiveState') != 'active' or int(pid) <= 0:
                 raise RuntimeError('Service not active')
             status = http_json(url + '/api/status')
-            if status.get('settings') != expected or not isinstance(status.get('events'), list):
+            if not settings_match(status.get('settings'), expected) or not isinstance(status.get('events'), list):
                 raise RuntimeError('Unexpected status/settings')
             stable = stable + 1 if pid == last_pid else 1
             last_pid = pid
@@ -136,13 +142,15 @@ def read_json(path, default):
 
 def check_saved_data(current, target, snapshot):
     required = {'mode', 'brightness', 'timezone_offset', 'language'}
-    if not isinstance(snapshot, dict) or not required <= set(snapshot) or set(snapshot) - (required | {'night'}):
+    if (not isinstance(snapshot, dict) or not required <= set(snapshot)
+            or set(snapshot) - (required | {'night', 'time_format'})
+            or snapshot.get('time_format', '24h') not in ('24h', '12h')):
         raise RuntimeError('Could not capture current display settings.')
     for state in {current[0], target[0]}:
         settings = state / 'settings.json'
         if settings.is_symlink():
             raise RuntimeError('Settings file must not be a symlink.')
-        if settings.exists() and read_json(settings, None) != snapshot:
+        if settings.exists() and not settings_match(read_json(settings, None), snapshot):
             raise RuntimeError('Saved settings differ from the running service; resolve this before updating.')
     notes = read_json(current[1], [])
     if not isinstance(notes, list):
@@ -293,7 +301,7 @@ def perform_update(project):
                 # Older releases kept settings only in memory. Avoid rewriting saved files otherwise.
                 for attempt in range(15):
                     try:
-                        if http_json(url + '/api/status')['settings'] != snapshot:
+                        if not settings_match(http_json(url + '/api/status')['settings'], snapshot):
                             http_json(url + '/api/control', snapshot)
                         break
                     except (OSError, ValueError):

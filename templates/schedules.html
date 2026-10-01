@@ -4,15 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ schedule_translations.title }} · WebClock</title>
-    <link rel="icon" href="data:,">
+    {% include 'brand_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='time-inputs.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='schedules.css') }}">
     <script id="schedule-i18n" type="application/json">{{ schedule_translations|tojson }}</script>
+    <script defer src="{{ url_for('static', filename='time-format.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='time-inputs.js') }}"></script>
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
     <script defer src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
     <script defer src="{{ url_for('static', filename='schedules.js') }}"></script>
 </head>
-<body class="management" data-management-page="schedules" data-initial-panel="alarms">
+<body class="management" data-management-page="schedules" data-initial-panel="alarms" data-time-format="{{ time_format }}">
     {% set t = schedule_translations %}
     {% include 'management_nav.html' %}
     <main id="management-main" class="management-content" tabindex="-1">
@@ -32,35 +35,46 @@
                 <h2 id="editor-title">{{ t.add }}</h2>
                 <form id="schedule-form">
                     <input type="hidden" id="schedule-id">
-                    <div class="fields schedule-fields">
-                        <div class="field"><label for="schedule-name">{{ t.name }}</label><input id="schedule-name" maxlength="120" required autocomplete="off"></div>
-                        <div id="schedule-time-field" class="field"><label for="schedule-time">{{ t.time }}</label><input id="schedule-time" type="time" value="07:30" required></div>
-                        <div id="schedule-calendar-mode-field" class="field"><label for="schedule-calendar-mode">{{ t.calendar_link }}</label><select id="schedule-calendar-mode"><option value="none">{{ t.calendar_none }}</option><option value="event">{{ t.calendar_event }}</option><option value="day">{{ t.calendar_day }}</option></select></div>
-                        <div id="schedule-offset-field" class="field" hidden><label for="schedule-offset">{{ t.calendar_offset }}</label><input id="schedule-offset" type="number" min="0" max="1440" step="1" value="0"></div>
-                        <div id="schedule-type-field" class="field"><label for="schedule-type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" hidden disabled>{{ t.alarm }}</option><option value="reminder">{{ t.reminder }}</option><option value="announcement">{{ t.announcement }}</option></select></div>
-                        <div id="schedule-sound-field" class="field">
-                            <label for="schedule-sound">{{ t.browser_sound }}</label>
-                            <div class="sound-choice"><select id="schedule-sound"><option value="bell">{{ t.sound_bell }}</option><option value="beep">{{ t.sound_beep }}</option><option value="digital">{{ t.sound_digital }}</option><option value="silent">{{ t.sound_silent }}</option></select><button id="preview-sound" type="button">{{ t.preview_sound }}</button></div>
+                    <div class="schedule-editor-body">
+                        <div class="schedule-time-column">
+                            <div id="schedule-time-field" class="field"><label for="schedule-time">{{ t.time }}</label><input id="schedule-time" type="time" value="07:30" required aria-describedby="editor-timezone"></div>
+                            <p id="schedule-event-time" hidden>{{ t.calendar_event_time }}</p>
+                            <p id="editor-timezone" class="help">{{ t.timezone_hint }}</p>
+                            <label class="check setting-switch"><span>{{ t.enabled }}</span><input id="schedule-enabled" type="checkbox" role="switch" checked></label>
                         </div>
-                        <div class="field"><label for="schedule-rule">{{ t.rule }}</label><select id="schedule-rule"><option value="every_day">{{ t.every_day }}</option><option value="weekdays">{{ t.weekdays_label }}</option><option value="workday_only">{{ t.workday_only }}</option><option value="holiday_only">{{ t.holiday_only }}</option><option value="dates">{{ t.dates }}</option></select></div>
-                    </div>
-                    <fieldset id="calendar-source-field" class="calendar-source-field" hidden>
-                        <legend>{{ t.calendar_sources }}</legend>
-                        <div id="schedule-calendar-sources" class="calendar-source-options"></div>
-                        <p class="help">{{ t.calendar_source_hint }}</p>
-                        <p id="calendar-mode-hint" class="help"></p>
-                        <p class="help">{{ t.calendar_rule_hint }}</p>
-                    </fieldset>
-                    <fieldset id="weekday-field" hidden><legend>{{ t.weekdays_label }}</legend><div class="weekdays">{% for day in range(1, 8) %}<label class="check"><input type="checkbox" name="weekday" value="{{ day }}">{{ t.weekdays[day - 1] }}</label>{% endfor %}</div></fieldset>
-                    <div id="date-field" class="field" hidden><label for="schedule-dates">{{ t.dates }}</label><input id="schedule-dates" placeholder="2026-10-03, 2026-10-10" aria-describedby="dates-hint"><p id="dates-hint" class="help">{{ t.dates_hint }}</p></div>
-                    <div class="schedule-options">
-                        <div><label class="check"><input id="schedule-skip-holidays" type="checkbox" aria-describedby="skip-holidays-hint">{{ t.skip_holidays }}</label><p id="skip-holidays-hint" class="help">{{ t.skip_holidays_hint }}</p></div>
-                        <label class="check"><input id="schedule-enabled" type="checkbox" checked>{{ t.enabled }}</label>
+                        <div class="schedule-settings">
+                            <div class="field setting-row"><label for="schedule-name">{{ t.name }}</label><input id="schedule-name" maxlength="120" required autocomplete="off"></div>
+                            <div id="schedule-type-field" class="field setting-row"><label for="schedule-type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" hidden disabled>{{ t.alarm }}</option><option value="reminder">{{ t.reminder }}</option><option value="announcement">{{ t.announcement }}</option></select></div>
+                            <div class="setting-group">
+                                <div class="field setting-row"><label for="schedule-rule">{{ t.rule }}</label><select id="schedule-rule"><option value="every_day">{{ t.every_day }}</option><option value="weekdays">{{ t.weekdays_label }}</option><option value="workday_only">{{ t.workday_only }}</option><option value="holiday_only">{{ t.holiday_only }}</option><option value="dates">{{ t.dates }}</option></select></div>
+                                <fieldset id="weekday-field" hidden><legend>{{ t.weekdays_label }}</legend><div class="weekdays">{% for day in range(1, 8) %}<label class="weekday-choice"><input type="checkbox" name="weekday" value="{{ day }}"><span>{{ t.weekdays[day - 1] }}</span></label>{% endfor %}</div></fieldset>
+                                <div id="date-field" class="field" hidden>
+                                    <label for="schedule-date-picker">{{ t.pick_date }}</label>
+                                    <div class="date-choice"><input id="schedule-date-picker" type="date"><button id="add-schedule-date" type="button">{{ t.add_date }}</button></div>
+                                    <label for="schedule-dates">{{ t.dates }}</label><input id="schedule-dates" placeholder="2026-10-03, 2026-10-10" aria-describedby="dates-hint"><p id="dates-hint" class="help">{{ t.dates_hint }}</p>
+                                </div>
+                                <label class="check setting-switch"><span>{{ t.skip_holidays }}</span><input id="schedule-skip-holidays" type="checkbox" role="switch" aria-describedby="skip-holidays-hint"></label>
+                                <p id="skip-holidays-hint" class="help">{{ t.skip_holidays_hint }}</p>
+                            </div>
+                            <div id="schedule-sound-field" class="field setting-row">
+                                <label for="schedule-sound">{{ t.browser_sound }}</label>
+                                <div class="sound-choice"><select id="schedule-sound"><option value="bell">{{ t.sound_bell }}</option><option value="beep">{{ t.sound_beep }}</option><option value="digital">{{ t.sound_digital }}</option><option value="silent">{{ t.sound_silent }}</option></select><button id="preview-sound" type="button">{{ t.preview_sound }}</button></div>
+                            </div>
+                            <div id="schedule-calendar-mode-field" class="field setting-row"><label for="schedule-calendar-mode">{{ t.calendar_link }}</label><select id="schedule-calendar-mode"><option value="none">{{ t.calendar_none }}</option><option value="event">{{ t.calendar_event }}</option><option value="day">{{ t.calendar_day }}</option></select></div>
+                            <div id="schedule-offset-field" class="field setting-row" hidden><label for="schedule-offset">{{ t.calendar_offset }}</label><input id="schedule-offset" type="number" min="0" max="1440" step="1" value="0"></div>
+                            <fieldset id="calendar-source-field" class="calendar-source-field" hidden>
+                                <legend>{{ t.calendar_sources }}</legend>
+                                <div id="schedule-calendar-sources" class="calendar-source-options"></div>
+                                <p class="help">{{ t.calendar_source_hint }}</p>
+                                <p id="calendar-mode-hint" class="help"></p>
+                                <p class="help">{{ t.calendar_rule_hint }}</p>
+                            </fieldset>
+                        </div>
                     </div>
                     <p id="form-error" class="error" role="alert"></p>
                     <div class="schedule-editor-footer">
-                        <div class="actions"><button type="submit" class="primary save">{{ t.save }}</button><button id="cancel-edit" type="button">{{ t.cancel }}</button></div>
                         <div id="editor-actions" class="actions" hidden></div>
+                        <div class="actions save-actions"><button id="cancel-edit" type="button">{{ t.cancel }}</button><button type="submit" class="primary save">{{ t.save }}</button></div>
                     </div>
                 </form>
             </section>

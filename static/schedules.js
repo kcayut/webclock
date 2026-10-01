@@ -6,8 +6,18 @@
     const $ = id => document.getElementById(id);
     const t = key => labels[key] || key;
     const format = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
-    let schedules = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
-    const eventTime = value => value ? new Date(value).toLocaleString(document.documentElement.lang, {timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false}) : t("none");
+    const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
+    let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
+    let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
+    const displayTime = value => window.WebClockTime.format(value, timeFormat, document.documentElement.lang);
+    const refreshTimeInputs = () => window.WebClockTimeInputs.refresh($("schedule-form"), timeFormat, document.documentElement.lang);
+    function eventTime(value) {
+        if (!value) return t("none");
+        const instant = Date.parse(value);
+        if (!Number.isFinite(instant)) return t("unknown");
+        const date = new Date(instant).toLocaleDateString(document.documentElement.lang, {timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short"});
+        return date + " " + displayTime(new Date(instant + 8 * 3600000).toISOString().slice(11, 16));
+    }
     function nextTime(value) {
         if (!value) return t("none");
         const instant = Date.parse(value);
@@ -27,7 +37,7 @@
             else if (targetDay > currentDay && targetDay < weekStart + 7) label = format("this_week", {weekday});
             else if (targetDay >= weekStart + 7 && targetDay < weekStart + 14) label = format("next_week", {weekday});
         }
-        return label + " " + date.toISOString().slice(11, 16);
+        return label + " " + displayTime(date.toISOString().slice(11, 16));
     }
     function node(tag, text, className) {
         const element = document.createElement(tag);
@@ -117,7 +127,17 @@
             toggle.title = t(schedule.enabled ? "disable" : "enable");
             actions.append(toggle, action(t("edit"), () => edit(schedule)));
             const byEvent = schedule.calendar_link && schedule.calendar_link.mode === "event";
-            row.append(node("p", byEvent ? t("calendar_event_time") : schedule.time, "schedule-time" + (byEvent ? " calendar-time" : "")), details, actions);
+            const shownTime = byEvent ? t("calendar_event_time") : displayTime(schedule.time);
+            const time = node("p", undefined, "schedule-time" + (byEvent ? " calendar-time" : ""));
+            if (!byEvent && timeFormat === "12h") {
+                time.setAttribute("aria-label", shownTime);
+                shownTime.split(" ").forEach(part => {
+                    const piece = node("span", part, part.includes(":") ? "schedule-time-value" : "schedule-time-period");
+                    piece.setAttribute("aria-hidden", "true");
+                    time.append(piece);
+                });
+            } else time.textContent = shownTime;
+            row.append(time, details, actions);
             (schedule.type === "alarm" ? list : otherList).append(row);
         });
         if (!schedules.some(schedule => schedule.type === "alarm")) list.append(node("li", t("none"), "empty"));
@@ -126,6 +146,7 @@
     }
     function closeEditor() {
         $("editor").hidden = true;
+        $(editorPanel + "-panel").classList.toggle("is-editing", false);
         if (!$(editorPanel + "-panel").hidden) $(editorPanel === "alarms" ? "add-schedule" : "add-other-schedule").focus();
     }
     function renderEditorActions() {
@@ -158,6 +179,12 @@
         const request = ++scheduleRequest;
         const data = await api("/schedules");
         if (request !== scheduleRequest) return;
+        if ((data.time_format === "12h" || data.time_format === "24h") && data.time_format !== timeFormat) {
+            timeFormat = data.time_format;
+            document.body.setAttribute("data-time-format", timeFormat);
+            refreshTimeInputs();
+            renderDevices();
+        }
         serverTime = Number.isFinite(Date.parse(data.server_time)) ? Date.parse(data.server_time) : null;
         calendarSources = data.calendar_sources || [];
         if (!$("editor").hidden) renderCalendarSources(selectedCalendarSources());
@@ -172,6 +199,7 @@
     function setRule() {
         $("weekday-field").hidden = $("schedule-rule").value !== "weekdays";
         $("date-field").hidden = $("schedule-rule").value !== "dates";
+        $("schedule-date-picker").disabled = $("date-field").hidden;
     }
     function selectedCalendarSources() {
         return Array.from(document.querySelectorAll('[name="calendar-source"]:checked'), input => input.value);
@@ -201,11 +229,16 @@
         $("schedule-offset").disabled = mode !== "event";
         $("schedule-offset").required = mode === "event";
         $("schedule-time-field").hidden = mode === "event";
+        $("schedule-event-time").hidden = mode !== "event";
         $("schedule-time").required = mode !== "event";
+        $("schedule-time").disabled = mode === "event";
         $("calendar-mode-hint").textContent = t(mode === "event" ? "calendar_event_hint" : "calendar_day_hint");
+        refreshTimeInputs();
     }
     function edit(schedule, type = "alarm") {
         $("schedule-form").reset();
+        if (!schedule) $("schedule-time").value = "07:30";
+        $("schedule-date-picker").value = "";
         $("form-error").textContent = "";
         $("schedule-id").value = schedule ? schedule.id : "";
         $("schedule-type").value = schedule ? schedule.type : type;
@@ -217,8 +250,10 @@
         $("schedule-calendar-mode").value = link ? link.mode : "none";
         $("schedule-offset").value = link ? String(link.offset_minutes || 0) : "0";
         renderCalendarSources(link ? link.source_ids : []);
+        $(editorPanel + "-panel").classList.toggle("is-editing", false);
         editorPanel = $("schedule-type").value === "alarm" ? "alarms" : "devices";
         $(editorPanel + "-panel").append($("editor"));
+        $(editorPanel + "-panel").classList.toggle("is-editing", true);
         $("editor-title").textContent = t(schedule ? (editorPanel === "alarms" ? "edit_alarm" : "edit_other") : type === "alarm" ? "add_alarm" : "add_other");
         if (schedule) {
             ["name", "type", "time"].forEach(key => $("schedule-" + key).value = schedule[key]);
@@ -228,10 +263,10 @@
             document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = (rule.weekdays || []).includes(Number(input.value)));
             $("schedule-dates").value = (rule.dates || []).join(", ");
         }
+        $("editor").hidden = false;
         setRule();
         setCalendarMode();
         renderEditorActions();
-        $("editor").hidden = false;
         $("editor").scrollIntoView({block: "start"});
         $("schedule-name").focus({preventScroll: true});
     }
@@ -240,6 +275,13 @@
     $("cancel-edit").addEventListener("click", closeEditor);
     $("schedule-rule").addEventListener("change", setRule);
     $("schedule-calendar-mode").addEventListener("change", setCalendarMode);
+    $("add-schedule-date").addEventListener("click", function () {
+        const date = $("schedule-date-picker").value;
+        if (!validDate(date)) { $("form-error").textContent = t("select_date"); return; }
+        const dates = $("schedule-dates");
+        if (!dates.value.split(",").some(value => value.trim() === date)) dates.value += (dates.value.trim() ? ", " : "") + date;
+        $("form-error").textContent = "";
+    });
     $("preview-sound").addEventListener("click", function () {
         const sound = $("schedule-sound").value;
         if (sound === "silent") { notice(t("sound_silent")); return; }
@@ -259,13 +301,14 @@
                 if (!rule.weekdays.length) throw new Error(t("select_weekday"));
             } else if (mode === "dates") {
                 rule.dates = $("schedule-dates").value.split(",").map(value => value.trim());
-                if (rule.dates.some(value => !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value + "T00:00:00Z")) || new Date(value + "T00:00:00Z").toISOString().slice(0, 10) !== value)) throw new Error(t("select_date"));
+                if (rule.dates.some(value => !validDate(value))) throw new Error(t("select_date"));
             } else if (mode !== "every_day") rule[mode] = true;
             if ($("schedule-skip-holidays").checked && mode === "holiday_only") throw new Error(t("holiday_conflict"));
             const data = {rule: rule, enabled: $("schedule-enabled").checked, skip_holidays: $("schedule-skip-holidays").checked};
             ["name", "type", "time"].forEach(key => data[key] = $("schedule-" + key).value);
             if (data.type === "alarm") data.browser_sound = $("schedule-sound").value;
             const calendarMode = data.type === "alarm" ? $("schedule-calendar-mode").value : "none";
+            if (calendarMode === "event" && !data.time) data.time = "07:30";
             if (calendarMode !== "none") {
                 const sourceIds = selectedCalendarSources();
                 if (!sourceIds.length || sourceIds.some(id => !calendarSources.some(source => source.id === id))) throw new Error(t("select_calendar_source"));
@@ -286,8 +329,12 @@
     });
     async function loadDevices() {
         const request = ++deviceRequest;
-        const devices = (await api("/devices")).devices;
+        const data = await api("/devices");
         if (request !== deviceRequest) return;
+        devices = data.devices;
+        renderDevices();
+    }
+    function renderDevices() {
         const list = $("device-list");
         list.replaceChildren();
         devices.forEach(device => {

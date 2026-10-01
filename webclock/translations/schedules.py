@@ -2,6 +2,7 @@
 
 SCHEDULE_TRANSLATIONS = {
     "zh-TW": {
+        "pick_date": "選擇日期", "add_date": "加入日期",
         "title": "鬧鐘管理", "management_hint": "設定響鈴時間、音色與重複週期。", "settings": "顯示與行事曆設定", "clock": "回到時鐘",
         "today": "今天", "tomorrow": "明天", "this_week": "本週{weekday}", "next_week": "下週{weekday}", "next_ring": "下次響鈴：{datetime}", "next": "下一次提醒", "loading": "載入中…", "none": "尚無排程",
         "timezone_hint": "排程時間：Asia/Taipei（台灣）", "workday": "工作日", "holiday": "假日", "unknown": "未知",
@@ -45,6 +46,7 @@ SCHEDULE_TRANSLATIONS = {
         "calendar_event_summary": "{sources} · 行程前 {minutes} 分鐘", "calendar_day_summary": "{sources} · 有行程當天", "calendar_event_time": "依行程",
     },
     "en": {
+        "pick_date": "Choose a date", "add_date": "Add date",
         "title": "Alarm management", "management_hint": "Set alarm times, sounds and repeat schedules.", "settings": "Display & calendar settings", "clock": "Back to clock",
         "today": "Today", "tomorrow": "Tomorrow", "this_week": "This {weekday}", "next_week": "Next {weekday}", "next_ring": "Next ring: {datetime}", "next": "Next event", "loading": "Loading…", "none": "No upcoming events",
         "timezone_hint": "Schedule time: Asia/Taipei (Taiwan)", "workday": "Workday", "holiday": "Holiday", "unknown": "Unknown",
@@ -88,6 +90,7 @@ SCHEDULE_TRANSLATIONS = {
         "calendar_event_summary": "{sources} · {minutes} min before events", "calendar_day_summary": "{sources} · Days with events", "calendar_event_time": "By event",
     },
     "ja": {
+        "pick_date": "日付を選択", "add_date": "日付を追加",
         "title": "アラーム管理", "management_hint": "アラームの時刻、音、繰り返しを設定します。", "settings": "表示・カレンダー設定", "clock": "時計に戻る",
         "today": "今日", "tomorrow": "明日", "this_week": "今週{weekday}曜日", "next_week": "来週{weekday}曜日", "next_ring": "次のアラーム：{datetime}", "next": "次の通知", "loading": "読み込み中…", "none": "次の予定はありません",
         "timezone_hint": "予定の時刻：Asia/Taipei（台湾）", "workday": "勤務日", "holiday": "休日", "unknown": "不明",
@@ -131,6 +134,7 @@ SCHEDULE_TRANSLATIONS = {
         "calendar_event_summary": "{sources} · 予定の{minutes}分前", "calendar_day_summary": "{sources} · 予定がある日", "calendar_event_time": "予定連動",
     },
     "zh-CN": {
+        "pick_date": "选择日期", "add_date": "添加日期",
         "title": "闹钟管理", "management_hint": "设置响铃时间、音色与重复周期。", "settings": "显示与日历设置", "clock": "返回时钟",
         "today": "今天", "tomorrow": "明天", "this_week": "本周{weekday}", "next_week": "下周{weekday}", "next_ring": "下次响铃：{datetime}", "next": "下一次提醒", "loading": "加载中…", "none": "暂无计划",
         "timezone_hint": "计划时间：Asia/Taipei（台湾）", "workday": "工作日", "holiday": "假日", "unknown": "未知",

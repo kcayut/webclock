@@ -58,6 +58,7 @@ DEFAULT_SETTINGS = {
     'brightness': 100,
     'timezone_offset': 8,
     'language': DEFAULT_LANGUAGE,
+    'time_format': '24h',
 }
 # ponytail: single-process file storage; use a database before adding writer processes.
 settings_lock = RLock()
@@ -79,6 +80,8 @@ def validate_settings(data):
         raise ValueError('Invalid display mode')
     if 'language' in result and result['language'] not in SUPPORTED_LANGUAGES:
         raise ValueError('Invalid language')
+    if 'time_format' in result and result['time_format'] not in ('24h', '12h'):
+        raise ValueError('Invalid time format')
     if 'night' in result:
         night = result['night']
         if not isinstance(night, dict) or set(night) != set(DEFAULT_NIGHT):
@@ -592,6 +595,7 @@ def template_context():
         language = DEFAULT_LANGUAGE
     return {
         'language': language,
+        'time_format': display_settings.get('time_format', '24h'),
         'languages': SUPPORTED_LANGUAGES,
         'translations': UI_TRANSLATIONS,
     }
@@ -601,7 +605,7 @@ def template_context():
 def index():
     context = template_context()
     keys = ('app_title', 'loading', 'notice_close', 'weekdays', 'page_error',
-            'standard_time_unavailable', 'status_parse_failed', 'server_unavailable', 'server_timeout',
+            'status_parse_failed', 'server_unavailable', 'server_timeout',
             'offline_ready', 'offline_unavailable', 'offline_failed')
     context['translations'] = {
         language: {key: value for key, value in pack.items() if key in keys or key.startswith('alarm_')}
