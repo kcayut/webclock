@@ -40,22 +40,29 @@
                             <div id="schedule-time-field" class="field"><label for="schedule-time">{{ t.time }}</label><input id="schedule-time" type="time" value="07:30" required aria-describedby="editor-timezone"></div>
                             <p id="schedule-event-time" hidden>{{ t.calendar_event_time }}</p>
                             <p id="editor-timezone" class="help">{{ t.timezone_hint }}</p>
+                            <p id="editor-now" class="help"></p>
+                            <div class="editor-preview" role="status" aria-live="polite"><p id="editor-next"></p><p id="editor-countdown" class="help"></p></div>
                             <label class="check setting-switch"><span>{{ t.enabled }}</span><input id="schedule-enabled" type="checkbox" role="switch" checked></label>
                         </div>
                         <div class="schedule-settings">
-                            <div class="field setting-row"><label for="schedule-name">{{ t.name }}</label><input id="schedule-name" maxlength="120" required autocomplete="off"></div>
-                            <div id="schedule-type-field" class="field setting-row"><label for="schedule-type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" hidden disabled>{{ t.alarm }}</option><option value="reminder">{{ t.reminder }}</option><option value="announcement">{{ t.announcement }}</option></select></div>
                             <div class="setting-group">
-                                <div class="field setting-row"><label for="schedule-rule">{{ t.rule }}</label><select id="schedule-rule"><option value="every_day">{{ t.every_day }}</option><option value="weekdays">{{ t.weekdays_label }}</option><option value="workday_only">{{ t.workday_only }}</option><option value="holiday_only">{{ t.holiday_only }}</option><option value="dates">{{ t.dates }}</option></select></div>
-                                <fieldset id="weekday-field" hidden><legend>{{ t.weekdays_label }}</legend><div class="weekdays">{% for day in range(1, 8) %}<label class="weekday-choice"><input type="checkbox" name="weekday" value="{{ day }}"><span>{{ t.weekdays[day - 1] }}</span></label>{% endfor %}</div></fieldset>
-                                <div id="date-field" class="field" hidden>
+                                <p id="schedule-repeat-summary" class="repeat-summary">{{ t.once }}</p>
+                                <fieldset id="weekday-field"><legend>{{ t.weekdays_label }}</legend><div class="weekdays">{% for day in range(1, 8) %}<label class="weekday-choice"><input type="checkbox" name="weekday" value="{{ day }}"><span>{{ t.weekdays[day - 1] }}</span></label>{% endfor %}</div></fieldset>
+                                <div id="date-field" class="field">
                                     <label for="schedule-date-picker">{{ t.pick_date }}</label>
-                                    <div class="date-choice"><input id="schedule-date-picker" type="date"><button id="add-schedule-date" type="button">{{ t.add_date }}</button></div>
-                                    <label for="schedule-dates">{{ t.dates }}</label><input id="schedule-dates" placeholder="2026-10-03, 2026-10-10" aria-describedby="dates-hint"><p id="dates-hint" class="help">{{ t.dates_hint }}</p>
+                                    <div class="date-choice"><input id="schedule-date-picker" type="date" aria-describedby="date-once-hint"><button id="clear-schedule-date" type="button" hidden>{{ t.clear_date }}</button></div>
+                                    <p id="date-once-hint" class="help">{{ t.date_once_hint }}</p>
                                 </div>
-                                <label class="check setting-switch"><span>{{ t.skip_holidays }}</span><input id="schedule-skip-holidays" type="checkbox" role="switch" aria-describedby="skip-holidays-hint"></label>
-                                <p id="skip-holidays-hint" class="help">{{ t.skip_holidays_hint }}</p>
+                                <details id="schedule-advanced">
+                                    <summary>{{ t.advanced_rule }}</summary>
+                                    <div class="field setting-row"><label for="schedule-rule">{{ t.rule }}</label><select id="schedule-rule"><option value="once">{{ t.once }}</option><option value="every_day">{{ t.every_day }}</option><option value="weekdays">{{ t.weekdays_label }}</option><option value="workday_only">{{ t.workday_only }}</option><option value="holiday_only">{{ t.holiday_only }}</option><option value="dates">{{ t.dates }}</option></select></div>
+                                    <div id="multiple-dates-field" class="field" hidden><label for="schedule-dates">{{ t.dates }}</label><input id="schedule-dates" placeholder="2026-10-03, 2026-10-10" aria-describedby="dates-hint"><p id="dates-hint" class="help">{{ t.dates_hint }}</p></div>
+                                    <label class="check setting-switch"><span>{{ t.skip_holidays }}</span><input id="schedule-skip-holidays" type="checkbox" role="switch" aria-describedby="skip-holidays-hint"></label>
+                                    <p id="skip-holidays-hint" class="help">{{ t.skip_holidays_hint }}</p>
+                                </details>
                             </div>
+                            <div class="field setting-row"><label for="schedule-name">{{ t.name_optional }}</label><input id="schedule-name" maxlength="120" placeholder="{{ t.name_placeholder }}" autocomplete="off"></div>
+                            <div id="schedule-type-field" class="field setting-row"><label for="schedule-type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" hidden disabled>{{ t.alarm }}</option><option value="reminder">{{ t.reminder }}</option><option value="announcement">{{ t.announcement }}</option></select></div>
                             <div id="schedule-sound-field" class="field setting-row">
                                 <label for="schedule-sound">{{ t.browser_sound }}</label>
                                 <div class="sound-choice"><select id="schedule-sound"><option value="bell">{{ t.sound_bell }}</option><option value="beep">{{ t.sound_beep }}</option><option value="digital">{{ t.sound_digital }}</option><option value="silent">{{ t.sound_silent }}</option></select><button id="preview-sound" type="button">{{ t.preview_sound }}</button></div>
@@ -89,5 +96,15 @@
             </section>
         </section>
     </main>
+    <dialog id="pause-dialog" aria-labelledby="pause-title" aria-describedby="pause-hint">
+        <h2 id="pause-title"></h2>
+        <p id="pause-hint">{{ t.pause_hint }}</p>
+        <div id="pause-preview" role="status" aria-live="polite"><p id="pause-skipped"></p><p id="pause-resume"></p></div>
+        <form method="dialog" class="pause-actions">
+            <button value="" autofocus>{{ t.cancel }}</button>
+            <button value="disable">{{ t.pause_forever }}</button>
+            <button id="pause-once" value="skip" class="primary" disabled>{{ t.pause_once }}</button>
+        </form>
+    </dialog>
 </body>
 </html>

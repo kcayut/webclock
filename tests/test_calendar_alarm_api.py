@@ -64,6 +64,10 @@ END:VCALENDAR
         response = self.client.get('/api/v1/schedules')
         self.assertEqual({row['id']: row['next_occurrence'] for row in response.json['schedules']}, expected)
         self.assertEqual({row['id'] for row in response.json['calendar_sources']}, {'local', 'work'})
+        preview = self.client.post('/api/v1/schedules/preview', json={'id': 'event'})
+        self.assertEqual(preview.status_code, 200, preview.json)
+        self.assertEqual(preview.json['next_occurrence'], expected['event'])
+        self.assertNotIn('private-token', preview.text)
         self.assertTrue(self.client.get('/api/status').json['events'])
         response = self.client.patch('/api/calendar', json={
             'sources': [{'id': 'work', 'display_enabled': False}], 'local_display_enabled': False})

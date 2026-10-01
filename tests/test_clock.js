@@ -71,7 +71,7 @@ for (const [instant, language, time, period] of [
     context.renderClock(Date.parse(instant), 0, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], '12h', language);
     assert.equal(nodes.time.textContent, time);
     assert.equal(nodes['time-period'].textContent, period);
-    assert.equal(nodes['time-period'].style.display, 'block');
+    assert.equal(nodes['time-period'].style.display, 'inline-block');
 }
 context.renderClock(Date.parse('2026-10-01T23:59:00Z'), 0, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
 assert.equal(nodes.time.textContent, '23:59');

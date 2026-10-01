@@ -6,7 +6,7 @@ import uuid
 from flask import Blueprint, abort, jsonify, render_template, request
 
 from webclock.services.device_service import DeviceService
-from webclock.services.schedule_service import TAIPEI, read_schedules, save_schedules, validate_schedule, next_event, next_occurrence, prefetch_calendar_sources
+from webclock.services.schedule_service import TAIPEI, read_schedules, save_schedules, validate_schedule, next_occurrence, prefetch_calendar_sources
 from webclock.services.storage import storage_lock
 from webclock.translations.schedules import SCHEDULE_TRANSLATIONS
 
@@ -36,6 +36,17 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         link = row.get('calendar_link')
         if link and set(link['source_ids']) - {source['id'] for source in source_catalog()}:
             raise ValueError('Selected calendar source no longer exists')
+
+    def skip_occurrence(row, event, now, expected=None):
+        if expected is not None and (event is None or event['datetime'] != expected):
+            raise ValueError('Occurrence changed; preview again')
+        if event is None:
+            raise ValueError('No upcoming occurrence to skip')
+        # Browser alarms include the current minute, so keep its skips too.
+        minute = now.replace(second=0, microsecond=0)
+        row['skipped_occurrences'] = [value for value in row['skipped_occurrences']
+                                      if datetime.fromisoformat(value) >= minute] + [event['datetime']]
+        validate_schedule(row)
 
     @api.route('/schedules')
     def management():
@@ -73,6 +84,29 @@ def management_api(state_directory, holidays, template_context, calendar_events=
                        holiday_coverage=holidays.export()['coverage'], timezone='Asia/Taipei',
                        time_format=template_context()['time_format'])
 
+    @api.route('/api/v1/schedules/preview', methods=['POST'])
+    def preview_schedule():
+        data = request.get_json()
+        if not isinstance(data, dict):
+            raise ValueError('Expected a schedule object')
+        skip = data.pop('skip_next', False)
+        if type(skip) is not bool:
+            raise ValueError('Invalid skip preview setting')
+        old = next((row for row in schedules() if row['id'] == data['id']), {}) if 'id' in data else {}
+        row = validate_schedule(dict(old, **data))
+        if not old or 'calendar_link' in data:
+            check_sources(row)
+        now = taipei_now()
+        event = next_occurrence(row, holidays, now, calendar_events)
+        result = dict(server_time=now.isoformat(), timezone='Asia/Taipei')
+        if skip:
+            result['skipped_occurrence'] = event['datetime'] if event else None
+            if event:
+                skip_occurrence(row, event, now)
+                event = next_occurrence(row, holidays, now, calendar_events)
+        result['next_occurrence'] = event['datetime'] if event else None
+        return jsonify(result)
+
     @api.route('/api/v1/schedules/<schedule_id>', methods=['PUT', 'DELETE'])
     def schedule_item(schedule_id):
         with storage_lock:
@@ -86,9 +120,16 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             data = request.get_json()
             if not isinstance(data, dict) or data.get('id', schedule_id) != schedule_id:
                 raise ValueError('Invalid schedule object or ID')
+            skip = 'skip_next' in data
+            expected = data.pop('skip_next', None)
+            if skip and not isinstance(expected, str):
+                raise ValueError('Expected the occurrence to skip')
             row = validate_schedule(dict(old, **data))
             if 'calendar_link' in data:
                 check_sources(row)
+            if skip:
+                now = taipei_now()
+                skip_occurrence(row, next_occurrence(row, holidays, now, calendar_events), now, expected)
             rows[rows.index(old)] = row
             store(rows)
             return jsonify(row)
@@ -131,20 +172,20 @@ def management_api(state_directory, holidays, template_context, calendar_events=
 
     @api.route('/api/v1/schedules/<schedule_id>/skip-next', methods=['POST'])
     def skip_next(schedule_id):
+        data = request.get_json() if request.data else {}
+        if (not isinstance(data, dict) or set(data) - {'expected_occurrence'}
+                or ('expected_occurrence' in data and not isinstance(data['expected_occurrence'], str))):
+            raise ValueError('Expected the occurrence to skip')
         with storage_lock:
             rows = schedules()
             row = next((row for row in rows if row['id'] == schedule_id), None)
             if row is None:
                 abort(404)
             now = taipei_now()
-            event = next_event([row], holidays, now, calendar_events)
-            if event is None:
-                raise ValueError('No upcoming occurrence to skip')
-            skips = [value for value in row.get('skipped_occurrences', []) if datetime.fromisoformat(value) > now]
-            row['skipped_occurrences'] = skips + [event['datetime']]
-            validate_schedule(row)
+            event = next_occurrence(row, holidays, now, calendar_events)
+            skip_occurrence(row, event, now, data.get('expected_occurrence'))
             store(rows)
-            return jsonify(skipped=event, next_event=next_event([row], holidays, now, calendar_events))
+            return jsonify(skipped=event, next_event=next_occurrence(row, holidays, now, calendar_events))
 
     @api.route('/api/v1/holidays')
     def holiday_day():

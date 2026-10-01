@@ -11,7 +11,7 @@ function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language) {
     var period = document.getElementById('time-period');
     if (period) {
         period.textContent = timeFormat === '12h' ? window.WebClockTime.period(hour, language) : '';
-        period.style.display = timeFormat === '12h' ? 'block' : 'none';
+        period.style.display = timeFormat === '12h' ? 'inline-block' : 'none';
     }
     document.getElementById('date-part').textContent = (targetTime.getUTCMonth() + 1) + '/' + targetTime.getUTCDate();
     document.getElementById('day-part').textContent = weekDays[targetTime.getUTCDay()];

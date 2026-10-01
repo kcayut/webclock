@@ -82,6 +82,136 @@ class ServerApiTest(unittest.TestCase):
         self.assertEqual(self.client.post('/api/v1/schedules', json=self.schedule).status_code, 400)
         self.assertEqual(self.client.post('/api/v1/schedules', json=[]).status_code, 400)
 
+    def test_preview_rules_validation_and_no_persistence(self):
+        route = '/api/v1/schedules/preview'
+        before = self.config()['schedule_revision']
+        now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
+        cases = [({}, '2026-09-23T07:30:00+08:00'),
+                 ({'rule': {'dates': ['2026-09-24']}}, '2026-09-24T07:30:00+08:00'),
+                 ({'rule': {'weekdays': [5]}}, '2026-09-25T07:30:00+08:00'),
+                 ({'rule': {'dates': ['2026-09-22']}}, None),
+                 ({'enabled': False}, None)]
+        with patch('webclock.api.management.taipei_now', return_value=now):
+            for changes, expected in cases:
+                with self.subTest(changes=changes):
+                    response = self.client.post(route, json=dict(self.schedule, **changes))
+                    self.assertEqual(response.status_code, 200, response.json)
+                    self.assertEqual(response.json, dict(next_occurrence=expected,
+                                                        server_time=now.isoformat(), timezone='Asia/Taipei'))
+                    self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            for invalid in ([], {'time': '07:30'}, dict(self.schedule, rule={'dates': ['2026-02-30']}),
+                            dict(self.schedule, calendar_link={'mode': 'day', 'source_ids': ['missing']})):
+                self.assertEqual(self.client.post(route, json=invalid).status_code, 400)
+        self.assertEqual(self.client.post(route, json=self.schedule,
+                                         headers={'Origin': 'https://evil.invalid'}).status_code, 403)
+        self.assertFalse((self.root / 'schedules.json').exists())
+        self.assertEqual(self.config()['schedule_revision'], before)
+
+    def test_preview_edit_preserves_skips_and_matches_update(self):
+        self.client.post('/api/v1/schedules', json=dict(self.schedule,
+            rule={'weekdays': [3]}, skipped_occurrences=['2026-09-23T07:30:00+08:00']))
+        path = self.root / 'schedules.json'
+        original, before = path.read_bytes(), self.config()['schedule_revision']
+        now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
+        with patch('webclock.api.management.taipei_now', return_value=now):
+            preview = self.client.post('/api/v1/schedules/preview', json={'id': 'wake', 'name': '修改名稱'})
+            self.assertEqual(preview.status_code, 200, preview.json)
+            self.assertEqual(preview.json['next_occurrence'], '2026-09-30T07:30:00+08:00')
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(self.config()['schedule_revision'], before)
+            self.assertEqual(self.client.put('/api/v1/schedules/wake', json={'name': '修改名稱'}).status_code, 200)
+            self.assertEqual(self.client.get('/api/v1/schedules').json['schedules'][0]['next_occurrence'],
+                             preview.json['next_occurrence'])
+
+    def test_skip_preview_and_atomic_draft_save_share_browser_and_device_schedule(self):
+        self.client.post('/api/v1/schedules', json=dict(self.schedule, rule={'weekdays': [3]}))
+        path = self.root / 'schedules.json'
+        original, before = path.read_bytes(), self.config()['schedule_revision']
+        now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
+        draft = dict(id='wake', name='週五起床', time='08:00', rule={'weekdays': [5]}, enabled=True)
+        skipped, resumed = '2026-09-25T08:00:00+08:00', '2026-10-02T08:00:00+08:00'
+        with patch('webclock.api.management.taipei_now', return_value=now):
+            response = self.client.post('/api/v1/schedules/preview', json=dict(draft, skip_next=True))
+            self.assertEqual(response.status_code, 200, response.json)
+            self.assertEqual(response.json, dict(skipped_occurrence=skipped, next_occurrence=resumed,
+                                                server_time=now.isoformat(), timezone='Asia/Taipei'))
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(self.config()['schedule_revision'], before)
+            # A stale preview must not save any of the draft's other changes.
+            response = self.client.put('/api/v1/schedules/wake', json=dict(draft, skip_next=now.isoformat()))
+            self.assertEqual(response.status_code, 400, response.json)
+            self.assertEqual(response.json['error'], 'Occurrence changed; preview again')
+            self.assertEqual(path.read_bytes(), original)
+            response = self.client.put('/api/v1/schedules/wake', json=dict(draft, enabled=False, skip_next=skipped))
+            self.assertEqual(response.status_code, 400, response.json)
+            self.assertEqual(response.json['error'], 'Occurrence changed; preview again')
+            self.assertEqual(path.read_bytes(), original)
+            response = self.client.put('/api/v1/schedules/wake', json=dict(draft, skip_next=skipped))
+            self.assertEqual(response.status_code, 200, response.json)
+            saved = response.json
+            self.assertTrue(saved['enabled'])
+            self.assertEqual(saved['time'], '08:00')
+            self.assertEqual(saved['skipped_occurrences'], [skipped])
+            self.assertNotIn('skip_next', saved)
+            self.assertEqual(self.client.get('/api/v1/schedules').json['schedules'][0]['next_occurrence'], resumed)
+            alarms = self.client.get('/api/v1/browser-alarms').json
+            self.assertEqual(alarms['enabled_ids'], ['wake'])
+            self.assertEqual(alarms['alarms'][0]['occurrence_id'], 'wake@' + resumed)
+            self.assertEqual(self.client.get('/api/v1/device/schedules').json['schedules'], [saved])
+            self.assertNotEqual(self.config()['schedule_revision'], before)
+            original = path.read_bytes()
+            response = self.client.post('/api/v1/schedules/wake/skip-next', json={'expected_occurrence': skipped})
+            self.assertEqual(response.status_code, 400, response.json)
+            self.assertEqual(path.read_bytes(), original)
+            response = self.client.post('/api/v1/schedules/wake/skip-next', json={'expected_occurrence': resumed})
+            self.assertEqual(response.status_code, 200, response.json)
+            self.assertEqual(response.json['skipped']['datetime'], resumed)
+            self.assertEqual(response.json['next_event']['datetime'], '2026-10-09T08:00:00+08:00')
+
+    def test_skip_preview_boundaries_and_stale_requests_do_not_change_storage(self):
+        self.client.post('/api/v1/schedules', json=self.schedule)
+        path = self.root / 'schedules.json'
+        original = path.read_bytes()
+        now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
+        with patch('webclock.api.management.taipei_now', return_value=now) as current:
+            for changes, skipped, resumed in [
+                ({}, '2026-09-23T07:30:00+08:00', '2026-09-24T07:30:00+08:00'),
+                ({'rule': {'dates': ['2026-09-24', '2026-10-01']}},
+                 '2026-09-24T07:30:00+08:00', '2026-10-01T07:30:00+08:00'),
+                ({'rule': {'dates': ['2026-09-24']}}, '2026-09-24T07:30:00+08:00', None),
+                ({'rule': {'dates': ['2026-09-22']}}, None, None),
+                ({'enabled': False}, None, None),
+            ]:
+                with self.subTest(changes=changes):
+                    response = self.client.post('/api/v1/schedules/preview',
+                                                json=dict(id='wake', skip_next=True, **changes))
+                    self.assertEqual(response.status_code, 200, response.json)
+                    self.assertEqual(response.json['skipped_occurrence'], skipped)
+                    self.assertEqual(response.json['next_occurrence'], resumed)
+                    self.assertEqual(path.read_bytes(), original)
+            for invalid in (None, 'true', 1, []):
+                self.assertEqual(self.client.post('/api/v1/schedules/preview',
+                                                 json={'id': 'wake', 'skip_next': invalid}).status_code, 400)
+            for invalid in (None, True, 1, [], 'invalid'):
+                self.assertEqual(self.client.put('/api/v1/schedules/wake',
+                                                json={'skip_next': invalid}).status_code, 400)
+                self.assertEqual(self.client.post('/api/v1/schedules/wake/skip-next',
+                                                 json={'expected_occurrence': invalid}).status_code, 400)
+                self.assertEqual(path.read_bytes(), original)
+            # Crossing the displayed occurrence cannot accidentally skip tomorrow.
+            current.return_value = now.replace(hour=7, minute=31)
+            response = self.client.post('/api/v1/schedules/wake/skip-next',
+                                        json={'expected_occurrence': '2026-09-23T07:30:00+08:00'})
+            self.assertEqual(response.status_code, 400, response.json)
+            self.assertEqual(path.read_bytes(), original)
+            current.return_value = now.replace(hour=7, minute=30, second=8)
+            self.client.put('/api/v1/schedules/wake', json={'skipped_occurrences': ['2026-09-23T07:30:00+08:00']})
+            response = self.client.post('/api/v1/schedules/wake/skip-next',
+                                        json={'expected_occurrence': '2026-09-24T07:30:00+08:00'})
+            self.assertEqual(response.status_code, 200, response.json)
+            self.assertEqual(self.client.get('/api/v1/browser-alarms').json['alarms'][0]['occurrence_id'],
+                             'wake@2026-09-25T07:30:00+08:00')
+
     def test_private_routes_and_device_token(self):
         for route in ('/api/v1/schedules', '/api/v1/browser-alarms', '/api/v1/devices', '/api/v1/device/config', '/schedules'):
             self.assertEqual(self.client.get(route, headers={'Origin': 'https://evil.invalid'}).status_code, 403)

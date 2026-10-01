@@ -28,12 +28,14 @@ body {
 
 #clock-container {
     text-align: center;
+    white-space: nowrap;
     margin-bottom: 0;
     -webkit-flex: 0 0 auto;
     flex: 0 0 auto;
 }
 
 #time {
+    display: inline-block;
     font-size: 35vw;
     font-weight: bold;
     line-height: 1;
@@ -43,7 +45,8 @@ body {
     display: none;
     font-size: 5vw;
     line-height: 1.2;
-    margin-bottom: 8px;
+    vertical-align: baseline;
+    margin-right: 0.25em;
 }
 
 #date-info {
@@ -78,8 +81,8 @@ body {
 /* Older Safari cannot size text with min() or CSS custom properties. */
 @supports not (font-size: min(1vw, 1vh)) {
     body:lang(en) #date-info { font-size: 11vw; }
-    body.uses-12-hour #time { font-size: 32vw; }
-    body.uses-12-hour #date-info { font-size: 11.9vw; }
+    body.uses-12-hour #time { font-size: 31vw; }
+    body.uses-12-hour #date-info { font-size: 11.5vw; }
 
     @media (min-aspect-ratio: 7/4) {
         #time { font-size: 50vh; }
@@ -100,7 +103,7 @@ body {
 
 @supports (font-size: min(1vw, 1vh)) {
     body.uses-12-hour {
-        --clock-size: min(var(--clock-width), calc((var(--clock-height) - 26px) / 1.7));
+        --clock-size: min(31vw, var(--clock-width), calc((var(--clock-height) - 18px) / 1.5));
     }
 
     #time-period {

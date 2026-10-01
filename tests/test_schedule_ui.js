@@ -7,7 +7,7 @@ const vm = require("node:vm");
 
 const template = fs.readFileSync(path.join(__dirname, "../templates/schedules.html"), "utf8");
 const source = fs.readFileSync(path.join(__dirname, "../static/schedules.js"), "utf8");
-assert.doesNotMatch(template, /schedule-(volume|repeat|snooze)|sound-form|enable-audio|ringing/);
+assert.doesNotMatch(template, /id="(?:schedule-(?:volume|repeat|snooze)|sound-form|enable-audio|ringing)"/);
 assert.match(template, /alarm-audio\.js/);
 assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
 assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
@@ -22,6 +22,7 @@ function element(tag = "div") {
     const classes = new Set();
     return {
         tag, textContent: "", className: "", disabled: false, hidden: false, value: "", checked: false,
+        open: false, returnValue: "", onclose: null,
         children: [], listeners: {}, attributes: {}, classList: {
             toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
             contains(name) { return classes.has(name); }
@@ -38,7 +39,9 @@ function element(tag = "div") {
         getAttribute(key) { return this.attributes[key]; },
         addEventListener(type, listener) { this.listeners[type] = listener; },
         trigger(type) { return this.listeners[type].call(this, {preventDefault() {}}); },
-        scrollIntoView() {}, focus() { this.focused = true; }
+        scrollIntoView() {}, focus() { this.focused = true; },
+        showModal() { assert.equal(this.open, false); this.open = true; },
+        close(value = "") { this.returnValue = value; this.open = false; if (this.onclose) this.onclose(); }
     };
 }
 const elements = new Map(Array.from(template.matchAll(/\bid="([^"]+)"/g), match => [match[1], element()]));
@@ -47,11 +50,17 @@ const $ = id => {
     return elements.get(id);
 };
 $("schedule-i18n").textContent = JSON.stringify({
+    alarm: "Alarm",
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     today: "Today", tomorrow: "Tomorrow", this_week: "This {weekday}", next_week: "Next {weekday}", next_ring: "Next ring: {datetime}",
     calendar_event_summary: "{sources} · {minutes} min before events", calendar_day_summary: "{sources} · Days with events", calendar_missing: "Removed source ({id})",
-    skipped: "Skipped {datetime}", coverage: "{start} to {end}", delete_confirm: "Delete {name}?"
+    skipped: "Skipped {datetime}", coverage: "{start} to {end}", delete_confirm: "Delete {name}?",
+    current_datetime: "Now: {datetime}", ring_in: "In {duration}", saved_next: "Saved · in {duration}",
+    duration_days: "{count} d", duration_hours: "{count} hr", duration_minutes: "{count} min", under_minute: "Under 1 min",
+    weekly_summary: "Weekly {days}", pause_title: "Disable {name}?", pause_skip: "Skip {datetime}",
+    resume_at: "Resumes {datetime} (in {duration})", resume_saved: "Skipped once · Resumes {datetime} (in {duration})"
 });
+$("editor").hidden = true;
 const weekdays = Array.from({length: 7}, (_, i) => Object.assign(element("input"), {value: String(i + 1)}));
 $("alarms-panel").setAttribute("data-management-panel", "alarms");
 $("devices-panel").setAttribute("data-management-panel", "devices");
@@ -71,6 +80,8 @@ $("schedule-form").reset = () => {
     weekdays.forEach(input => input.checked = false);
 };
 const pending = [], requests = [], intervals = [], navigation = {}, inputRefreshes = [];
+const timeouts = new Map();
+let monotonicTime = 0, timeoutId = 0;
 const body = element("body");
 body.setAttribute("data-initial-panel", "alarms");
 body.setAttribute("data-time-format", "24h");
@@ -80,9 +91,10 @@ class WrongDeviceDate extends Date {
 }
 const context = vm.createContext({
     console, Date: WrongDeviceDate, Set, Map, Number, JSON, Object, Array, Promise,
+    performance: {now: () => monotonicTime},
     document: {
         documentElement: {lang: "en"}, body,
-        getElementById: $, createElement: element, addEventListener() {},
+        getElementById: id => elements.get(id) || null, createElement: element, addEventListener() {},
         querySelectorAll(selector) {
             if (selector === '[data-management-panel]') return [$("alarms-panel"), $("devices-panel")];
             if (selector === '[data-management-link]') return [];
@@ -104,9 +116,11 @@ const context = vm.createContext({
             pending.push(request);
         });
     },
-    setInterval(callback, delay) { intervals.push({callback, delay}); }
+    setInterval(callback, delay) { intervals.push({callback, delay}); },
+    setTimeout(callback, delay) { const id = ++timeoutId; timeouts.set(id, {callback, delay}); return id; },
+    clearTimeout(id) { timeouts.delete(id); }
 });
-const probe = `globalThis.qa = {loadSchedules, loadDevices, get: () => schedules};`;
+const probe = `globalThis.qa = {loadSchedules, loadDevices, scheduleData, remainingTime, queuePreview, syncServerTime, get: () => schedules};`;
 const instrumented = source.replace("    refresh();\n    setInterval", "    " + probe + "\n    refresh();\n    setInterval");
 assert.notEqual(instrumented, source, "Management state probe must attach");
 // Audio support is optional: initialization, forms and commands must work without it.
@@ -128,9 +142,19 @@ function take(url, method = "GET") {
 function reply(request, data, ok = true) {
     request.resolve({ok, json: async () => data});
 }
+function runPreview() {
+    assert.equal(timeouts.size, 1, "Draft changes must leave only one debounced preview");
+    const [id, timer] = Array.from(timeouts)[0];
+    timeouts.delete(id);
+    assert.equal(timer.delay, 200);
+    return timer.callback();
+}
 const catalog = [{id: 'local', name: 'Local', provider: 'local'}, {id: 'work', name: 'Work calendar', provider: 'apple'}];
 function scheduleReply(request, schedules, serverTime = '2026-09-30T10:00:00+08:00', calendarSources = catalog, timeFormat = "24h") {
     reply(request, {schedules, calendar_sources: calendarSources, time_format: timeFormat, server_time: serverTime, day: {date: "2026-09-30", type: "workday"}, holiday_coverage: {start: "2023-01-01", end: "2027-12-31"}});
+}
+function pauseReply(request, skipped = row.next_occurrence, next = nextDate) {
+    reply(request, {skipped_occurrence: skipped, next_occurrence: next, server_time: "2026-09-30T10:00:00+08:00"});
 }
 function descendants(root) { return root.children.flatMap(child => [child, ...descendants(child)]); }
 function calendarInput(id) { return descendants($("schedule-calendar-sources")).find(input => input.name === 'calendar-source' && input.value === id); }
@@ -140,12 +164,16 @@ function button(list, label) {
     return result;
 }
 const content = root => [root.textContent, ...root.children.map(content)].join(" ");
+const completionTimeout = setTimeout(() => {
+    throw new Error("Unfinished mocked requests: " + pending.map(request => request.url).join(", "));
+}, 5000);
 
 (async () => {
     scheduleReply(take("/schedules"), [row, {...row, id: "notice", name: "Device reminder", type: "reminder", next_occurrence: "2026-09-30T12:00:00+08:00"}]);
     reply(take("/devices"), {devices: [{id: "desk", online: true, last_seen: "2026-09-30T10:00:00+08:00"}]});
     await flush();
-    assert.deepEqual(intervals.map(item => item.delay), [15000], "Only management refresh should be scheduled");
+    assert.deepEqual(intervals.map(item => item.delay), [15000, 1000], "Poll server data and update the editor clock independently");
+    assert.equal(timeouts.size, 0, "The closed editor must not request previews");
     assert.match($("day-status").textContent, /2026-09-30.*workday/);
     assert.match($("next-event").textContent, /Morning/);
     assert.doesNotMatch(content($("schedule-list")), /Device reminder/);
@@ -157,6 +185,98 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     assert.equal(button("schedule-list", "disable").attributes["aria-checked"], "true");
     assert.equal($("next-event").textContent, "Tomorrow 07:30 · Morning");
     assert.match(content($("schedule-list")), /Next ring: Tomorrow 07:30/);
+
+    await $("add-schedule").trigger("click");
+    assert.equal($("schedule-rule").value, "once");
+    assert.equal($("schedule-name").value, "");
+    assert.equal($("weekday-field").hidden, false, "Weekdays are visible before choosing a repeat rule");
+    assert.equal($("schedule-date-picker").disabled, false, "The date picker is immediately usable");
+    assert.match($("editor-now").textContent, /2026.*10:00/);
+    assert.equal(qa.scheduleData().name, "Alarm", "A blank name uses the selected language's type label");
+    for (const [serverTime, time, date] of [
+        ["2026-09-30T22:00:00Z", "07:30", "2026-10-01"],
+        ["2026-10-01T07:30:00+08:00", "07:30", "2026-10-01"],
+        ["2026-10-01T07:30:01+08:00", "07:30", "2026-10-02"],
+        ["2026-12-31T23:59:59+08:00", "00:00", "2027-01-01"],
+    ]) {
+        qa.syncServerTime(serverTime);
+        $("schedule-time").value = time;
+        assert.deepEqual(plain(qa.scheduleData().rule), {dates: [date]}, "Time-only alarms use the next Taipei occurrence");
+    }
+    qa.syncServerTime("2026-10-01T07:29:59+08:00");
+    $("schedule-time").value = "07:30";
+    monotonicTime += 2000;
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-02"]}, "Elapsed monotonic time advances the server clock despite an incorrect device clock");
+    qa.syncServerTime(null);
+    assert.throws(() => qa.scheduleData(), /preview_failed/, "Missing server time cannot silently use the device date");
+    qa.syncServerTime("2026-09-30T10:00:00+08:00");
+    assert.equal(qa.remainingTime("2026-10-01T12:03:00+08:00"), "1 d 2 hr 3 min");
+    assert.equal(qa.remainingTime("2026-09-30T10:00:30+08:00"), "Under 1 min");
+    weekdays[0].checked = true;
+    await weekdays[0].trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1]});
+    weekdays[4].checked = true;
+    await weekdays[4].trigger("change");
+    assert.match($("schedule-repeat-summary").textContent, /Weekly Mon \/ Fri/);
+    $("schedule-date-picker").value = "2026-10-10";
+    await $("schedule-date-picker").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-10"]});
+    assert.ok(weekdays.every(input => !input.checked), "Choosing a date clears weekly repetition");
+    weekdays[2].checked = true;
+    await weekdays[2].trigger("change");
+    assert.equal($("schedule-date-picker").value, "");
+    assert.equal($("schedule-dates").value, "");
+    weekdays[2].checked = false;
+    await weekdays[2].trigger("change");
+    assert.equal($("schedule-rule").value, "once", "Clearing every weekday restores a one-time alarm");
+
+    await $("schedule-form").trigger("change");
+    const olderPreview = runPreview(), olderPreviewRequest = take("/schedules/preview", "POST");
+    assert.deepEqual(JSON.parse(olderPreviewRequest.options.body).rule, {dates: ["2026-10-01"]});
+    $("schedule-time").value = "08:00";
+    await $("schedule-form").trigger("input");
+    await $("schedule-form").trigger("change");
+    const newerPreview = runPreview(), newerPreviewRequest = take("/schedules/preview", "POST");
+    reply(newerPreviewRequest, {next_occurrence: "2026-10-01T08:00:00+08:00", server_time: "2026-09-30T10:00:00+08:00"});
+    await newerPreview;
+    assert.equal($("editor-next").textContent, "Next ring: Tomorrow 08:00");
+    assert.equal($("editor-countdown").textContent, "In 22 hr");
+    let liveRegionWrites = 0;
+    for (const id of ["editor-next", "editor-countdown"]) {
+        let value = $(id).textContent;
+        Object.defineProperty($(id), "textContent", {
+            get: () => value, set: next => { value = next; ++liveRegionWrites; }
+        });
+    }
+    intervals.find(item => item.delay === 1000).callback();
+    assert.equal(liveRegionWrites, 0, "An unchanged countdown must not retrigger live-region announcements every second");
+    reply(olderPreviewRequest, {next_occurrence: "2040-01-01T07:30:00+08:00", server_time: "2040-01-01T00:00:00+08:00"});
+    await olderPreview;
+    assert.equal($("editor-next").textContent, "Next ring: Tomorrow 08:00", "An old preview cannot replace a newer draft or server clock");
+    monotonicTime += 60000;
+    intervals.find(item => item.delay === 1000).callback();
+    assert.match($("editor-now").textContent, /10:01/);
+    assert.equal($("editor-countdown").textContent, "In 21 hr 59 min");
+    qa.syncServerTime("2026-09-30T23:59:59+08:00");
+    monotonicTime += 2000;
+    intervals.find(item => item.delay === 1000).callback();
+    assert.equal($("editor-next").textContent, "Next ring: Today 08:00", "Relative labels advance across Taipei midnight between server polls");
+    qa.syncServerTime("2026-10-01T07:59:59+08:00");
+    monotonicTime += 2000;
+    intervals.find(item => item.delay === 1000).callback();
+    const elapsedPreview = runPreview(), elapsedRequest = take("/schedules/preview", "POST");
+    assert.deepEqual(JSON.parse(elapsedRequest.options.body).rule, {dates: ["2026-10-02"]}, "An elapsed time-only preview recalculates the next one-time date");
+    reply(elapsedRequest, {next_occurrence: "2026-10-02T08:00:00+08:00", server_time: "2026-10-01T08:00:01+08:00"});
+    await elapsedPreview;
+    qa.queuePreview();
+    const closedPreview = runPreview(), closedPreviewRequest = take("/schedules/preview", "POST");
+    await $("cancel-edit").trigger("click");
+    const closedText = $("editor-next").textContent;
+    reply(closedPreviewRequest, {next_occurrence: "2040-01-01T07:30:00+08:00", server_time: "2040-01-01T00:00:00+08:00"});
+    await closedPreview;
+    assert.equal($("editor-next").textContent, closedText, "A response received after closing the editor must be ignored");
+    assert.equal(timeouts.size, 0);
+
     for (const [serverTime, target, expected] of [
         ['2026-09-30T10:00:00+08:00', '2026-09-30T22:00:00+08:00', 'Today 22:00'],
         ['2026-09-30T10:00:00+08:00', '2026-10-01T07:30:00+08:00', 'Tomorrow 07:30'],
@@ -211,9 +331,66 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     assert.equal(body.getAttribute("data-time-format"), "24h");
     assert.doesNotMatch(content($("device-list")), /10:00 AM/);
 
+    const cancellingPause = button("schedule-list", "disable").trigger("click");
+    const cancelledPauseRequest = take("/schedules/preview", "POST");
+    assert.deepEqual(JSON.parse(cancelledPauseRequest.options.body), {id: row.id, enabled: true, skip_next: true});
+    assert.equal($("pause-dialog").open, true);
+    assert.equal($("pause-title").textContent, "Disable Morning?");
+    assert.equal($("pause-once").disabled, true, "Wait for the server before offering to resume next cycle");
+    $("pause-dialog").close();
+    await cancellingPause;
+    assert.equal(pending.length, 0, "Cancelling must not write schedule changes");
+    const cancelledPauseText = $("pause-resume").textContent;
+    pauseReply(cancelledPauseRequest);
+    await flush();
+    assert.equal($("pause-resume").textContent, cancelledPauseText, "A late preview cannot update a closed dialog");
+    assert.equal($("pause-once").disabled, true);
+    assert.equal(qa.get()[0].enabled, true);
+
+    const unavailablePause = button("schedule-list", "disable").trigger("click");
+    pauseReply(take("/schedules/preview", "POST"), row.next_occurrence, null);
+    await flush();
+    assert.equal($("pause-once").disabled, true, "Do not promise a resume when no following occurrence exists");
+    assert.equal($("pause-resume").textContent, "resume_unavailable");
+    $("pause-dialog").close();
+    await unavailablePause;
+
+    const failedPause = button("schedule-list", "disable").trigger("click");
+    reply(take("/schedules/preview", "POST"), {error: "unavailable"}, false);
+    await flush();
+    assert.equal($("pause-once").disabled, true);
+    assert.equal($("pause-resume").textContent, "pause_preview_failed");
+    $("pause-dialog").close();
+    await failedPause;
+
+    const pausingOnce = button("schedule-list", "disable").trigger("click");
+    pauseReply(take("/schedules/preview", "POST"));
+    await flush();
+    assert.equal($("pause-once").disabled, false);
+    assert.match($("pause-skipped").textContent, /Skip .*07:30/);
+    assert.match($("pause-resume").textContent, /Resumes .*07:30 \(in 1 d 21 hr 30 min\)/);
+    $("pause-dialog").close("skip");
+    await flush();
+    const pauseOnceRequest = take("/schedules/alarm/skip-next", "POST");
+    assert.deepEqual(JSON.parse(pauseOnceRequest.options.body), {expected_occurrence: row.next_occurrence}, "Skip exactly the occurrence shown in the dialog");
+    reply(pauseOnceRequest, {skipped: {datetime: row.next_occurrence}, next_event: {datetime: nextDate}});
+    await flush();
+    assert.equal(qa.get()[0].enabled, true, "A one-cycle pause keeps the recurring alarm enabled");
+    assert.equal(qa.get()[0].next_occurrence, nextDate);
+    assert.match($("status").textContent, /Skipped once · Resumes .*07:30 \(in 1 d 21 hr 30 min\)/);
+    scheduleReply(take("/schedules"), [{...row, next_occurrence: nextDate, skipped_occurrences: [row.next_occurrence]}]);
+    await pausingOnce;
+    const restorePause = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [row]);
+    await restorePause;
+
     const oldPoll = qa.loadSchedules();
     const oldResponse = take("/schedules");
     const disabling = button("schedule-list", "disable").trigger("click");
+    pauseReply(take("/schedules/preview", "POST"));
+    await flush();
+    $("pause-dialog").close("disable");
+    await flush();
     const disableRequest = take("/schedules/alarm", "PUT");
     assert.deepEqual(JSON.parse(disableRequest.options.body), {enabled: false}, "Toggle must not overwrite other edits with stale schedule data");
     const disabled = {...row, name: "Updated elsewhere", enabled: false, next_occurrence: null};
@@ -237,6 +414,72 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     scheduleReply(olderRequest, [disabled]);
     await older;
     assert.equal(qa.get()[0].name, "Morning", "Latest GET must win even if an earlier one arrives last");
+
+    await button("schedule-list", "edit").trigger("click");
+    $("schedule-name").value = "Pause draft";
+    $("schedule-time").value = "08:15";
+    $("schedule-enabled").checked = false;
+    const cancelEditorPause = $("schedule-form").trigger("submit");
+    const editorPausePreview = take("/schedules/preview", "POST");
+    assert.deepEqual(JSON.parse(editorPausePreview.options.body), {
+        id: row.id, rule: {}, enabled: true, skip_holidays: false, browser_sound: "bell",
+        name: "Pause draft", type: "alarm", time: "08:15", skip_next: true
+    }, "Preview uses the edited draft while calculating its enabled recurrence");
+    pauseReply(editorPausePreview, "2026-10-01T08:15:00+08:00", "2026-10-02T08:15:00+08:00");
+    await flush();
+    assert.equal($("pause-title").textContent, "Disable Pause draft?");
+    $("pause-dialog").close();
+    await cancelEditorPause;
+    assert.equal(pending.length, 0);
+    assert.equal($("editor").hidden, false);
+    assert.equal($("schedule-name").value, "Pause draft");
+    assert.equal($("schedule-time").value, "08:15");
+    assert.equal($("schedule-enabled").checked, false, "Cancelling the choice preserves the whole draft");
+    assert.equal(saveButton.disabled, false);
+
+    const draftOccurrence = "2026-10-01T08:15:00+08:00", draftResume = "2026-10-02T08:15:00+08:00";
+    const failedEditorPause = $("schedule-form").trigger("submit");
+    pauseReply(take("/schedules/preview", "POST"), draftOccurrence, draftResume);
+    await flush();
+    $("pause-dialog").close("skip");
+    await flush();
+    const failedPauseSave = take("/schedules/alarm", "PUT");
+    assert.deepEqual(JSON.parse(failedPauseSave.options.body), {
+        rule: {}, enabled: true, skip_holidays: false, browser_sound: "bell",
+        name: "Pause draft", type: "alarm", time: "08:15", skip_next: draftOccurrence
+    }, "Saving edits and skipping the previewed occurrence is one atomic update");
+    reply(failedPauseSave, {error: "Occurrence changed; preview again"}, false);
+    await failedEditorPause;
+    assert.equal($("form-error").textContent, "pause_stale");
+    assert.equal($("editor").hidden, false);
+    assert.equal($("schedule-name").value, "Pause draft", "A failed pause save must not clear the draft");
+    assert.equal($("schedule-time").value, "08:15");
+    assert.equal($("schedule-enabled").checked, false);
+    assert.equal(saveButton.disabled, false);
+    assert.equal(qa.get()[0].name, "Morning");
+
+    $("schedule-time").value = row.time;
+    const savedEditorPause = $("schedule-form").trigger("submit");
+    pauseReply(take("/schedules/preview", "POST"));
+    await flush();
+    $("pause-dialog").close("skip");
+    await flush();
+    const pauseSave = take("/schedules/alarm", "PUT");
+    const pausedDraft = {...row, ...JSON.parse(pauseSave.options.body), skipped_occurrences: [row.next_occurrence]};
+    delete pausedDraft.next_occurrence;
+    delete pausedDraft.skip_next;
+    reply(pauseSave, pausedDraft);
+    await flush();
+    assert.equal(qa.get()[0].next_occurrence, null, "Skipping invalidates the old occurrence even when time and repeat rules are unchanged");
+    scheduleReply(take("/schedules"), [{...pausedDraft, next_occurrence: nextDate}]);
+    await savedEditorPause;
+    assert.equal($("editor").hidden, true);
+    assert.equal(qa.get()[0].enabled, true);
+    assert.equal(qa.get()[0].next_occurrence, nextDate);
+    assert.match($("status").textContent, /Skipped once · Resumes .*07:30/);
+    const restoreEditorPause = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [row]);
+    await restoreEditorPause;
 
     await button("schedule-list", "edit").trigger("click");
     assert.equal($("editor").parentNode, $("alarms-panel"));
@@ -294,6 +537,7 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     assert.equal($("schedule-calendar-mode-field").hidden, true);
     $("schedule-name").value = "Weekly reminder";
     $("schedule-type").value = "reminder";
+    weekdays.forEach(input => input.checked = false);
     $("schedule-rule").value = "weekdays";
     await $("schedule-rule").trigger("change");
     assert.equal($("weekday-field").hidden, false);
@@ -312,6 +556,7 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     scheduleReply(take("/schedules"), [created]);
     await creating;
     assert.equal($("add-other-schedule").focused, true, "Saving device schedules returns focus to their add button");
+    assert.equal($("status").textContent, "Saved · in 1 d 21 hr 30 min", "Save confirmation names compact duration units instead of using only colons");
 
     showPanel("alarms");
     $("schedule-time").value = "23:45";
@@ -327,24 +572,26 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     $("schedule-rule").value = "dates";
     await $("schedule-rule").trigger("change");
     assert.equal($("schedule-date-picker").disabled, false);
-    $("schedule-dates").value = "2026-10-03";
-    for (const invalid of ["", "2026-02-30", "not-a-date"]) {
-        $("schedule-date-picker").value = invalid;
-        await $("add-schedule-date").trigger("click");
-        assert.equal($("form-error").textContent, "select_date");
-        assert.equal($("schedule-dates").value, "2026-10-03", "Invalid selections preserve entered dates");
-    }
     $("schedule-date-picker").value = "2026-10-10";
-    await $("add-schedule-date").trigger("click");
-    assert.equal($("schedule-dates").value, "2026-10-03, 2026-10-10");
-    assert.equal($("form-error").textContent, "");
-    await $("add-schedule-date").trigger("click");
-    assert.equal($("schedule-dates").value, "2026-10-03, 2026-10-10", "Adding a date twice does not duplicate it");
+    await $("schedule-date-picker").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-10"]});
+    assert.equal($("clear-schedule-date").hidden, false);
     assert.equal(pending.length, 0, "Picking a date only changes the draft");
-    $("schedule-dates").value = "2026-02-30";
-    await $("schedule-form").trigger("submit");
-    assert.equal($("form-error").textContent, "select_date");
-    assert.equal(pending.length, 0, "Invalid dates must not send a request");
+    $("schedule-dates").value = "2026-10-03, 2026-10-10";
+    await $("schedule-dates").trigger("input");
+    assert.equal($("schedule-date-picker").value, "");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-03", "2026-10-10"]}, "Advanced rules preserve existing multiple-date support");
+    for (const invalid of ["", "2026-02-30", "not-a-date"]) {
+        $("schedule-dates").value = invalid;
+        await $("schedule-form").trigger("submit");
+        assert.equal($("form-error").textContent, "select_date");
+        assert.equal(pending.length, 0, "Invalid dates must not send a request");
+        assert.equal($("schedule-dates").value, invalid, "Validation preserves the draft for correction");
+    }
+    await $("clear-schedule-date").trigger("click");
+    assert.equal($("schedule-rule").value, "once");
+    assert.equal($("schedule-dates").value, "");
+    assert.equal($("schedule-date-picker").value, "");
     await $("cancel-edit").trigger("click");
     assert.equal($("alarms-panel").classList.contains("is-editing"), false);
     assert.equal($("add-schedule").focused, true);
@@ -374,7 +621,7 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     showPanel("alarms");
     await $("add-schedule").trigger("click");
     assert.equal($("schedule-date-picker").value, "", "Opening another editor clears the date picker");
-    assert.equal($("schedule-date-picker").disabled, true, "Hidden date picker cannot block native form validation");
+    assert.equal($("schedule-date-picker").disabled, false, "The date picker remains available without opening advanced rules");
     $("schedule-name").value = "Linked alarm";
     $("schedule-calendar-mode").value = "event";
     await $("schedule-calendar-mode").trigger("change");
@@ -455,6 +702,32 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     scheduleReply(take("/schedules"), [unlinked]);
     await unlinking;
 
+    const datedLinked = {...linked, rule: {dates: ["2026-10-01"]}};
+    const datedPoll = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [datedLinked]);
+    await datedPoll;
+    assert.doesNotMatch(content($("schedule-list")), /once/, "A linked date may contain multiple events and must not promise one ring");
+    for (const changeRule of [
+        async () => { $("schedule-rule").value = "once"; await $("schedule-rule").trigger("change"); },
+        async () => { $("schedule-date-picker").value = "2026-10-02"; await $("schedule-date-picker").trigger("change"); },
+        async () => {
+            weekdays[0].checked = true;
+            await weekdays[0].trigger("change");
+            assert.equal($("schedule-calendar-mode").value, "event", "Weekly filters preserve existing calendar linkage");
+            weekdays[0].checked = false;
+            await weekdays[0].trigger("change");
+        },
+    ]) {
+        await button("schedule-list", "edit").trigger("click");
+        assert.equal($("schedule-calendar-mode").value, "event", "Opening an existing linked-date alarm preserves its meaning");
+        assert.deepEqual(plain(qa.scheduleData().calendar_link), link);
+        await changeRule();
+        assert.equal($("schedule-calendar-mode").value, "none", "Explicit one-time selections leave event-based repetition");
+        assert.equal($("schedule-time").disabled, false);
+        assert.equal(qa.scheduleData().calendar_link, null, "Saving a manual one-time choice explicitly clears the old link");
+        await $("cancel-edit").trigger("click");
+    }
+
     const syncing = button("device-list", "sync").trigger("click");
     const commandRequest = take("/devices/desk/commands", "POST");
     assert.deepEqual(JSON.parse(commandRequest.options.body), {action: "sync"});
@@ -474,4 +747,4 @@ const content = root => [root.textContent, ...root.children.map(content)].join("
     assert.equal(pending.length, 0);
     assert.ok(requests.every(request => !/sound|audio|snooze|restart/.test(request.url)));
     console.log("Schedule management forms, commands and freshness checks passed");
-})().catch(error => { console.error(error); process.exitCode = 1; });
+})().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => clearTimeout(completionTimeout));
