@@ -168,6 +168,28 @@ END:VCALENDAR
         self.assertEqual(events['Trip']['start_date'], '2026-09-29')
         self.assertEqual(events['Trip']['end_date'], '2026-10-02')
         self.assertEqual(events['Moved']['starts_at'], int((now + timedelta(minutes=90)).timestamp() * 1000))
+        self.assertTrue(events['Moved']['recurring'])
+        self.assertEqual(events['Moved']['recurrence_id'], '2026-09-30T01:00:00+00:00')
+        self.assertEqual(events['Weekly']['recurrence_id'], '2026-09-30T02:00:00+00:00')
+        self.assertEqual(events['Floating']['recurrence_id'], '2026-09-30T13:00:00')
+        self.assertTrue(events['Extra date']['recurring'])
+        self.assertFalse(events['Trip']['recurring'])
+        self.assertEqual(events['Trip']['recurrence_id'], '')
+
+    def test_single_event_identity_survives_reschedule_and_timezone_query(self):
+        now = datetime(2026, 9, 30, 9, tzinfo=timezone(timedelta(hours=8)))
+        response = self.response()
+        with patch.object(clock.requests, 'get', return_value=response):
+            before = clock.get_calendar_events(now, now + timedelta(days=1))[0]
+            response.content = response.content.replace(b'20260930T020000Z', b'20260930T040000Z')
+            for cached in clock.calendar_feed_cache.values():
+                cached['fetched_at'] = 0
+            utc = now.astimezone(timezone.utc)
+            after = clock.get_calendar_events(utc, utc + timedelta(days=1))[0]
+        self.assertEqual((before['uid'], before['recurrence_id']), (after['uid'], after['recurrence_id']))
+        self.assertEqual(after['recurrence_id'], '')
+        self.assertFalse(after['recurring'])
+        self.assertEqual(after['starts_at'] - before['starts_at'], 2 * 3600 * 1000)
 
 
     def source(self, source_id='', name='Work', url='https://calendar.example/work.ics', **values):
@@ -330,8 +352,18 @@ END:VCALENDAR
         local_now = datetime(2026, 9, 30, 1, tzinfo=timezone.utc)
         with patch.object(clock, 'get_local_now', return_value=local_now):
             events = {event['text']: event for event in clock.get_calendar_events(start, start + timedelta(days=1), ['local'])}
+            notes[1].update(display_start='09:30', display_end='10:30')
+            Path(clock.NOTES_FILE).write_text(json.dumps(notes))
+            moved = next(event for event in clock.get_calendar_events(start, start + timedelta(days=1), ['local'])
+                         if event['uid'] == '2')
         self.assertEqual(set(events), {'Daily', 'Range', 'Date'})
         self.assertEqual(events['Daily']['time'], '17:00')
+        self.assertTrue(events['Daily']['recurring'])
+        self.assertEqual(events['Daily']['recurrence_id'], '2026-09-30')
+        self.assertEqual(moved['recurrence_id'], events['Daily']['recurrence_id'])
+        self.assertEqual(moved['starts_at'] - events['Daily']['starts_at'], 30 * 60 * 1000)
+        self.assertFalse(events['Range']['recurring'])
+        self.assertEqual(events['Range']['recurrence_id'], '')
         self.assertEqual(events['Range']['time'], '19:00')
         self.assertTrue(events['Date']['all_day'])
         self.assertEqual(events['Date']['starts_at'], int(datetime(2026, 9, 30, tzinfo=timezone.utc).timestamp() * 1000))

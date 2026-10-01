@@ -366,14 +366,14 @@ def calendar_settings_response(settings):
     return dict(settings, url=settings['sources'][0]['url'] if settings['sources'] else '', errors=errors)
 
 
-def calendar_event(source_id, uid, text, start, end, all_day, query_start):
+def calendar_event(source_id, uid, text, start, end, all_day, query_start, recurring=False, recurrence_id=''):
     zone = query_start.tzinfo
     if all_day and not isinstance(start, datetime):
         start = datetime.combine(start, datetime.min.time(), tzinfo=zone)
         end = datetime.combine(end, datetime.min.time(), tzinfo=zone)
     start = start.replace(tzinfo=zone) if start.tzinfo is None else start.astimezone(zone)
     end = end.replace(tzinfo=zone) if end.tzinfo is None else end.astimezone(zone)
-    return dict(source_id=source_id, uid=uid, text=text,
+    return dict(source_id=source_id, uid=uid, text=text, recurring=recurring, recurrence_id=recurrence_id,
                 time='' if all_day or start.date() < query_start.date() else start.strftime('%H:%M'),
                 starts_at=int(start.timestamp() * 1000), ends_at=int(end.timestamp() * 1000),
                 all_day=all_day, start_date=start.date().isoformat(), end_date=end.date().isoformat())
@@ -420,7 +420,9 @@ def local_calendar_events(start, end):
                 windows.append((begins, begins + timedelta(days=1), True))
             # A reminder without a date or daily window is not a scheduled event.
             for begins, finishes, all_day in windows:
-                event = calendar_event('local', str(note['id']), note['text'], begins, finishes, all_day, start)
+                recurring = note.get('display_mode') == 'daily'
+                event = calendar_event('local', str(note['id']), note['text'], begins, finishes, all_day, start,
+                                       recurring, begins.date().isoformat() if recurring else '')
                 if calendar_event_overlaps(event, start, end):
                     events.append(event)
         except (ValueError, TypeError, KeyError):
@@ -500,6 +502,9 @@ def fetch_calendar_source(url):
                 component['DTSTART'] = component['RECURRENCE-ID']
         cal.subcomponents = [component for component in cal.subcomponents
                              if component.name != 'VEVENT' or component.get('dtstart') is not None]
+        cached['recurring_uids'] = {str(component['uid']) for component in cal.walk('VEVENT')
+                                   if component.get('uid') is not None
+                                   and any(key in component for key in ('rrule', 'rdate', 'recurrence-id'))}
         cached['calendar'] = cal
     except Exception as error:
         # Request errors can contain the private subscription URL; never log it.
@@ -579,8 +584,16 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
                 finishes = component.get('dtend')
                 finishes = finishes.dt if finishes is not None else begins + (timedelta(days=1) if all_day else timedelta())
                 uid = str(component.get('uid', '')) or hashlib.sha256(component.to_ical()).hexdigest()
+                recurring = uid in cached['recurring_uids']
+                recurrence_id = ''
+                if recurring and component.get('recurrence-id') is not None:
+                    # DTSTART can move; the original recurrence ID remains the occurrence's identity.
+                    original = component['recurrence-id'].dt
+                    if isinstance(original, datetime) and original.utcoffset() is not None:
+                        original = original.astimezone(timezone.utc)
+                    recurrence_id = original.isoformat()
                 event = calendar_event(source['id'], uid, str(component.get('summary', '')),
-                                       begins, finishes, all_day, start)
+                                       begins, finishes, all_day, start, recurring, recurrence_id)
                 if calendar_event_overlaps(event, start, end):
                     events.append(event)
         except Exception as error:

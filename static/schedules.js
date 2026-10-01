@@ -8,8 +8,9 @@
     const format = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
     let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
-    let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null;
-    let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null;
+    let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
+    let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
+    let calendarEvents = [], calendarTarget = null, calendarRequest = 0;
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
     const displayTime = value => window.WebClockTime.format(value, timeFormat, document.documentElement.lang);
     const refreshTimeInputs = () => window.WebClockTimeInputs.refresh($("schedule-form"), timeFormat, document.documentElement.lang);
@@ -33,22 +34,29 @@
             timeZone: "Asia/Taipei", year: "numeric", month: "numeric", day: "numeric", weekday: "short"
         }) + " " + displayTime(new Date(now + 8 * 3600000).toISOString().slice(11, 16));
         $("editor-now").textContent = format("current_datetime", {datetime});
-        if (previewTime && now !== null && Date.parse(previewTime) < now) { queuePreview(); return; }
-        const next = previewTime ? format("next_ring", {datetime: nextTime(previewTime)}) : $("editor-next").textContent;
-        const countdown = previewTime ? format("ring_in", {duration: remainingTime(previewTime)}) : "";
+        if (!previewTime) return;
+        if (now !== null && Date.parse(previewTime) < now) { queuePreview(); return; }
+        const next = format("next_ring", {datetime: nextTime(previewTime)});
+        const countdown = format("ring_in", {duration: remainingTime(previewTime)});
         if ($("editor-next").textContent !== next) $("editor-next").textContent = next;
         if ($("editor-countdown").textContent !== countdown) $("editor-countdown").textContent = countdown;
     }
-    function queuePreview() {
+    function queuePreview(event) {
+        // Input and blur/change can report the same value; keep a ready action clickable.
+        if (event && previewDraft !== null) {
+            try { if (JSON.stringify(scheduleData()) === previewDraft) return; }
+            catch (error) {}
+        }
         clearTimeout(previewTimer);
         const request = ++previewRequest;
         previewTime = null;
+        previewDraft = null;
         if ($("editor").hidden) return;
-        $("editor-countdown").textContent = "";
+        renderEditorActions();
         let data;
         try { data = scheduleData(); }
-        catch (error) { $("editor-next").textContent = error.message; return; }
-        $("editor-next").textContent = t("loading");
+        catch (error) { $("editor-next").textContent = error.message; $("editor-countdown").textContent = ""; return; }
+        previewDraft = JSON.stringify(data);
         if ($("schedule-id").value) data.id = $("schedule-id").value;
         previewTimer = setTimeout(async () => {
             try {
@@ -57,9 +65,15 @@
                 syncServerTime(result.server_time);
                 previewTime = result.next_occurrence;
                 $("editor-next").textContent = previewTime ? format("next_ring", {datetime: nextTime(previewTime)}) : t(data.enabled ? "none" : "disabled");
+                if (!previewTime) $("editor-countdown").textContent = "";
                 renderEditorTime();
+                renderEditorActions();
             } catch (error) {
-                if (request === previewRequest) $("editor-next").textContent = t("preview_failed");
+                if (request === previewRequest) {
+                    previewDraft = null;
+                    $("editor-next").textContent = t("preview_failed");
+                    $("editor-countdown").textContent = "";
+                }
             }
         }, 200);
     }
@@ -138,9 +152,12 @@
         return source ? (id === "local" ? t("calendar_local") : source.name) : format("calendar_missing", {id});
     }
     function calendarText(link) {
-        return format(link.mode === "event" ? "calendar_event_summary" : "calendar_day_summary", {
+        const summary = format(link.mode === "event" ? "calendar_event_summary" : "calendar_day_summary", {
             sources: link.source_ids.map(sourceName).join(" / "), minutes: link.offset_minutes || 0
         });
+        return summary + (link.target ? " · " + format("calendar_target_summary", {
+            title: link.target.title || t("calendar_untitled"), scope: t("calendar_scope_" + link.target.scope)
+        }) : "");
     }
     const isRecurringAlarm = schedule => schedule.type === "alarm" && !schedule.rule.dates && !schedule.calendar_link;
     const pendingSkip = schedule => schedule.enabled && serverNow() !== null &&
@@ -262,6 +279,7 @@
     function closeEditor() {
         clearTimeout(previewTimer);
         ++previewRequest;
+        ++calendarRequest;
         previewTime = null;
         $("editor").hidden = true;
         $(editorPanel + "-panel").classList.toggle("is-editing", false);
@@ -278,8 +296,10 @@
             $("schedule-enabled").checked = schedule.enabled && !paused;
             editorPausedUntil = paused;
         }
-        const skip = action(t("skip_next"), () => skipSchedule(schedule));
-        skip.disabled = !schedule.enabled || !schedule.next_occurrence || !!pendingSkip(schedule);
+        const skip = action(t("skip_next"), () => saveEditor(true));
+        skip.disabled = saving || !$("schedule-enabled").checked || !previewTime;
+        try { skip.disabled = skip.disabled || !!pendingSkip(Object.assign({}, schedule, scheduleData())); }
+        catch (error) { skip.disabled = true; }
         actions.append(skip, action(t("delete"), async () => {
             if (!window.confirm(format("delete_confirm", {name: schedule.name}))) return;
             await api("/schedules/" + encodeURIComponent(schedule.id), {method: "DELETE"});
@@ -340,9 +360,64 @@
             input.name = "calendar-source";
             input.value = id;
             input.checked = selected.includes(id);
+            input.addEventListener("change", loadCalendarTargets);
             label.append(input, node("span", sourceName(id)));
             list.append(label);
         });
+    }
+    const calendarKey = item => JSON.stringify([item.source_id, item.uid, item.recurrence_id || ""]);
+    function renderCalendarTargets(failed = false, ready = true) {
+        const scope = $("schedule-calendar-scope").value, select = $("schedule-calendar-target");
+        const choose = node("option", t("calendar_target_choose"));
+        choose.value = "";
+        select.replaceChildren(choose);
+        const seen = new Set();
+        let found = false, allDayTarget = false, selectedTime = "";
+        calendarEvents.forEach(event => {
+            if (calendarTarget && event.all_day && $("schedule-calendar-mode").value === "event" &&
+                calendarKey(Object.assign({}, event, {recurrence_id: scope === "series" ? "" : event.recurrence_id})) === calendarKey(calendarTarget)) allDayTarget = true;
+            if (scope === "series" && !event.recurring || $("schedule-calendar-mode").value === "event" && event.all_day) return;
+            const target = {source_id: event.source_id, uid: event.uid, scope,
+                recurrence_id: scope === "series" ? "" : event.recurrence_id || "", title: (event.text || t("calendar_untitled")).slice(0, 500)};
+            const key = calendarKey(target);
+            if (seen.has(key)) return;
+            seen.add(key);
+            const time = event.all_day ? new Date(event.starts_at).toLocaleDateString(document.documentElement.lang, {timeZone: "Asia/Taipei"}) + " " + t("calendar_all_day") : eventTime(new Date(event.starts_at).toISOString());
+            const option = node("option", target.title + " · " + sourceName(event.source_id) + " · " + time);
+            option.value = key;
+            select.append(option);
+            if (calendarTarget && calendarKey(calendarTarget) === key) { calendarTarget = target; found = true; selectedTime = time; }
+        });
+        const missingText = t(allDayTarget ? "calendar_target_all_day" : "calendar_target_missing");
+        if (calendarTarget && !found) {
+            const missing = node("option", (calendarTarget.title || t("calendar_untitled")) + (ready ? " · " + missingText : ""));
+            missing.value = calendarKey(calendarTarget);
+            select.append(missing);
+        }
+        select.value = calendarTarget ? calendarKey(calendarTarget) : "";
+        $("calendar-target-status").textContent = failed ? t("calendar_target_failed") : !ready ? "" :
+            calendarTarget && !found ? missingText : !seen.size ? t("calendar_target_empty") : selectedTime;
+    }
+    async function loadCalendarTargets() {
+        const request = ++calendarRequest, sources = selectedCalendarSources();
+        const active = $("schedule-calendar-mode").value !== "none" && $("schedule-calendar-scope").value !== "all";
+        $("calendar-target-field").hidden = !active;
+        $("schedule-calendar-target").disabled = !active;
+        $("schedule-calendar-target").required = active;
+        if (!active) return;
+        if (calendarTarget && !sources.includes(calendarTarget.source_id)) calendarTarget = null;
+        calendarEvents = calendarEvents.filter(event => sources.includes(event.source_id));
+        renderCalendarTargets(false, false);
+        if (!sources.length) { $("calendar-target-status").textContent = t("select_calendar_source"); return; }
+        try {
+            const data = await api("/calendar-events?" + sources.map(id => "source_id=" + encodeURIComponent(id)).join("&"));
+            if (request !== calendarRequest || $("editor").hidden) return;
+            calendarEvents = data.events;
+            renderCalendarTargets();
+            queuePreview();
+        } catch (error) {
+            if (request === calendarRequest && !$("editor").hidden) renderCalendarTargets(true, false);
+        }
     }
     function setCalendarMode() {
         const alarm = $("schedule-type").value === "alarm";
@@ -358,11 +433,16 @@
         $("schedule-time").disabled = mode === "event";
         $("calendar-mode-hint").textContent = t(mode === "event" ? "calendar_event_hint" : "calendar_day_hint");
         $("date-once-hint").textContent = t(mode === "none" ? "date_once_hint" : "calendar_rule_hint");
+        loadCalendarTargets();
         refreshTimeInputs();
     }
     function edit(schedule, type = "alarm") {
         $("schedule-form").reset();
         editorPausedUntil = null;
+        previewTime = null;
+        previewDraft = null;
+        $("editor-next").textContent = "";
+        $("editor-countdown").textContent = "";
         if (!schedule) $("schedule-time").value = "07:30";
         $("schedule-rule").value = !schedule && type === "alarm" ? "once" : "every_day";
         $("schedule-date-picker").value = "";
@@ -374,6 +454,9 @@
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
         $("schedule-skip-holidays").checked = !!(schedule && schedule.skip_holidays);
         const link = schedule && schedule.calendar_link;
+        calendarEvents = [];
+        calendarTarget = link && link.target ? Object.assign({}, link.target) : null;
+        $("schedule-calendar-scope").value = calendarTarget ? calendarTarget.scope : "all";
         $("schedule-calendar-mode").value = link ? link.mode : "none";
         $("schedule-offset").value = link ? String(link.offset_minutes || 0) : "0";
         renderCalendarSources(link ? link.source_ids : []);
@@ -440,6 +523,19 @@
         }
         setCalendarMode();
     });
+    $("schedule-calendar-scope").addEventListener("change", () => {
+        calendarTarget = null;
+        loadCalendarTargets();
+    });
+    $("schedule-calendar-target").addEventListener("change", function () {
+        const scope = $("schedule-calendar-scope").value;
+        const event = calendarEvents.find(item => calendarKey(Object.assign({}, item, {recurrence_id: scope === "series" ? "" : item.recurrence_id})) === this.value);
+        if (event) calendarTarget = {source_id: event.source_id, uid: event.uid, scope,
+            recurrence_id: scope === "series" ? "" : event.recurrence_id || "", title: (event.text || t("calendar_untitled")).slice(0, 500)};
+        else if (!this.value) calendarTarget = null;
+        renderCalendarTargets();
+    });
+    $("refresh-calendar-targets").addEventListener("click", loadCalendarTargets);
     ["input", "change"].forEach(event => $("schedule-form").addEventListener(event, queuePreview));
     $("preview-sound").addEventListener("click", function () {
         const sound = $("schedule-sound").value;
@@ -483,35 +579,53 @@
             const offset = calendarMode === "event" ? Number($("schedule-offset").value) : 0;
             if (!Number.isInteger(offset) || offset < 0 || offset > 1440) throw new Error(t("calendar_offset_error"));
             data.calendar_link = {mode: calendarMode, source_ids: sourceIds, offset_minutes: offset};
+            if ($("schedule-calendar-scope").value !== "all") {
+                if (!calendarTarget || !sourceIds.includes(calendarTarget.source_id)) throw new Error(t("calendar_target_required"));
+                data.calendar_link.target = Object.assign({}, calendarTarget);
+            }
         } else if (id && schedules.some(schedule => schedule.id === id && schedule.calendar_link)) {
             data.calendar_link = null;
         }
         return data;
     }
-    $("schedule-form").addEventListener("submit", async function (event) {
-        event.preventDefault();
-        const button = this.querySelector('[type="submit"]');
+    async function saveEditor(skipNext = false) {
+        if (saving) return;
+        const button = $("schedule-form").querySelector('[type="submit"]');
         $("form-error").textContent = "";
+        saving = true;
         button.disabled = true;
         try {
             const id = $("schedule-id").value, data = scheduleData();
             const previous = schedules.find(schedule => schedule.id === id);
+            if (skipNext) {
+                if (previous && pendingSkip(Object.assign({}, previous, data))) throw new Error(t("pause_pending"));
+                if (!id || !$("schedule-enabled").checked || !previewTime) return;
+                data.skip_next = previewTime;
+            }
+            renderEditorActions();
             if (previous && previous.enabled && !data.enabled && isRecurringAlarm(data)) {
                 const choice = await choosePause(previous, data);
                 if (!choice) return;
                 if (choice.skip) { data.enabled = true; data.skip_next = choice.skip; }
             }
             const saved = await api("/schedules" + (id ? "/" + encodeURIComponent(id) : ""), json(id ? "PUT" : "POST", data));
+            if (skipNext) editorPausedUntil = null;
             acceptScheduleChange(saved.id, saved);
-            closeEditor();
+            if (skipNext) queuePreview();
+            else closeEditor();
             notice(t("saved"));
             try {
                 await loadSchedules();
                 const latest = schedules.find(schedule => schedule.id === saved.id);
-                notice(latest && latest.next_occurrence ? (data.skip_next ? resumeMessage(data.skip_next) : format("saved_next", {duration: remainingTime(latest.next_occurrence)})) : t("saved") + " · " + t(data.enabled ? "none" : "disabled"));
+                if (data.skip_next) notice(latest && latest.next_occurrence && isRecurringAlarm(data) ? resumeMessage(data.skip_next) : format("skipped", {datetime: eventTime(data.skip_next)}));
+                else notice(latest && latest.next_occurrence ? format("saved_next", {duration: remainingTime(latest.next_occurrence)}) : t("saved") + " · " + t(data.enabled ? "none" : "disabled"));
             } catch (error) { notice(t("saved") + " · " + t("preview_failed")); }
         } catch (error) { $("form-error").textContent = error.message === "Occurrence changed; preview again" ? t("pause_stale") : error.message || t("request_failed"); }
-        finally { button.disabled = false; }
+        finally { saving = false; button.disabled = false; renderEditorActions(); }
+    }
+    $("schedule-form").addEventListener("submit", function (event) {
+        event.preventDefault();
+        return saveEditor();
     });
     async function loadDevices() {
         const request = ++deviceRequest;

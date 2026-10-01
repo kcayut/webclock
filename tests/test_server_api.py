@@ -123,14 +123,19 @@ class ServerApiTest(unittest.TestCase):
             self.assertEqual(self.client.get('/api/v1/schedules').json['schedules'][0]['next_occurrence'],
                              preview.json['next_occurrence'])
 
-    def test_skip_preview_and_atomic_draft_save_share_browser_and_device_schedule(self):
-        self.client.post('/api/v1/schedules', json=dict(self.schedule, rule={'weekdays': [3]}))
+    def test_enable_and_skip_draft_atomically_share_browser_and_device_schedule(self):
+        self.client.post('/api/v1/schedules', json=dict(self.schedule, enabled=False, rule={'weekdays': [3]}))
         path = self.root / 'schedules.json'
         original, before = path.read_bytes(), self.config()['schedule_revision']
         now = datetime.fromisoformat('2026-09-23T06:00:00+08:00')
         draft = dict(id='wake', name='週五起床', time='08:00', rule={'weekdays': [5]}, enabled=True)
         skipped, resumed = '2026-09-25T08:00:00+08:00', '2026-10-02T08:00:00+08:00'
         with patch('webclock.api.management.taipei_now', return_value=now):
+            self.assertIsNone(self.client.get('/api/v1/schedules').json['schedules'][0]['next_occurrence'])
+            response = self.client.post('/api/v1/schedules/preview', json=draft)
+            self.assertEqual(response.status_code, 200, response.json)
+            self.assertEqual(response.json['next_occurrence'], skipped)
+            self.assertEqual(path.read_bytes(), original)
             response = self.client.post('/api/v1/schedules/preview', json=dict(draft, skip_next=True))
             self.assertEqual(response.status_code, 200, response.json)
             self.assertEqual(response.json, dict(skipped_occurrence=skipped, next_occurrence=resumed,

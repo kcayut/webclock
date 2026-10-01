@@ -54,6 +54,7 @@ $("schedule-i18n").textContent = JSON.stringify({
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     today: "Today", tomorrow: "Tomorrow", this_week: "This {weekday}", next_week: "Next {weekday}", next_ring: "Next ring: {datetime}",
     calendar_event_summary: "{sources} · {minutes} min before events", calendar_day_summary: "{sources} · Days with events", calendar_missing: "Removed source ({id})",
+    calendar_target_summary: "{title} · {scope}",
     skipped: "Skipped {datetime}", coverage: "{start} to {end}", delete_confirm: "Delete {name}?",
     current_datetime: "Now: {datetime}", ring_in: "In {duration}", saved_next: "Saved · in {duration}",
     duration_days: "{count} d", duration_hours: "{count} hr", duration_minutes: "{count} min", under_minute: "Under 1 min",
@@ -241,6 +242,17 @@ const completionTimeout = setTimeout(() => {
     await newerPreview;
     assert.equal($("editor-next").textContent, "Next ring: Tomorrow 08:00");
     assert.equal($("editor-countdown").textContent, "In 22 hr");
+    $("schedule-time").value = "09:00";
+    await $("schedule-form").trigger("input");
+    assert.equal($("editor-next").textContent, "Next ring: Tomorrow 08:00", "Keep the last result while computing a changed time");
+    assert.equal($("editor-countdown").textContent, "In 22 hr");
+    intervals.find(item => item.delay === 1000).callback();
+    assert.equal($("editor-countdown").textContent, "In 22 hr", "The clock tick must not clear a pending preview");
+    $("schedule-time").value = "08:00";
+    await $("schedule-form").trigger("change");
+    const quietPreview = runPreview();
+    reply(take("/schedules/preview", "POST"), {next_occurrence: "2026-10-01T08:00:00+08:00", server_time: "2026-09-30T10:00:00+08:00"});
+    await quietPreview;
     let liveRegionWrites = 0;
     for (const id of ["editor-next", "editor-countdown"]) {
         let value = $(id).textContent;
@@ -387,7 +399,7 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("schedule-enabled").checked, false, "The editor also displays temporary off");
     assert.equal(button("editor-actions", "skip_next").disabled, true, "Cannot stack another skipped date while waiting");
     await button("editor-actions", "skip_next").trigger("click");
-    assert.equal($("status").textContent, "pause_pending");
+    assert.equal($("form-error").textContent, "pause_pending");
     assert.equal(pending.length, 0, "Even a repeated handler call cannot queue another skip");
     $("schedule-name").value = "Renamed while paused";
     const pausedEdit = qa.scheduleData();
@@ -396,6 +408,9 @@ const completionTimeout = setTimeout(() => {
     $("schedule-enabled").checked = true;
     assert.deepEqual(plain(qa.scheduleData().skipped_occurrences), [], "Explicitly enabling cancels the pending skip");
     $("schedule-enabled").checked = false;
+    const pausedPreview = runPreview();
+    reply(take("/schedules/preview", "POST"), {next_occurrence: nextDate, server_time: "2026-09-30T10:00:00+08:00"});
+    await pausedPreview;
     qa.syncServerTime(row.next_occurrence);
     intervals.find(item => item.delay === 1000).callback();
     assert.equal(button("schedule-list", "enable").attributes["aria-checked"], "false", "Stay paused through the original timestamp");
@@ -445,6 +460,67 @@ const completionTimeout = setTimeout(() => {
     assert.equal(button("schedule-list", "enable").attributes["aria-checked"], "false");
     await button("schedule-list", "edit").trigger("click");
     assert.equal(button("editor-actions", "skip_next").disabled, true);
+    const disabledPreview = runPreview();
+    reply(take("/schedules/preview", "POST"), {next_occurrence: null, server_time: "2026-09-30T10:00:00+08:00"});
+    await disabledPreview;
+    $("schedule-enabled").checked = true;
+    $("schedule-time").value = "08:15";
+    await $("schedule-form").trigger("change");
+    assert.equal($("editor-next").textContent, "disabled", "Do not replace the last result with a loading message");
+    assert.equal(button("editor-actions", "skip_next").disabled, true, "Wait for the enabled draft's preview, not the stored disabled row");
+    const enabledPreview = runPreview(), enabledRequest = take("/schedules/preview", "POST");
+    assert.equal(JSON.parse(enabledRequest.options.body).enabled, true);
+    const enabledOccurrence = "2026-10-01T08:15:00+08:00";
+    reply(enabledRequest, {next_occurrence: enabledOccurrence, server_time: "2026-09-30T10:00:00+08:00"});
+    await enabledPreview;
+    assert.equal(button("editor-actions", "skip_next").disabled, false, "Enabling in the editor makes skip available without saving first");
+    $("schedule-time").value = "";
+    await $("schedule-form").trigger("input");
+    assert.equal(button("editor-actions", "skip_next").disabled, true, "An invalid draft cannot skip the old occurrence");
+    $("schedule-time").value = "08:15";
+    await $("schedule-form").trigger("change");
+    const correctedPreview = runPreview();
+    reply(take("/schedules/preview", "POST"), {next_occurrence: enabledOccurrence, server_time: "2026-09-30T10:00:00+08:00"});
+    await correctedPreview;
+    const readySkip = button("editor-actions", "skip_next");
+    await $("schedule-form").trigger("change");
+    assert.equal(button("editor-actions", "skip_next"), readySkip, "A same-value blur/change must not replace the button under the pointer");
+    assert.equal(readySkip.disabled, false);
+    assert.equal(timeouts.size, 0, "Do not recalculate an identical draft just before its action is clicked");
+    const draftSkipping = button("editor-actions", "skip_next").trigger("click");
+    const draftSkipRequest = take("/schedules/alarm", "PUT");
+    assert.deepEqual(JSON.parse(draftSkipRequest.options.body), {
+        rule: {}, enabled: true, skip_holidays: false, name: disabled.name, type: "alarm", time: "08:15", browser_sound: "bell", skip_next: enabledOccurrence
+    }, "Skip atomically saves the currently enabled draft and its new time");
+    assert.equal(button("editor-actions", "skip_next").disabled, true, "Do not submit another skip while saving");
+    const draftSkipped = {...disabled, ...JSON.parse(draftSkipRequest.options.body), skipped_occurrences: [enabledOccurrence]};
+    delete draftSkipped.skip_next;
+    delete draftSkipped.next_occurrence;
+    reply(draftSkipRequest, draftSkipped);
+    await flush();
+    scheduleReply(take("/schedules"), [{...draftSkipped, next_occurrence: "2026-10-02T08:15:00+08:00"}]);
+    await draftSkipping;
+    assert.equal($("editor").hidden, false, "Skipping retains the open editor");
+    assert.equal($("schedule-enabled").checked, false);
+    assert.equal(button("editor-actions", "skip_next").disabled, true);
+    $("schedule-enabled").checked = true;
+    await $("schedule-form").trigger("change");
+    const unpausedPreview = runPreview(), unpausedRequest = take("/schedules/preview", "POST");
+    assert.deepEqual(JSON.parse(unpausedRequest.options.body).skipped_occurrences, [], "Manually enabling clears the pending skip in the draft preview");
+    reply(unpausedRequest, {next_occurrence: enabledOccurrence, server_time: "2026-09-30T10:00:00+08:00"});
+    await unpausedPreview;
+    assert.equal(button("editor-actions", "skip_next").disabled, false, "Eligibility follows cleared draft skips, not the persisted pause");
+    const reskipping = button("editor-actions", "skip_next").trigger("click");
+    const reskipRequest = take("/schedules/alarm", "PUT");
+    assert.deepEqual(JSON.parse(reskipRequest.options.body).skipped_occurrences, []);
+    assert.equal(JSON.parse(reskipRequest.options.body).skip_next, enabledOccurrence, "Re-enabling and skipping targets the original occurrence, not a later date");
+    reply(reskipRequest, draftSkipped);
+    await flush();
+    scheduleReply(take("/schedules"), [{...draftSkipped, next_occurrence: "2026-10-02T08:15:00+08:00"}]);
+    await reskipping;
+    assert.equal($("schedule-enabled").checked, false, "Re-skipping the same occurrence must restore the temporary off display");
+    assert.equal(button("editor-actions", "skip_next").disabled, true);
+    assert.deepEqual(plain(qa.get()[0].skipped_occurrences), [enabledOccurrence]);
 
     const older = qa.loadSchedules(), olderRequest = take("/schedules");
     const newer = qa.loadSchedules(), newerRequest = take("/schedules");
@@ -637,14 +713,18 @@ const completionTimeout = setTimeout(() => {
 
     showPanel("devices");
     await button("other-schedule-list", "edit").trigger("click");
+    const skipPreview = runPreview();
+    reply(take("/schedules/preview", "POST"), {next_occurrence: created.next_occurrence, server_time: "2026-09-30T10:00:00+08:00"});
+    await skipPreview;
     const skipping = button("editor-actions", "skip_next").trigger("click");
-    const skipRequest = take("/schedules/weekly/skip-next", "POST");
+    const skipRequest = take("/schedules/weekly", "PUT");
+    assert.equal(JSON.parse(skipRequest.options.body).skip_next, created.next_occurrence);
     const skipDate = "2026-10-06T07:30:00+08:00";
-    reply(skipRequest, {skipped: {datetime: created.next_occurrence}, next_event: {datetime: skipDate}});
+    const skipped = {...created, next_occurrence: skipDate, skipped_occurrences: [created.next_occurrence]};
+    reply(skipRequest, skipped);
     await flush();
     assert.equal($("next-event").textContent, "none");
     assert.match(content($("other-schedule-list")), /Next Tue 07:30/);
-    const skipped = {...created, next_occurrence: skipDate, skipped_occurrences: [created.next_occurrence]};
     scheduleReply(take("/schedules"), [skipped]);
     await skipping;
     assert.match($("status").textContent, /Skipped/);
@@ -766,6 +846,60 @@ const completionTimeout = setTimeout(() => {
         assert.equal(qa.scheduleData().calendar_link, null, "Saving a manual one-time choice explicitly clears the old link");
         await $("cancel-edit").trigger("click");
     }
+
+    await $("add-schedule").trigger("click");
+    $("schedule-calendar-mode").value = "event";
+    await $("schedule-calendar-mode").trigger("change");
+    calendarInput("work").checked = true;
+    $("schedule-offset").value = "10";
+    const meeting = {source_id: "work", uid: "weekly-meeting", recurring: true, recurrence_id: "2026-10-02T01:00:00+00:00",
+        text: "Weekly meeting", starts_at: Date.parse("2026-10-02T09:00:00+08:00"), all_day: false};
+    const laterMeeting = {...meeting, recurrence_id: "2026-10-09T01:00:00+00:00", starts_at: meeting.starts_at + 7 * 86400000};
+    const calendarEvents = [meeting, laterMeeting, {...meeting, uid: "single", recurring: false, recurrence_id: "", text: "One-off event"},
+        {...meeting, uid: "all-day", all_day: true}];
+    $("schedule-calendar-scope").value = "series";
+    await $("schedule-calendar-scope").trigger("change");
+    assert.throws(() => qa.scheduleData(), /calendar_target_required/, "Choosing a scope must never silently target all events");
+    reply(take("/calendar-events?source_id=work"), {events: calendarEvents});
+    await flush();
+    assert.equal($("schedule-calendar-target").children.length, 2, "Series deduplicate occurrences and exclude single/all-day events in relative-time mode");
+    $("schedule-calendar-target").value = $("schedule-calendar-target").children[1].value;
+    await $("schedule-calendar-target").trigger("change");
+    const seriesTarget = {source_id: "work", uid: meeting.uid, scope: "series", recurrence_id: "", title: meeting.text};
+    assert.deepEqual(plain(qa.scheduleData().calendar_link), {mode: "event", source_ids: ["work"], offset_minutes: 10, target: seriesTarget});
+    $("schedule-calendar-scope").value = "occurrence";
+    await $("schedule-calendar-scope").trigger("change");
+    reply(take("/calendar-events?source_id=work"), {events: calendarEvents});
+    await flush();
+    assert.equal($("schedule-calendar-target").children.length, 4);
+    $("schedule-calendar-target").value = $("schedule-calendar-target").children[1].value;
+    await $("schedule-calendar-target").trigger("change");
+    const occurrenceTarget = {...seriesTarget, scope: "occurrence", recurrence_id: meeting.recurrence_id};
+    assert.deepEqual(plain(qa.scheduleData().calendar_link.target), occurrenceTarget, "Occurrence identity uses the original recurrence ID");
+    const saveTarget = $("schedule-form").trigger("submit");
+    const targetRequest = take("/schedules", "POST");
+    const targeted = {...row, calendar_link: JSON.parse(targetRequest.options.body).calendar_link};
+    assert.deepEqual(targeted.calendar_link.target, occurrenceTarget);
+    reply(targetRequest, targeted);
+    await flush();
+    scheduleReply(take("/schedules"), [targeted]);
+    await saveTarget;
+    assert.match(content($("schedule-list")), /Weekly meeting.*calendar_scope_occurrence/);
+    await button("schedule-list", "edit").trigger("click");
+    assert.equal($("calendar-target-status").textContent, "", "Do not report a missing target before the catalog responds");
+    reply(take("/calendar-events?source_id=work"), {events: []});
+    await flush();
+    assert.deepEqual(plain(qa.scheduleData().calendar_link.target), occurrenceTarget, "A cancelled/missing event keeps its target rather than switching to all events");
+    assert.equal($("calendar-target-status").textContent, "calendar_target_missing");
+    const staleCatalog = $("refresh-calendar-targets").trigger("click");
+    const staleCatalogRequest = take("/calendar-events?source_id=work");
+    $("schedule-calendar-scope").value = "all";
+    await $("schedule-calendar-scope").trigger("change");
+    reply(staleCatalogRequest, {events: calendarEvents});
+    await staleCatalog;
+    assert.equal(qa.scheduleData().calendar_link.target, undefined, "Late catalog results cannot restore a removed target");
+    assert.equal($("calendar-target-field").hidden, true);
+    await $("cancel-edit").trigger("click");
 
     const syncing = button("device-list", "sync").trigger("click");
     const commandRequest = take("/devices/desk/commands", "POST");

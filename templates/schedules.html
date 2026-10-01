@@ -73,6 +73,21 @@
                                 <legend>{{ t.calendar_sources }}</legend>
                                 <div id="schedule-calendar-sources" class="calendar-source-options"></div>
                                 <p class="help">{{ t.calendar_source_hint }}</p>
+                                <div class="field setting-row">
+                                    <label for="schedule-calendar-scope">{{ t.calendar_scope }}</label>
+                                    <select id="schedule-calendar-scope">
+                                        <option value="all">{{ t.calendar_scope_all }}</option>
+                                        <option value="occurrence">{{ t.calendar_scope_occurrence }}</option>
+                                        <option value="series">{{ t.calendar_scope_series }}</option>
+                                    </select>
+                                </div>
+                                <div id="calendar-target-field" class="field" hidden>
+                                    <label for="schedule-calendar-target">{{ t.calendar_target }}</label>
+                                    <select id="schedule-calendar-target" aria-describedby="calendar-target-status"></select>
+                                    <p id="calendar-target-status" class="help" role="status"></p>
+                                    <button id="refresh-calendar-targets" type="button">{{ t.calendar_target_retry }}</button>
+                                    <p class="help">{{ t.calendar_target_hint }}</p>
+                                </div>
                                 <p id="calendar-mode-hint" class="help"></p>
                                 <p class="help">{{ t.calendar_rule_hint }}</p>
                             </fieldset>

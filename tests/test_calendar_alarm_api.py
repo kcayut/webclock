@@ -41,7 +41,7 @@ END:VCALENDAR
 '''.replace('\n', '\r\n').encode()
         mock = patch.object(clock.requests, 'get', return_value=SimpleNamespace(
             content=payload, raise_for_status=lambda: None))
-        mock.start()
+        self.download = mock.start()
         self.addCleanup(mock.stop)
         response = self.client.post('/api/calendar', json={
             'sources': [dict(id='work', name='工作', provider='google',
@@ -157,6 +157,99 @@ END:VCALENDAR
         with patch('webclock.api.management.taipei_now', side_effect=[self.now, response_time]):
             response = self.client.get('/api/v1/browser-alarms')
         self.assertEqual(response.json['server_timestamp'], int(response_time.timestamp() * 1000))
+
+    def test_event_catalog_selects_sources_and_exposes_only_event_fields(self):
+        (self.root / 'notes.json').write_text(json.dumps([
+            dict(id=1, text='本地會議', due_date='2026-09-30 11:30', enabled=True)]))
+        response = self.client.get('/api/v1/calendar-events?source_id=work')
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(len(response.json['events']), 1)
+        event = response.json['events'][0]
+        self.assertEqual(set(event), {'source_id', 'uid', 'text', 'starts_at', 'ends_at',
+                                      'all_day', 'recurring', 'recurrence_id'})
+        self.assertEqual((event['source_id'], event['uid'], event['recurring'], event['recurrence_id']),
+                         ('work', 'meeting', False, ''))
+        self.assertEqual(response.json['server_time'], self.now.isoformat())
+        self.assertNotIn('private-token', response.text)
+        response = self.client.get('/api/v1/calendar-events?source_id=local&source_id=work')
+        self.assertEqual({event['source_id'] for event in response.json['events']}, {'local', 'work'})
+        for query in ('', '?source_id=', '?source_id=missing', '?source_id=work&url=private',
+                      '?source_id=work&source_id=missing'):
+            with self.subTest(query=query):
+                self.assertEqual(self.client.get('/api/v1/calendar-events' + query).status_code, 400)
+
+    def test_selected_occurrence_and_series_follow_reschedule_and_cancellation(self):
+        master = '''BEGIN:VEVENT
+UID:weekly
+DTSTART:20260930T023000Z
+DTEND:20260930T030000Z
+RRULE:FREQ=WEEKLY;COUNT=3
+SUMMARY:Weekly meeting
+END:VEVENT
+'''
+        other = '''BEGIN:VEVENT
+UID:other
+DTSTART:20260930T013000Z
+SUMMARY:Other meeting
+END:VEVENT
+'''
+
+        def feed(events):
+            self.download.return_value.content = ('BEGIN:VCALENDAR\nVERSION:2.0\n' + events
+                + 'END:VCALENDAR\n').replace('\n', '\r\n').encode()
+            clock.calendar_feed_cache.clear()
+
+        def expected(once, series):
+            rows = self.client.get('/api/v1/schedules').json['schedules']
+            self.assertEqual({row['id']: row['next_occurrence'] for row in rows},
+                             {'once': once, 'series': series})
+            self.assertEqual(self.client.post('/api/v1/schedules/preview', json={'id': 'once'}
+                ).json['next_occurrence'], once)
+            alarms = self.client.get('/api/v1/browser-alarms').json['alarms']
+            self.assertEqual({row['id']: row['starts_at'] for row in alarms}, {
+                key: int(datetime.fromisoformat(value).timestamp() * 1000)
+                for key, value in [('once', once), ('series', series)] if value})
+
+        feed(master + other)
+        events = self.client.get('/api/v1/calendar-events?source_id=work').json['events']
+        occurrence = next(event for event in events if event['uid'] == 'weekly')
+        self.assertTrue(occurrence['recurring'])
+        self.assertTrue(occurrence['recurrence_id'])
+        for identifier, scope in [('once', 'occurrence'), ('series', 'series')]:
+            self.add_alarm(identifier, calendar_link=dict(mode='event', source_ids=['work'], offset_minutes=10,
+                target=dict(source_id='work', uid='weekly', scope=scope,
+                            recurrence_id=occurrence['recurrence_id'] if scope == 'occurrence' else '')))
+        expected('2026-09-30T10:20:00+08:00', '2026-09-30T10:20:00+08:00')
+
+        moved = '''BEGIN:VEVENT
+UID:weekly
+RECURRENCE-ID:20260930T023000Z
+DTSTART:20261001T033000Z
+DTEND:20261001T040000Z
+SUMMARY:Moved weekly meeting
+END:VEVENT
+'''
+        feed(master + moved + other)
+        expected('2026-10-01T11:20:00+08:00', '2026-10-01T11:20:00+08:00')
+        events = self.client.get('/api/v1/calendar-events?source_id=work').json['events']
+        updated = next(event for event in events if event['uid'] == 'weekly')
+        self.assertEqual(updated['recurrence_id'], occurrence['recurrence_id'])
+        self.assertNotEqual(updated['starts_at'], occurrence['starts_at'])
+
+        cancelled = '''BEGIN:VEVENT
+UID:weekly
+RECURRENCE-ID:20260930T023000Z
+STATUS:CANCELLED
+END:VEVENT
+'''
+        feed(master + cancelled + other)
+        expected(None, '2026-10-07T10:20:00+08:00')
+        events = self.client.get('/api/v1/calendar-events?source_id=work').json['events']
+        self.assertFalse(any(event['uid'] == 'weekly' and event['recurrence_id'] == occurrence['recurrence_id']
+                             for event in events))
+
+        feed(master.replace('SUMMARY:Weekly meeting', 'STATUS:CANCELLED\nSUMMARY:Weekly meeting') + other)
+        expected(None, None)
 
 
 if __name__ == '__main__':

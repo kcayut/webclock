@@ -80,6 +80,8 @@ webclock_state/              私人執行資料，不進 Git
 - `event`：依所選來源的有時間行程，提前 `offset_minutes`（0–1440）響鈴；全天事項略過。
 - `day`：當天所選來源有行程時，以排程的 `time` 響鈴；`offset_minutes` 為 0。全天及跨日行程也算，結束時間不包含在內。
 - `source_ids` 是來源的穩定 ID；`local` 代表本地提醒。任一選中來源符合即可，與顯示選擇獨立。
+- 可選填 `target` 指定行程：`{"source_id":"work","uid":"meeting","scope":"occurrence","recurrence_id":"2026-09-30T02:30:00+00:00","title":"每週例會"}`。`scope=occurrence` 只跟該次，`scope=series` 跟整個重複系列；未提供 `target` 時跟隨所選來源的全部行程。
+- 選取識別值取自下述行程目錄 API。單次行程與整個系列的 `recurrence_id` 為空字串；重複行程的單次使用原始 `RECURRENCE-ID`，改期仍沿用該值。`title` 僅供顯示，改期、取消及響鈴時間以同步後的行事曆資料為準；訂閱快取最長 5 分鐘。
 - 星期、指定日期及假日過濾都以實際響鈴的台灣日期判斷。預覽查詢未來 366 天，依行程模式保留秒精度，`skipped_occurrences` 也保留完整時間。
 - 沒有日期或固定時段的常駐本地文字不參與聯動。來源移除或讀取失敗不退回每日鬧鐘，也不使用過期訂閱資料。
 - 聯動由伺服器計算，供網頁鬧鐘使用；既有 schema 2 裝置排程回應會排除聯動鬧鐘，避免舊硬體將新條件誤當成每日響鈴。
@@ -94,6 +96,7 @@ API 接受 JSON，錯誤以 `{"error":"..."}` 回應（已匹配的 API 路由�
 | --- | --- |
 | `/api/v1/schedules` | GET 排程、下一次事件、Server 時間、今日日期與日曆範圍；POST 新增 |
 | `/api/calendar` | GET/POST 行事曆來源；PATCH 僅更新顯示選擇 |
+| `/api/v1/calendar-events?source_id=work` | GET 所選來源未來 366 天的行程目錄；多來源重複 `source_id` 參數 |
 | `/api/v1/schedules/<id>` | PUT 修改指定欄位；DELETE 刪除 |
 | `/api/v1/schedules/<id>/skip-next` | POST 跳過下一次，回 `skipped` 與 `next_event` |
 | `/api/v1/browser-alarms` | GET 時鐘頁的下次鬧鐘、Server 時間及假日資料狀態 |
@@ -106,6 +109,8 @@ API 接受 JSON，錯誤以 `{"error":"..."}` 回應（已匹配的 API 路由�
 `/api/calendar` 的 `sources` 每筆包含 `id`、`name`、`provider`（`apple`／`google`／`ics`）、`url`、`display_enabled`；`local_display_enabled` 控制本地提醒顯示。新增來源可省略 ID，由伺服器產生；更新時保留 ID 以延續鬧鐘引用。POST 完整保存來源，PATCH 只接受來源 ID 與顯示旗標。舊 `{"url":"..."}` 與 `.env` 的 `ICAL_URL` 仍可讀取遷移。網址僅出現在專用管理回應，不進入時鐘 API、排程 API、裝置 API、備份匯出或離線快取。
 
 `GET /api/v1/schedules` 的 `calendar_sources` 提供含本地提醒的來源目錄，每筆僅有 `id`、`name`、`provider`，供鬧鐘選擇使用。
+
+`GET /api/v1/calendar-events` 必須指定既存來源，回傳 `events` 與 `server_time`。每筆行程只有 `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id`；時間戳為 Unix 毫秒，不包含訂閱網址。取消或刪除的行程不會出現在目錄；已保存的指定行程鬧鐘不會因此改成跟隨其他行程。
 
 ## 網頁鬧鐘
 

@@ -127,6 +127,47 @@ class ScheduleTests(unittest.TestCase):
         schedule['rule'] = {'weekdays': [5]}
         self.assertIsNone(next_occurrence(schedule, self.holidays, now, provider))
 
+    def test_calendar_target_follows_occurrence_move_or_series_and_never_other_events(self):
+        now = datetime.fromisoformat('2026-09-30T07:00:00+08:00')
+        original_id = '2026-09-30T00:00:00+00:00'
+        moved = dict(self.calendar_event('2026-10-01T10:00:00+08:00'), recurrence_id=original_id)
+        following = dict(self.calendar_event('2026-10-07T08:00:00+08:00'),
+                         recurrence_id='2026-10-07T00:00:00+00:00')
+        other = self.calendar_event('2026-09-30T08:00:00+08:00', uid='different-meeting')
+        copied = dict(moved, source_id='work', starts_at=other['starts_at'])
+        provider = Mock(return_value=[other, copied, following, moved])
+        schedule = self.linked(sources=['local', 'work'], offset=10)
+        schedule['calendar_link']['target'] = dict(source_id='local', uid='meeting',
+                                                   scope='occurrence', recurrence_id=original_id)
+        schedule = validate_schedule(schedule)
+        self.assertEqual(next_occurrence(schedule, self.holidays, now, provider)['datetime'],
+                         '2026-10-01T09:50:00+08:00')
+        provider.return_value.remove(moved)  # Cancellation/removal must not select a later recurrence.
+        self.assertIsNone(next_occurrence(schedule, self.holidays, now, provider))
+        schedule['calendar_link']['target']['scope'] = 'series'
+        schedule = validate_schedule(schedule)
+        self.assertEqual(schedule['calendar_link']['target']['recurrence_id'], '')
+        self.assertEqual(next_occurrence(schedule, self.holidays, now, provider)['datetime'],
+                         '2026-10-07T07:50:00+08:00')
+        # A standalone event has no recurrence ID; changing its start preserves its identity.
+        schedule['calendar_link']['target'].update(scope='occurrence', uid='different-meeting')
+        other['starts_at'] = other['ends_at'] = datetime.fromisoformat('2026-10-02T11:00:00+08:00').timestamp() * 1000
+        self.assertEqual(next_occurrence(schedule, self.holidays, now, provider)['datetime'],
+                         '2026-10-02T10:50:00+08:00')
+
+    def test_calendar_target_validation(self):
+        link = dict(mode='event', source_ids=['local'], offset_minutes=10)
+        target = dict(source_id='local', uid='weekly-meeting', scope='occurrence',
+                      recurrence_id='2026-09-30T01:00:00+00:00', title='Weekly meeting')
+        self.assertEqual(self.schedule(calendar_link=dict(link, target=target))['calendar_link']['target'], target)
+        invalid = [None, [], {}, dict(target, source_id='work'), dict(target, scope='all'),
+                   dict(target, uid=''), dict(target, uid=' '), dict(target, uid=3), dict(target, uid='x' * 1025),
+                   dict(target, recurrence_id=None), dict(target, recurrence_id='x' * 129),
+                   dict(target, title=[]), dict(target, title='x' * 501), dict(target, url='private')]
+        for value in invalid:
+            with self.subTest(target=value), self.assertRaises(ValueError):
+                self.schedule(calendar_link=dict(link, target=value))
+
     def test_calendar_day_overlap_all_day_end_exclusive_and_sparse_dates(self):
         provider = Mock(return_value=[
             self.calendar_event('2026-09-30T23:00:00+08:00', '2026-10-02T00:00:00+08:00'),

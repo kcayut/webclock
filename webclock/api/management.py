@@ -55,6 +55,20 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         context = template_context()
         return render_template('schedules.html', schedule_translations=SCHEDULE_TRANSLATIONS[context['language']], **context)
 
+    @api.route('/api/v1/calendar-events')
+    def calendar_event_catalog():
+        source_ids = request.args.getlist('source_id')
+        if (not source_ids or len(source_ids) > 50 or set(request.args) - {'source_id'}
+                or set(source_ids) - {source['id'] for source in source_catalog()}):
+            raise ValueError('Select an existing calendar source')
+        start = taipei_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        events = calendar_events(start=start, end=start + timedelta(days=366),
+                                 source_ids=sorted(set(source_ids))) if calendar_events else []
+        fields = ('source_id', 'uid', 'text', 'starts_at', 'ends_at', 'all_day', 'recurring', 'recurrence_id')
+        return jsonify(events=[{key: event[key] for key in fields if key in event}
+                               for event in events if event.get('source_id') in source_ids],
+                       server_time=taipei_now().isoformat())
+
     @api.route('/api/v1/schedules', methods=['GET', 'POST'])
     def schedule_collection():
         with storage_lock:

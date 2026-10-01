@@ -46,7 +46,7 @@ def validate_schedule(data):
     link = result.get('calendar_link')
     if link is not None:
         if (result['type'] != 'alarm' or not isinstance(link, dict)
-                or set(link) - {'mode', 'source_ids', 'offset_minutes'}
+                or set(link) - {'mode', 'source_ids', 'offset_minutes', 'target'}
                 or link.get('mode') not in ('event', 'day')):
             raise ValueError('Invalid calendar link')
         sources = link.get('source_ids')
@@ -58,6 +58,19 @@ def validate_schedule(data):
         if type(offset) is not int or not 0 <= offset <= 1440 or (link['mode'] == 'day' and offset):
             raise ValueError('Invalid calendar advance minutes')
         result['calendar_link'] = dict(mode=link['mode'], source_ids=sorted(set(sources)), offset_minutes=offset)
+        if 'target' in link:
+            target = link['target']
+            if (not isinstance(target, dict)
+                    or set(target) - {'source_id', 'uid', 'scope', 'recurrence_id', 'title'}
+                    or target.get('source_id') not in sources
+                    or not isinstance(target.get('uid'), str) or not 1 <= len(target['uid']) <= 1024
+                    or not target['uid'].strip() or target.get('scope') not in ('occurrence', 'series')
+                    or not isinstance(target.get('recurrence_id', ''), str)
+                    or len(target.get('recurrence_id', '')) > 128
+                    or ('title' in target and (not isinstance(target['title'], str) or len(target['title']) > 500))):
+                raise ValueError('Invalid calendar target')
+            result['calendar_link']['target'] = dict(target, recurrence_id=(
+                target.get('recurrence_id', '') if target['scope'] == 'occurrence' else ''))
     rule = result['rule']
     if not isinstance(rule, dict) or len(rule) > 1 or set(rule) - {'weekdays', 'workday_only', 'holiday_only', 'dates'}:
         raise ValueError('Choose one schedule rule')
@@ -143,6 +156,7 @@ def next_calendar_occurrence(schedule, holidays, now, calendar_events):
     if not callable(calendar_events):
         return None
     link = schedule['calendar_link']
+    target = link.get('target')
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     advance = timedelta(minutes=link['offset_minutes'])
     try:
@@ -157,6 +171,10 @@ def next_calendar_occurrence(schedule, holidays, now, calendar_events):
     hour, minute = map(int, schedule['time'].split(':'))
     for item in events:
         if not isinstance(item, dict) or item.get('source_id') not in link['source_ids']:
+            continue
+        if target and (item['source_id'] != target['source_id'] or item.get('uid') != target['uid']
+                       or (target['scope'] == 'occurrence'
+                           and item.get('recurrence_id', '') != target['recurrence_id'])):
             continue
         first, last = item.get('starts_at'), item.get('ends_at', item.get('starts_at'))
         if any(type(value) not in (int, float) or not math.isfinite(value) for value in (first, last)):
