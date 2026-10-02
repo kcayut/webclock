@@ -100,6 +100,10 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 
 管理 API は信頼できる LAN を前提とし、ログイン機能はありません。異なる Origin のブラウザー要求を拒否しますが、完全な認証ではありません。外部公開時はリバースプロキシでアクセスを制限し、HTTPS を有効にしてください。
 
+管理用 POST／PUT／PATCH／DELETE はすべて CSRF token と同じセッションの `webclock_csrf` cookie が必要です。設定、リマインダー、バックアップ読み込み、プレビュー、端末への同期要求も含みます。管理画面は自動で送信します。外部 client は GET `/api/csrf` の cookie を保持し、応答の `csrf_token` を `X-CSRF-Token` で送信してください。HTML フォームでは hidden の `csrf_token` を使います。Origin を省略しても token は必要です。token の不足・不一致・失効、異なる Origin／Referer、`Sec-Fetch-Site: cross-site` は 403 と `code: "csrf_failed"` を返します。[要求例](server-api.md#管理-api)を参照してください。
+
+リマインダー削除 `/delete/<id>` は token 付き POST のみ受け付け、GET／HEAD は 405 です。管理 HTML、エラーページ、token 応答は `no-store` で、クロスオリジン読み取りを許可しません。現在の単一 Server プロセスを再起動すると古い token は無効になるため、管理画面を再読み込みするか token を再取得してください。公開時計に CSRF cookie は不要です。`/api/v1/device/*` は独立した `DEVICE_API_TOKEN` を継続し、CSRF token は不要です。CSRF 対策は Server に直接接続できる利用者の認証ではありません。
+
 `/api/calendar` の各参照元は `id`、`name`、`provider`、`url`、`display_enabled` を持ち、`local_display_enabled` がローカルリマインダーを制御します。アラームが参照するため、更新時は ID を維持してください。POST は参照元全体を保存し、PATCH は ID と表示フラグだけを受け付けます。URL は専用管理応答にだけ現れ、時計、予定、端末、バックアップ、オフラインキャッシュには出力しません。
 
 `GET /api/v1/calendar-events` は既存の参照元 ID を受け取り、`events` と `server_time` を返します。予定項目は `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id` です。時刻は Unix ミリ秒で、購読 URL は含みません。取り消し・削除された予定は一覧から消えますが、保存済みの指定先が別の予定へ変わることはありません。

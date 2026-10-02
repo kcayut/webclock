@@ -30,7 +30,7 @@
             select.disabled = true;
             fetch('/api/control', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content},
                 body: JSON.stringify({language: language})
             }).then(function (response) {
                 if (!response.ok) throw new Error('Language not saved');

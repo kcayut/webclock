@@ -59,6 +59,7 @@
         xhr.onerror = xhr.ontimeout = function () { finish(false); };
         if (payload) {
             xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.setRequestHeader('X-CSRF-Token', $('csrf-token').content);
             xhr.send(JSON.stringify(payload));
         } else xhr.send();
     }

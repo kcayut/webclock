@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta id="csrf-token" name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ translations[language].admin_title }}</title>
     {% include 'brand_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
@@ -181,6 +182,7 @@
     {% if error %}<p class="form-error" role="alert" data-i18n="{{ error }}">{{ translations[language][error] }}</p>{% endif %}
         {% set draft = request.form if request.endpoint == 'add' else {} %}
         <form action="/add" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ note_fields(draft, 'add') }}
             {{ window_fields(draft, 'add') }}
             <div class="actions"><button type="submit" class="primary" data-i18n="add">{{ translations[language].add }}</button></div>
@@ -203,12 +205,13 @@
                 {% endif %}
             </div>
             <div class="note-actions">
-                <form action="/toggle/{{ note.id }}" method="POST"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
-            <a href="/delete/{{ note.id }}" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</a>
+                <form action="/toggle/{{ note.id }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
+                <form action="/delete/{{ note.id }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
             </div>
             <details {% if editing_id == note.id %}open{% endif %}>
                 <summary data-i18n="edit_note">{{ translations[language].edit_note }}</summary>
                 <form action="/schedule/{{ note.id }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
                     <div class="actions"><button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button></div>
@@ -392,7 +395,7 @@
         function postSettings(payload, keepDraft) {
             return fetch('/api/control', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content },
                 body: JSON.stringify(payload)
             }).then(function (response) {
                 if (!response.ok) throw new Error('Settings not saved');
@@ -427,7 +430,7 @@
                 if (!window.confirm(t('backup_confirm'))) return;
                 button.disabled = true;
                 var response = await fetch('/api/backup', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+                    method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content}, body: JSON.stringify(data)
                 });
                 if (!response.ok) throw new Error('Restore failed');
                 status.textContent = t('backup_done');

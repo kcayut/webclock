@@ -40,6 +40,7 @@ const buttons = providers.map(provider => {
     return button;
 });
 const $ = id => { assert.ok(elements.has(id), id); return elements.get(id); };
+$('csrf-token').content = 'calendar-csrf-token';
 const requests = [];
 let language = 'en';
 const context = vm.createContext({
@@ -49,14 +50,17 @@ const context = vm.createContext({
     window: {t(key) { return key === 'calendar_source_count' ? (language === 'en' ? '{count} sources configured' : '已設定 {count} 個來源') : key; }},
     XMLHttpRequest: class {
         open(method, url) { this.method = method; assert.equal(url, '/api/calendar'); }
-        setRequestHeader() {}
+        constructor() { this.headers = {}; }
+        setRequestHeader(name, value) { this.headers[name] = value; }
         send(body) { this.body = body; requests.push(this); }
     }
 });
 vm.runInContext(source, context);
 function take(method) {
     assert.ok(requests.length, 'Expected ' + method);
-    const request = requests.shift(); assert.equal(request.method, method); return request;
+    const request = requests.shift(); assert.equal(request.method, method);
+    assert.equal(request.headers['X-CSRF-Token'], method === 'GET' ? undefined : 'calendar-csrf-token');
+    return request;
 }
 function reply(request, status, data) {
     request.status = status; request.responseText = JSON.stringify(data); request.onload();

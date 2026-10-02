@@ -26,6 +26,7 @@ class ClockFeaturesTest(unittest.TestCase):
         item.start()
         self.addCleanup(item.stop)
         self.client = clock.app.test_client()
+        self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
 
     def status_at(self, value):
         now = datetime.fromisoformat(value).replace(tzinfo=timezone(timedelta(hours=8)))

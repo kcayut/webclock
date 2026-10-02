@@ -23,6 +23,7 @@ class CalendarSettingsTest(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
         self.client = clock.app.test_client()
+        self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
 
     def test_save_reload_clear_legacy_and_private_responses(self):
         self.assertEqual(self.client.get('/api/calendar').json['url'], clock.ICAL_URL)

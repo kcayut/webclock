@@ -118,7 +118,11 @@
         $("status").className = error ? "error" : "";
     }
     async function api(path, options) {
-        const response = await fetch("/api/v1" + path, Object.assign({cache: "no-store"}, options));
+        options = Object.assign({cache: "no-store"}, options);
+        if (!["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())) {
+            options.headers = Object.assign({}, options.headers, {"X-CSRF-Token": $("csrf-token").content});
+        }
+        const response = await fetch("/api/v1" + path, options);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error === "Occurrence already skipped; wait for resume" ? t("pause_pending") : data.error || t("request_failed"));
         return data;

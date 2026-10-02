@@ -112,6 +112,21 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 
 管理 API 沿用可信任區網模式，不具備登入功能。Server 拒絕不同 Origin 的瀏覽器存取；這不是完整身份驗證。遠端部署須在反向代理限制存取並啟用 HTTPS。
 
+所有管理寫入（POST／PUT／PATCH／DELETE，包括設定、提醒、備份匯入、排程預覽及裝置同步要求）都需要 CSRF token 和同一工作階段的 `webclock_csrf` cookie。管理頁會自動處理；程式呼叫先 GET `/api/csrf`，保存回應 cookie，再以 `X-CSRF-Token` 傳入回應的 `csrf_token`；HTML 表單則使用隱藏欄位 `csrf_token`。省略 Origin 也不能省略 token。缺少、錯誤或失效時回 403 `{"error":"CSRF validation failed; reload the management page.","code":"csrf_failed"}`；跨來源 Origin／Referer／`Sec-Fetch-Site: cross-site` 也會被拒絕。
+
+例如，用同一個 cookie 檔預覽草稿（`WEBCLOCK_URL` 指向自架 Server）：
+
+```bash
+cookie_file=$(mktemp)
+csrf_token=$(curl --fail --silent --show-error -c "$cookie_file" "$WEBCLOCK_URL/api/csrf" | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf_token"])')
+curl --fail --silent --show-error -b "$cookie_file" \
+  -H "X-CSRF-Token: $csrf_token" -H 'Content-Type: application/json' \
+  -d '{"name":"Preview","time":"07:30"}' "$WEBCLOCK_URL/api/v1/schedules/preview"
+rm -f "$cookie_file"
+```
+
+提醒刪除 `/delete/<id>` 只接受帶 token 的 POST，GET／HEAD 回 405。管理 HTML、錯誤頁及 token 回應使用 `no-store`，不開放跨來源讀取。現有單一 Server 程序在重啟後會使舊 token 失效，請重新載入管理頁或重新取得 token。公開時鐘不需要 CSRF cookie；`/api/v1/device/*` 仍沿用獨立的 `DEVICE_API_TOKEN`，不要求 CSRF token。CSRF 不會限制可直接連線的區網用戶，也不等於登入保護。
+
 `/api/calendar` 的 `sources` 每筆包含 `id`、`name`、`provider`（`apple`／`google`／`ics`）、`url`、`display_enabled`；`local_display_enabled` 控制本地提醒顯示。新增來源可省略 ID，由伺服器產生；更新時保留 ID 以延續鬧鐘引用。POST 完整保存來源，PATCH 只接受來源 ID 與顯示旗標。舊 `{"url":"..."}` 與 `.env` 的 `ICAL_URL` 仍可讀取遷移。網址僅出現在專用管理回應，不進入時鐘 API、排程 API、裝置 API、備份匯出或離線快取。
 
 `GET /api/v1/schedules` 的 `calendar_sources` 提供含本地提醒的來源目錄，每筆僅有 `id`、`name`、`provider`，供鬧鐘選擇使用。
@@ -379,7 +394,7 @@ curl -i -H 'Content-Type: application/json' \
 | --- | --- |
 | 400 | JSON 欄位、型別、ID、日期或數量不符；如 `Invalid device status fields`。修正請求，不無限重送相同內容 |
 | 401 | `A device API token is required`；token 缺少或不符。檢查裝置設定，不自行降成免驗證 |
-| 403 | `Cross-origin management access is not allowed`；提供的 Origin 與 Server 看到的來源不同。檢查同源部署及代理設定；Origin 不等於登入保護 |
+| 403 | `csrf_failed` 表示管理寫入 token／cookie 缺少、失效或來源不符，重新載入管理頁或取得 token；`Cross-origin management access is not allowed` 表示既有來源檢查不符。檢查同源部署及代理設定；兩者都不等於登入保護 |
 | 404 | 已匹配 status／指令路由中的裝置不存在，通常為 `Item not found`；確認連到正確 Server，再依現行註冊流程處理。未知 URL 的 404 不保證 JSON |
 | 405 | 方法不支援，例如 PUT 裝置 schedules；可能回 HTML，不當作排程解析 |
 | 413 | 請求本文超過 1 MiB；這是上傳限制，不是下載日曆的大小上限 |

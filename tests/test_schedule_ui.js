@@ -52,6 +52,7 @@ const $ = id => {
     assert.ok(elements.has(id), "The management template must contain " + id);
     return elements.get(id);
 };
+$("csrf-token").content = "schedules-csrf-token";
 const englishLabels = {
     alarm: "Alarm",
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
@@ -125,7 +126,7 @@ const context = vm.createContext({
     setTimeout(callback, delay) { const id = ++timeoutId; timeouts.set(id, {callback, delay}); return id; },
     clearTimeout(id) { timeouts.delete(id); }
 });
-const probe = `globalThis.qa = {edit, loadSchedules, loadDevices, scheduleData, remainingTime, queuePreview, syncServerTime, get: () => schedules};`;
+const probe = `globalThis.qa = {api, edit, loadSchedules, loadDevices, scheduleData, remainingTime, queuePreview, syncServerTime, get: () => schedules};`;
 const instrumented = source.replace("    refresh();\n    setInterval", "    " + probe + "\n    refresh();\n    setInterval");
 assert.notEqual(instrumented, source, "Management state probe must attach");
 // Audio support is optional: initialization, forms and commands must work without it.
@@ -142,6 +143,8 @@ function take(url, method = "GET") {
     const request = pending.shift();
     assert.equal(request.url, "/api/v1" + url);
     assert.equal(request.options.method || "GET", method);
+    assert.equal((request.options.headers || {})["X-CSRF-Token"], method === "GET" ? undefined : "schedules-csrf-token");
+    if (request.options.body) assert.equal(request.options.headers["Content-Type"], "application/json");
     return request;
 }
 function reply(request, data, ok = true) {
@@ -984,6 +987,11 @@ const completionTimeout = setTimeout(() => {
     reply(oldDevicesRequest, {devices: [{id: "stale"}]});
     await oldDevices;
     assert.equal(content($("device-list")).trim(), "no_devices");
+    const emptyPost = qa.api("/schedules/alarm/skip-next", {method: "POST"});
+    const emptyPostRequest = take("/schedules/alarm/skip-next", "POST");
+    assert.equal(emptyPostRequest.options.body, undefined);
+    reply(emptyPostRequest, {ok: true});
+    await emptyPost;
     assert.equal(pending.length, 0);
     assert.ok(requests.every(request => !/sound|audio|snooze|restart/.test(request.url)));
     console.log("Schedule management forms, commands and freshness checks passed");

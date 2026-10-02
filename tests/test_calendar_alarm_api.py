@@ -18,6 +18,7 @@ class CalendarAlarmApiTest(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
         self.client = clock.app.test_client()
+        self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
         self.now = datetime.fromisoformat('2026-09-30T09:00:00+08:00')
         for name, value in [('SETTINGS_FILE', str(self.root / 'settings.json')),
                             ('NOTES_FILE', str(self.root / 'notes.json')),

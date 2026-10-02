@@ -7,12 +7,25 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 import app as clock
 import update_clock as updater
 
 REAL_SERVICE_URL = updater.service_url
 REAL_CONFIGURATION = updater.service_configuration
+
+
+class HttpClientTest(unittest.TestCase):
+    def test_csrf_bootstrap_failure_does_not_send_an_unprotected_write(self):
+        for status in (403, 500):
+            with self.subTest(status=status), patch.object(updater.urllib.request, 'build_opener') as build:
+                build.return_value.open.side_effect = HTTPError(
+                    'http://localhost/api/csrf', status, 'Rejected', {}, None)
+                with self.assertRaises(HTTPError) as rejected:
+                    updater.http_json('http://localhost/api/control', {'brightness': 40})
+                self.assertEqual(rejected.exception.code, status)
+                build.return_value.open.assert_called_once_with('http://localhost/api/csrf', timeout=15)
 
 
 class SettingsTest(unittest.TestCase):
@@ -27,6 +40,7 @@ class SettingsTest(unittest.TestCase):
         state_patch.start()
         self.addCleanup(state_patch.stop)
         self.client = clock.app.test_client()
+        self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
 
     def test_save_reload_and_invalid_inputs(self):
         expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en', 'time_format': '24h'}

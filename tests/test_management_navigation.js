@@ -79,7 +79,7 @@ async function checkLanguage() {
     const context = {window, I18N: packs, currentLanguage: 'zh-TW', currentTimeFormat: '12h',
         applyTimeFormat: format => { assert.equal(format, '12h'); timeRefreshes++; },
         document: {documentElement: {lang: 'zh-TW'}, body: {getAttribute: () => 'display'},
-            getElementById: id => id === 'management-language-select' ? select : id === 'management-i18n' ? {textContent: JSON.stringify(packs)} : null,
+            getElementById: id => id === 'management-language-select' ? select : id === 'management-i18n' ? {textContent: JSON.stringify(packs)} : id === 'csrf-token' ? {content: 'language-csrf-token'} : null,
             querySelectorAll: selector => selector === '[data-i18n]' ? [label] : selector === '[data-weekday]' ? [weekday] : []},
         fetch(url, options) { request = {url, options}; return failure === 'network' ? Promise.reject(new Error('offline')) : Promise.resolve({ok: !failure}); }};
     vm.createContext(context);
@@ -91,6 +91,7 @@ async function checkLanguage() {
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(select.disabled, false);
     assert.equal(request.url, '/api/control');
+    assert.equal(request.options.headers['X-CSRF-Token'], 'language-csrf-token');
     assert.deepEqual(JSON.parse(request.options.body), {language: 'en'});
     assert.equal(context.currentLanguage, 'en');
     assert.equal(context.document.documentElement.lang, 'en');
@@ -110,5 +111,32 @@ async function checkLanguage() {
     assert.equal(JSON.stringify(draft), before);
 }
 
-checkLanguage().then(() => console.log('Management navigation, in-place language changes and failed saves preserve drafts.'))
+async function checkBackup() {
+    const admin = fs.readFileSync(require('node:path').join(__dirname, '../templates/admin.html'), 'utf8');
+    const backup = {version: 1, settings: {language: 'en'}, notes: []};
+    const fields = {
+        'csrf-token': {content: 'backup-csrf-token'},
+        'backup-file': {files: [{size: 100, text: async () => JSON.stringify(backup)}]},
+        'backup-status': {textContent: ''}, 'backup-submit': {disabled: false}
+    };
+    let request, reloaded = false, ok = false;
+    const context = vm.createContext({document: {getElementById: id => fields[id]}, t: key => key,
+        window: {confirm: () => true, location: {reload() { reloaded = true; }}},
+        fetch: async (url, options) => { request = {url, options}; return {ok}; }});
+    vm.runInContext(admin.slice(admin.indexOf('async function importBackup('), admin.indexOf('function setMode(')), context);
+    await context.importBackup();
+    assert.equal(request.url, '/api/backup');
+    assert.equal(request.options.headers['X-CSRF-Token'], 'backup-csrf-token');
+    assert.equal(request.options.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(request.options.body), backup);
+    assert.equal(reloaded, false, 'Rejected imports must preserve the current page');
+    assert.equal(fields['backup-status'].textContent, 'backup_error');
+    assert.equal(fields['backup-submit'].disabled, false);
+    ok = true;
+    await context.importBackup();
+    assert.equal(reloaded, true);
+    assert.equal(fields['backup-status'].textContent, 'backup_done');
+}
+
+Promise.all([checkLanguage(), checkBackup()]).then(() => console.log('Management navigation, CSRF headers, backup imports and in-place language changes passed.'))
     .catch(error => { console.error(error); process.exitCode = 1; });

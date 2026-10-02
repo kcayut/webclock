@@ -17,7 +17,8 @@ class ServerApiTest(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
         for key, value in [('SETTINGS_FILE', str(self.root / 'settings.json')),
-                           ('NOTES_FILE', str(self.root / 'manual_notes.json'))]:
+                           ('NOTES_FILE', str(self.root / 'manual_notes.json')),
+                           ('ICAL_URL', '')]:
             mock = patch.object(clock, key, value)
             mock.start()
             self.addCleanup(mock.stop)
@@ -25,6 +26,7 @@ class ServerApiTest(unittest.TestCase):
         token.start()
         self.addCleanup(token.stop)
         self.client = clock.app.test_client()
+        self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
         self.schedule = dict(id='wake', name='起床', type='alarm', time='07:30', rule={},
                              enabled=True, skipped_occurrences=[], browser_sound='bell', browser_volume=100, skip_holidays=False)
 
@@ -45,8 +47,11 @@ class ServerApiTest(unittest.TestCase):
         self.assertEqual(self.client.get('/api/v1/device/config', headers={'If-None-Match': old_etag}).status_code, 200)
         for route in ('config', 'schedules', 'holidays'):
             response = self.client.get('/api/v1/device/' + route)
-            self.assertEqual(self.client.get('/api/v1/device/' + route, headers={
-                'If-None-Match': response.headers['ETag']}).status_code, 304)
+            self.assertEqual(response.headers['Cache-Control'], 'private, no-cache')
+            cached = self.client.get('/api/v1/device/' + route, headers={
+                'If-None-Match': response.headers['ETag']})
+            self.assertEqual(cached.status_code, 304)
+            self.assertEqual(cached.headers['Cache-Control'], 'private, no-cache')
         response = self.client.get('/api/v1/device/schedules')
         self.assertEqual(response.json['schedules'], [self.schedule])
         self.assertEqual(response.json['revision'], revision([self.schedule]))

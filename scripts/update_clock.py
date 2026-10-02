@@ -1,6 +1,7 @@
 """Update an existing Linux/systemd installation without replacing its data."""
 import fcntl
 import argparse
+from http.cookiejar import CookieJar
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,8 @@ import sys
 import tempfile
 import time
 import urllib.request
+from urllib.error import HTTPError
+from urllib.parse import urlsplit, urlunsplit
 
 
 def run(args, cwd=None, env=None):
@@ -62,8 +65,21 @@ def service_configuration(project):
 
 def http_json(url, data=None, headers=None):
     body = None if data is None else json.dumps(data).encode()
-    request = urllib.request.Request(url, data=body, headers={'Content-Type': 'application/json', **(headers or {})})
-    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=15) as response:
+    headers = {'Content-Type': 'application/json', **(headers or {})}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(CookieJar()))
+    if data is not None:
+        parsed = urlsplit(url)
+        csrf_url = urlunsplit((parsed.scheme, parsed.netloc, '/api/csrf', '', ''))
+        try:
+            with opener.open(csrf_url, timeout=15) as response:
+                headers['X-CSRF-Token'] = json.load(response)['csrf_token']
+        except HTTPError as error:
+            # Old servers have no CSRF endpoint; other failures must not downgrade.
+            if error.code != 404:
+                raise
+            error.close()
+    request = urllib.request.Request(url, data=body, headers=headers)
+    with opener.open(request, timeout=15) as response:
         return json.load(response)
 
 

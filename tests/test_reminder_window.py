@@ -20,6 +20,7 @@ class ReminderWindowTest(unittest.TestCase):
         calendar_patch.start()
         self.addCleanup(calendar_patch.stop)
         self.client = clock.app.test_client()
+        self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
 
     def visible(self, local_time):
         now = datetime.fromisoformat(local_time).replace(tzinfo=timezone(timedelta(hours=8)))
@@ -33,7 +34,7 @@ class ReminderWindowTest(unittest.TestCase):
             ('POST', '/add', {'note_text': 'reminder'}),
             ('POST', '/schedule/1', {'note_text': 'edited'}),
             ('POST', '/toggle/1', {}),
-            ('GET', '/delete/1', {}),
+            ('POST', '/delete/1', {}),
         ]:
             with self.subTest(route=route):
                 response = self.client.open(route, method=method, data=data)

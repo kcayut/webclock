@@ -19,6 +19,7 @@ from webclock.services.storage import load_json, save_json
 from webclock.services.holiday_service import HolidayService
 from webclock.services.schedule_service import next_event, read_schedules
 from webclock.api import register_api
+from webclock.csrf import register_csrf
 from webclock.translations.common import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, UI_TRANSLATIONS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +32,7 @@ SETTINGS_FILE = str(STATE_DIR / 'settings.json')
 CACHE_DURATION = 300
 
 app = Flask(__name__, root_path=str(ROOT))
+register_csrf(app)
 holiday_service = HolidayService()
 calendar_feed_cache = {}
 MAX_CALENDAR_SOURCES = 20
@@ -41,15 +43,15 @@ MAX_CALENDAR_QUERY_CACHE = 3
 
 @app.after_request
 def add_cors_headers(response):
-    if request.path == '/api/calendar':
-        response.headers['Cache-Control'] = 'no-store'
+    # Only the public display surface is cross-origin. Management HTML includes
+    # CSRF tokens, including validation-error pages returned from form actions.
+    if request.endpoint not in ('index', 'status', 'service_worker', 'static'):
+        response.headers.setdefault('Cache-Control', 'no-store')
         response.headers['X-Content-Type-Options'] = 'nosniff'
-        return response
-    if request.path.startswith('/api/v1/') or request.path == '/schedules':
         return response
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
     return response
 
 DEFAULT_NIGHT = {'enabled': False, 'start': '22:00', 'end': '07:00', 'brightness': 15, 'black': False}
@@ -817,7 +819,7 @@ def service_worker():
     return response
 
 
-@app.route('/delete/<int:id>')
+@app.route('/delete/<int:id>', methods=['POST'])
 def delete(id):
     delete_note(id)
     return redirect(url_for('admin', _anchor='calendar-title'))

@@ -74,15 +74,21 @@ assert.equal(ui.date.hidden, true); assert.equal(ui.date.disabled, true); assert
 // Failed preference saves must restore the selection without reloading away drafts.
 const admin = fs.readFileSync(path.join(__dirname, '../templates/admin.html'), 'utf8');
 const select = {value: '12h', disabled: false};
-let reloaded = false, alerted = false;
-const settingsContext = {currentTimeFormat: '24h', document: {getElementById: () => select},
-    fetch: async () => ({ok: false}), alert: () => { alerted = true; }, t: key => key,
+let reloaded = false, alerted = false, settingsRequest;
+const settingsContext = {currentTimeFormat: '24h', document: {getElementById: id => id === 'csrf-token' ? {content: 'settings-csrf-token'} : select},
+    fetch: async (url, options) => {
+        settingsRequest = {url, options};
+        return {ok: false};
+    }, alert: () => { alerted = true; }, t: key => key,
     window: {location: {reload: () => { reloaded = true; }}},
     applyTimeFormat: () => { throw new Error('Failed save must not change active format'); }};
 vm.createContext(settingsContext);
 vm.runInContext(admin.slice(admin.indexOf('function setTimeFormat('), admin.indexOf("document.addEventListener('visibilitychange'")) +
     admin.slice(admin.indexOf('function postSettings('), admin.indexOf('function saveNight(')), settingsContext);
 vm.runInContext("setTimeFormat('12h')", settingsContext).then(() => {
+    assert.equal(settingsRequest.url, '/api/control');
+    assert.equal(settingsRequest.options.headers['X-CSRF-Token'], 'settings-csrf-token');
+    assert.equal(settingsRequest.options.headers['Content-Type'], 'application/json');
     assert.equal(select.value, '24h'); assert.equal(select.disabled, false);
     assert.equal(alerted, true); assert.equal(reloaded, false);
     console.log('Shared time formatting and inputs: midnight/noon, canonical values, retained drafts, reset, date/time modes and failed saves passed.');
