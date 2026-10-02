@@ -1,0 +1,56 @@
+name: Linux upgrade and restore rehearsal
+
+on:
+  push:
+    branches: [codex/linux-upgrade-rehearsal]
+    paths:
+      - .github/workflows/linux-rehearsal.yml
+      - tests/**
+      - scripts/**
+      - webclock/**
+      - templates/**
+      - static/**
+      - app.py
+      - update_clock.py
+      - update_clock.sh
+      - requirements.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-rehearsal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    # Standard hosted runners are free for public repositories. Never switch to
+    # a larger runner or retain billable artifacts/caches for this rehearsal.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PIP_NO_CACHE_DIR: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare isolated test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-venv
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/rehearsal-tools"
+          "$RUNNER_TEMP/rehearsal-tools/bin/python" -m pip install -r requirements.txt holidays
+      - name: Run existing regression checks on Linux
+        run: |
+          "$RUNNER_TEMP/rehearsal-tools/bin/python" -m unittest discover -s tests -p 'test_*.py'
+          for test in tests/test_*.js; do node "$test"; done
+          bash -n setup.sh scripts/setup.sh update_clock.sh
+          git diff --check
+      - name: Rehearse real systemd upgrade, backup, restore and failure recovery
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP,GITHUB_STEP_SUMMARY,PYTHONDONTWRITEBYTECODE,PIP_NO_CACHE_DIR \
+            "$RUNNER_TEMP/rehearsal-tools/bin/python" -u tests/rehearse_linux.py
