@@ -1,6 +1,6 @@
 # 第一階段驗收與工作日資料維護
 
-紀錄日期：2026-10-02（Asia/Taipei）。實機目標由使用者指定為 **iPad mini 1／iOS 9 Safari**，由使用者稍後操作驗收。這份文件分開記錄本機軟體驗證與實際裝置結果；空白、未提供或未執行一律不是通過。
+本機紀錄日期：2026-10-02；雲端演練追加日期：2026-10-03（Asia/Taipei）。實機目標由使用者指定為 **iPad mini 1／iOS 9 Safari**，由使用者稍後操作驗收。這份文件分開記錄本機軟體驗證與實際裝置結果；空白、未提供或未執行一律不是通過。
 
 ## 環境與證據矩陣
 
@@ -9,12 +9,28 @@
 | 開發工作目錄／本機自動化 | **通過：102 項 Python、8 份 JavaScript 測試** | 本次以 `venv/bin/python` 執行；涵蓋伺服器、介面與更新器回歸，模擬 systemd／pip 不代表 Linux 部署 |
 | Google Chrome 154.0.8037.93／本機臨時測試服務 | **通過：1440×1000 與 390×844** | 既有 Playwright 與 Chrome 實際操作；桌面／手機 viewport 不等於 iOS 9 實機 |
 | iPad mini 1／iOS 9 Safari | **待使用者實機驗收** | 時鐘、音訊、斷線、跨日與長時間顯示；iOS 完整版本與服務網址協定待記錄 |
-| Linux／Raspberry Pi systemd | **未驗收** | 目標型號、作業系統與安裝位置未提供 |
+| GitHub Actions／Ubuntu 24.04 x64／systemd 255 | **通過：121 項 Python、8 份 JavaScript 測試及真實升級／還原演練** | 2026-10-03 的一次性雲端 VM，詳見下方執行紀錄 |
+| 實際使用主機／Raspberry Pi systemd | **未驗收** | 目標型號、作業系統與安裝位置未提供；雲端結果不等於實機部署 |
 | Docker／其他手動安裝 | **未驗收** | 主機與部署方式未提供，不推定為目前使用方式 |
 
 本次瀏覽器結果：管理頁內容與入口正常、無水平溢出；淺／深色跨 `/admin`、`/schedules` 與重新整理保留；三語切換保留文字提醒、私人 ICS 及鬧鐘名稱／音色／音量／星期草稿，12 小時格式切換保留提醒輸入；手機寬度各區段可操作；時鐘三語、本機提醒新增／刪除及草稿保留通過。頁面例外與 console error 皆為 0。未驗證實機音量、跨日連續 24 小時或生產部署。
 
 實機記錄請附：日期、程式 commit、型號、OS 完整版本、瀏覽器版本、安裝方式、HTTP／HTTPS、開始與結束時間、各步結果及可重現的失敗現象。不要附私人 ICS 網址、token 或 `.env` 內容。
+
+## Linux 雲端升級與還原演練
+
+2026-10-03 03:42–03:44（Asia/Taipei），[GitHub Actions 執行 37055875954](https://github.com/kcayut/webclock/actions/runs/37055875954) **成功**，工作耗時 1 分 53 秒。環境為標準 `ubuntu-24.04` x64 runner、Python 3.12.3、systemd 255；測試從 `1ad7868ff7b51e581421f85fefccfef4e7520ddd` 升級至 `6ace1816c2e20df092936a303da89b31c2f293ca`。
+
+| 情境 | 實際驗證結果 |
+| --- | --- |
+| 正常升級 | 真實 Git／pip／systemd 流程完成，資料逐位元組保留；systemd 的資料目錄與 port 覆寫優先於 `.env`；非 root 服務可重啟 |
+| 完整資料備份與還原 | 停止服務後備份並驗證完整性；還原後原始資料 hash 一致，`.env` 路徑重映射正確，保留還原前備份 |
+| 新版啟動失敗 | 僅在測試副本加入會修改資料後退出的故障版本；更新器自動回復原 Git revision、venv 與資料，保留 `failed-data/`、`failed-venv/` 和 manifest；服務再次重啟及 API 讀寫成功 |
+| API 與回歸 | 121 項 Python、8 份 JavaScript 測試通過；裝置 schema 2、ETag／304、缺少 CSRF 時拒絕、GET 刪除回傳 405，以及有效管理寫入重啟後保留均通過 |
+
+可重現入口：[workflow](../.github/workflows/linux-rehearsal.yml) 與[演練腳本](../tests/rehearse_linux.py)。演練只使用一次性 runner、合成資料及本地測試 Git remote；腳本限制在 GitHub hosted Linux runner 執行，並拒絕覆蓋既有 `webclock.service`。公開 repository 的標準 runner [免費](https://docs.github.com/en/billing/concepts/product-billing/github-actions)；此 workflow 限制公開 repository，未使用大型 runner、artifact 或 cache 上傳。
+
+此紀錄未涵蓋 Raspberry Pi／ARM 實機、主機重新開機、斷電、Docker 或 iOS 9 音訊驗收；下方目標主機與裝置清單仍保留待驗收。
 
 ## 本機可重現檢查
 
