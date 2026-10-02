@@ -234,7 +234,7 @@
             const row = node("li", undefined, "schedule-row" + (enabled ? "" : " disabled"));
             const details = node("div", undefined, "schedule-details");
             const description = ruleText(schedule.rule, schedule.skip_holidays, schedule.calendar_link) + " · " +
-                (schedule.type === "alarm" ? t("sound_" + (schedule.browser_sound || "bell")) : t(schedule.type));
+                (schedule.type === "alarm" ? t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%" : t(schedule.type));
             details.append(node("h3", schedule.name), node("p", description));
             if (schedule.calendar_link) details.append(node("p", calendarText(schedule.calendar_link)));
             const next = nextTime(schedule.next_occurrence);
@@ -334,6 +334,7 @@
     }
     function setRule(manual = false) {
         const mode = $("schedule-rule").value;
+        $("schedule-special-rule").value = ["workday_only", "holiday_only"].includes(mode) ? mode : "";
         if (manual && (mode === "once" || mode === "dates") && $("schedule-calendar-mode").value !== "none") {
             $("schedule-calendar-mode").value = "none";
             setCalendarMode();
@@ -342,7 +343,8 @@
         $("schedule-dates").disabled = mode !== "dates";
         $("clear-schedule-date").hidden = !$("schedule-dates").value && !$("schedule-date-picker").value;
         const days = Array.from(document.querySelectorAll('[name="weekday"]:checked'), input => t("weekdays")[Number(input.value) - 1]);
-        $("schedule-repeat-summary").textContent = mode === "weekdays" ? format("weekly_summary", {days: days.join(" / ")}) :
+        $("select-every-day").hidden = days.length === 7;
+        $("schedule-repeat-summary").textContent = mode === "weekdays" ? (days.length === 7 ? t("every_day") : format("weekly_summary", {days: days.join(" / ")})) :
             mode === "dates" ? t("dates") + " · " + $("schedule-dates").value : t(mode);
     }
     function selectedCalendarSources() {
@@ -451,7 +453,10 @@
         $("schedule-type").value = schedule ? schedule.type : type;
         $("schedule-type-field").hidden = $("schedule-type").value === "alarm";
         $("schedule-sound-field").hidden = $("schedule-type").value !== "alarm";
+        $("schedule-volume-field").hidden = $("schedule-type").value !== "alarm";
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
+        $("schedule-volume").value = String(schedule && schedule.browser_volume != null ? schedule.browser_volume : 100);
+        $("schedule-volume-value").textContent = $("schedule-volume").value + "%";
         $("schedule-skip-holidays").checked = !!(schedule && schedule.skip_holidays);
         const link = schedule && schedule.calendar_link;
         calendarEvents = [];
@@ -488,16 +493,25 @@
     $("add-schedule").addEventListener("click", () => edit(null));
     $("add-other-schedule").addEventListener("click", () => edit(null, "reminder"));
     $("cancel-edit").addEventListener("click", closeEditor);
-    $("schedule-rule").addEventListener("change", function () {
-        if (this.value !== "dates") $("schedule-date-picker").value = $("schedule-dates").value = "";
-        if (this.value !== "weekdays") document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = this.value === "every_day");
+    $("schedule-special-rule").addEventListener("change", function () {
+        $("schedule-rule").value = this.value || "once";
+        $("schedule-date-picker").value = $("schedule-dates").value = "";
+        document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
         setRule(true);
     });
-    document.querySelectorAll('[name="weekday"]').forEach(input => input.addEventListener("change", () => {
-        $("schedule-rule").value = document.querySelectorAll('[name="weekday"]:checked').length ? "weekdays" : "once";
+    function setWeekdays() {
+        const count = document.querySelectorAll('[name="weekday"]:checked').length;
+        $("schedule-rule").value = count === 7 ? "every_day" : count ? "weekdays" : "once";
         $("schedule-date-picker").value = $("schedule-dates").value = "";
         setRule(true);
-    }));
+        queuePreview();
+    }
+    document.querySelectorAll('[name="weekday"]').forEach(input => input.addEventListener("change", setWeekdays));
+    $("select-every-day").addEventListener("click", () => {
+        document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
+        setWeekdays();
+        document.querySelectorAll('[name="weekday"]')[0].focus();
+    });
     $("schedule-date-picker").addEventListener("change", function () {
         $("schedule-dates").value = this.value;
         $("schedule-rule").value = this.value ? "dates" : "once";
@@ -537,10 +551,14 @@
     });
     $("refresh-calendar-targets").addEventListener("click", loadCalendarTargets);
     ["input", "change"].forEach(event => $("schedule-form").addEventListener(event, queuePreview));
+    $("schedule-volume").addEventListener("input", function () {
+        $("schedule-volume-value").textContent = this.value + "%";
+    });
     $("preview-sound").addEventListener("click", function () {
         const sound = $("schedule-sound").value;
-        if (sound === "silent") { notice(t("sound_silent")); return; }
-        const played = window.AlarmAudio && window.AlarmAudio.unlock(sound);
+        const volume = Number($("schedule-volume").value);
+        if (sound === "silent" || volume === 0) { notice(t("sound_silent")); return; }
+        const played = window.AlarmAudio && window.AlarmAudio.unlock(sound, volume);
         notice(t(played ? "sound_previewed" : "audio_unavailable"), !played);
     });
     function scheduleData() {
@@ -561,7 +579,10 @@
         }
         ["name", "type", "time"].forEach(key => data[key] = $("schedule-" + key).value);
         data.name = data.name.trim() || t(data.type);
-        if (data.type === "alarm") data.browser_sound = $("schedule-sound").value;
+        if (data.type === "alarm") {
+            data.browser_sound = $("schedule-sound").value;
+            data.browser_volume = Number($("schedule-volume").value);
+        }
         const calendarMode = data.type === "alarm" ? $("schedule-calendar-mode").value : "none";
         if (calendarMode === "event" && !data.time) data.time = "07:30";
         if (calendarMode !== "event" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.time) || ($("schedule-time")._clockTimeControl || {}).invalid)) throw new Error(t("select_time"));

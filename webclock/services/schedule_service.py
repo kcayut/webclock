@@ -12,7 +12,7 @@ from .storage import load_json, save_json, storage_lock
 
 TAIPEI = timezone(timedelta(hours=8), 'Asia/Taipei')
 FIELDS = {'id', 'name', 'type', 'time', 'rule', 'enabled', 'skipped_occurrences',
-          'browser_sound', 'skip_holidays', 'calendar_link'}
+          'browser_sound', 'browser_volume', 'skip_holidays', 'calendar_link'}
 # Retain old prototype settings on disk, outside the management/API contract.
 LEGACY_DEVICE_FIELDS = {'sound', 'volume', 'repeat', 'snooze_minutes'}
 
@@ -27,6 +27,7 @@ def validate_schedule(data):
     result.setdefault('enabled', True)
     result.setdefault('skipped_occurrences', [])
     result.setdefault('browser_sound', 'bell')
+    result.setdefault('browser_volume', 100)
     result.setdefault('skip_holidays', False)
     if not isinstance(result['id'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', result['id']):
         raise ValueError('Invalid schedule id')
@@ -39,8 +40,10 @@ def validate_schedule(data):
         raise ValueError('Time must use HH:MM')
     if type(result['enabled']) is not bool:
         raise ValueError('Invalid enabled setting')
-    if result['browser_sound'] not in ('bell', 'beep', 'digital', 'silent'):
+    if result['browser_sound'] not in ('bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'):
         raise ValueError('Invalid browser sound')
+    if type(result['browser_volume']) is not int or not 0 <= result['browser_volume'] <= 100:
+        raise ValueError('Browser volume must be an integer from 0 to 100')
     if type(result['skip_holidays']) is not bool:
         raise ValueError('Invalid holiday exclusion setting')
     link = result.get('calendar_link')

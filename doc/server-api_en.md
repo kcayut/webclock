@@ -45,6 +45,7 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
   "rule": {"weekdays": [1, 2, 3, 4, 5]},
   "skip_holidays": true,
   "browser_sound": "bell",
+  "browser_volume": 100,
   "enabled": true,
   "skipped_occurrences": []
 }
@@ -53,7 +54,8 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
 - `type`: `alarm`, `reminder`, or `announcement`. The clock page executes only `alarm`; calendar events and text reminders do not automatically become alarms.
 - `rule`: one of `{}` for daily, `{"weekdays":[1,3,5]}`, `{"workday_only":true}`, `{"holiday_only":true}`, or `{"dates":["2026-10-03"]}`.
 - `skip_holidays`: filters holidays for daily, weekday, or explicit-date rules. Make-up workdays remain workdays. Combining it with `holiday_only=true` returns 400.
-- `browser_sound`: `bell`, `beep`, `digital`, or `silent`. It is independent from old hardware sound fields.
+- `browser_sound`: `bell`, `beep`, `digital`, `chime`, `melody`, `pulse`, `sonar`, or `silent`. It is independent from old hardware sound fields.
+- `browser_volume`: per-alarm integer from 0 to 100, defaulting to 100 for new and existing schedules. Preview and ringing use the same level; 0 keeps visual alerts only. Device volume still affects loudness. Legacy hardware `volume` is not reused.
 - Weekdays use ISO values Monday `1` through Sunday `7`; the legacy reminder API uses `0–6`.
 - Schedules always use `Asia/Taipei`, independently from the large clock's display timezone.
 - `skipped_occurrences` contains complete timezone-aware timestamps. Skipping the next occurrence does not disable the schedule.
@@ -105,6 +107,7 @@ Each `/api/calendar` source contains `id`, `name`, `provider`, `url`, and `displ
 | `alarms[].occurrence_id` | occurrence identifier used to prevent duplicate playback |
 | `alarms[].starts_at` | trigger time in Unix milliseconds |
 | `alarms[].sound` | browser tone from `browser_sound` |
+| `alarms[].volume` | 0–100 from `browser_volume`; updated pages default to 100 when older responses omit it |
 | `holiday_coverage`, `holiday_known` | holiday-data range and availability |
 
 The query starts at the current minute so API latency does not skip an alarm that just became due. It is not a complete offline schedule snapshot. The page refreshes about every 15 seconds. A loaded next occurrence can fire during a brief disconnection, but reopening or loading later occurrences requires a connection. Alarms processed more than 60 seconds late are not replayed.

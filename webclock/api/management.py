@@ -176,6 +176,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
                 stamp = datetime.fromisoformat(event['datetime'])
                 alarms.append(dict(occurrence_id=event['occurrence_id'], id=event['id'],
                                    name=event['name'], sound=event['browser_sound'],
+                                   volume=event['browser_volume'],
                                    starts_at=int(stamp.timestamp() * 1000)))
                 if not row.get('calendar_link') or stamp > now:
                     break

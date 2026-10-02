@@ -45,6 +45,7 @@ webclock_state/              非公開の実行データ。Git に追加しな�
   "rule": {"weekdays": [1, 2, 3, 4, 5]},
   "skip_holidays": true,
   "browser_sound": "bell",
+  "browser_volume": 100,
   "enabled": true,
   "skipped_occurrences": []
 }
@@ -53,7 +54,8 @@ webclock_state/              非公開の実行データ。Git に追加しな�
 - `type`：`alarm`、`reminder`、`announcement`。時計ページが実行するのは `alarm` だけで、カレンダー予定や文字リマインダーは自動でアラームになりません。
 - `rule`：毎日の `{}`、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}` のいずれかです。
 - `skip_holidays`：毎日・曜日・指定日の休日を除外します。振替出勤日は勤務日です。`holiday_only=true` との併用は 400 を返します。
-- `browser_sound`：`bell`、`beep`、`digital`、`silent`。旧ハードウェアの音声項目とは独立しています。
+- `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar`、`silent`。旧ハードウェアの音声項目とは独立しています。
+- `browser_volume`：アラームごとの 0–100 の整数。新規・既存とも未設定なら 100。試聴と実際の再生に適用し、0 は画面表示のみです。端末の音量にも依存し、旧ハードウェアの `volume` は引き継ぎません。
 - 曜日は ISO の月曜 `1` から日曜 `7` です。旧リマインダー API の `0–6` とは異なります。
 - 予定は大時計の表示タイムゾーンとは別に、常に `Asia/Taipei` を使います。
 - `skipped_occurrences` はタイムゾーン付きの完全な日時です。次回をスキップしても予定は無効になりません。
@@ -105,6 +107,7 @@ API は JSON を受け取り、エラーを `{"error":"..."}` で返します。
 | `alarms[].occurrence_id` | 重複再生を防ぐ発生 ID |
 | `alarms[].starts_at` | Unix ミリ秒の発生時刻 |
 | `alarms[].sound` | `browser_sound` の Web 音色 |
+| `alarms[].volume` | `browser_volume` の 0–100。新版ページでは旧応答に項目がなければ 100 |
 | `holiday_coverage`、`holiday_known` | 休日データ範囲と既知状態 |
 
 API 遅延で直前のアラームを飛ばさないよう、現在の分から検索します。これは完全なオフライン予定スナップショットではありません。時計ページは約 15 秒ごとに更新します。短い切断中は読み込み済みの次回分を実行できますが、再起動やそれ以降の取得には接続が必要です。60 秒を超えて遅れたアラームは再生しません。

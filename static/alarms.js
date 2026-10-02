@@ -22,7 +22,7 @@
     function storageKey() { return 'webclock.dismissedAlarms.' + source; }
     function ready() { return !!(window.AlarmAudio && window.AlarmAudio.isReady()); }
     function audible() {
-        for (var i = 0; i < queue.length; i++) if (queue[i].sound !== 'silent') return true;
+        for (var i = 0; i < queue.length; i++) if (queue[i].sound !== 'silent' && queue[i].volume !== 0) return true;
         return false;
     }
     function render() {
@@ -74,7 +74,9 @@
             var item = data.alarms[i];
             if (!item || typeof item.id !== 'string' || typeof item.occurrence_id !== 'string' || typeof item.name !== 'string' ||
                     typeof item.starts_at !== 'number' || !isFinite(item.starts_at) ||
-                    ['bell', 'beep', 'digital', 'silent'].indexOf(item.sound) < 0) {
+                    ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'].indexOf(item.sound) < 0 ||
+                    (item.volume !== undefined && (typeof item.volume !== 'number' || !isFinite(item.volume) ||
+                     item.volume < 0 || item.volume > 100 || Math.floor(item.volume) !== item.volume))) {
                 throw new Error('Invalid alarm occurrence');
             }
         }
@@ -139,8 +141,8 @@
         }
         if (active.length && elapsedNow() - lastTone >= 1600) {
             for (var j = 0; j < active.length; j++) {
-                if (active[j].sound !== 'silent') {
-                    if (window.AlarmAudio) window.AlarmAudio.play(active[j].sound);
+                if (active[j].sound !== 'silent' && active[j].volume !== 0) {
+                    if (window.AlarmAudio) window.AlarmAudio.play(active[j].sound, active[j].volume === undefined ? 100 : active[j].volume);
                     break;
                 }
             }

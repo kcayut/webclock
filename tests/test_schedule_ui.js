@@ -7,7 +7,9 @@ const vm = require("node:vm");
 
 const template = fs.readFileSync(path.join(__dirname, "../templates/schedules.html"), "utf8");
 const source = fs.readFileSync(path.join(__dirname, "../static/schedules.js"), "utf8");
-assert.doesNotMatch(template, /id="(?:schedule-(?:volume|repeat|snooze)|sound-form|enable-audio|ringing)"/);
+assert.doesNotMatch(template, /id="(?:schedule-(?:repeat|snooze)|sound-form|enable-audio|ringing)"/);
+assert.match(template, /<input type="hidden" id="schedule-rule">/);
+assert.doesNotMatch(template.match(/<select id="schedule-special-rule">(.*?)<\/select>/)[1], /value="(?:once|every_day|weekdays|dates)"/);
 assert.match(template, /alarm-audio\.js/);
 assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
 assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
@@ -121,7 +123,7 @@ const context = vm.createContext({
     setTimeout(callback, delay) { const id = ++timeoutId; timeouts.set(id, {callback, delay}); return id; },
     clearTimeout(id) { timeouts.delete(id); }
 });
-const probe = `globalThis.qa = {loadSchedules, loadDevices, scheduleData, remainingTime, queuePreview, syncServerTime, get: () => schedules};`;
+const probe = `globalThis.qa = {edit, loadSchedules, loadDevices, scheduleData, remainingTime, queuePreview, syncServerTime, get: () => schedules};`;
 const instrumented = source.replace("    refresh();\n    setInterval", "    " + probe + "\n    refresh();\n    setInterval");
 assert.notEqual(instrumented, source, "Management state probe must attach");
 // Audio support is optional: initialization, forms and commands must work without it.
@@ -187,8 +189,14 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("next-event").textContent, "Tomorrow 07:30 · Morning");
     assert.match(content($("schedule-list")), /Next ring: Tomorrow 07:30/);
 
+    qa.edit({...row, rule: {weekdays: [1, 2, 3, 4, 5, 6, 7]}, browser_volume: 0});
+    assert.equal($("select-every-day").hidden, true, "Existing seven-day rules also hide the shortcut");
+    assert.equal($("schedule-volume").value, "0", "Saved mute must not fall back to maximum volume");
     await $("add-schedule").trigger("click");
     assert.equal($("schedule-rule").value, "once");
+    assert.equal($("schedule-volume").value, "100");
+    assert.equal($("schedule-volume-value").textContent, "100%");
+    assert.equal($("select-every-day").hidden, false);
     assert.equal($("schedule-name").value, "");
     assert.equal($("weekday-field").hidden, false, "Weekdays are visible before choosing a repeat rule");
     assert.equal($("schedule-date-picker").disabled, false, "The date picker is immediately usable");
@@ -230,6 +238,36 @@ const completionTimeout = setTimeout(() => {
     weekdays[2].checked = false;
     await weekdays[2].trigger("change");
     assert.equal($("schedule-rule").value, "once", "Clearing every weekday restores a one-time alarm");
+
+    $("schedule-date-picker").value = "2026-10-10";
+    await $("schedule-date-picker").trigger("change");
+    await $("select-every-day").trigger("click");
+    assert.ok(weekdays.every(input => input.checked));
+    assert.equal($("select-every-day").hidden, true);
+    assert.equal($("schedule-date-picker").value, "");
+    assert.equal($("schedule-dates").value, "");
+    assert.deepEqual(plain(qa.scheduleData().rule), {});
+    assert.equal($("schedule-repeat-summary").textContent, "every_day");
+    assert.equal(weekdays[0].focused, true, "Focus leaves the hidden daily button");
+    const dailyPreview = runPreview();
+    assert.deepEqual(JSON.parse(pending[0].options.body).rule, {}, "Daily click queues a preview without a form change event");
+    reply(take("/schedules/preview", "POST"), {next_occurrence: nextDate, server_time: "2026-09-30T10:00:00+08:00"});
+    await dailyPreview;
+    weekdays[6].checked = false;
+    await weekdays[6].trigger("change");
+    assert.equal($("select-every-day").hidden, false);
+    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1, 2, 3, 4, 5, 6]});
+    weekdays[6].checked = true;
+    await weekdays[6].trigger("change");
+    assert.equal($("select-every-day").hidden, true, "Manually selecting all days also hides the shortcut");
+    $("schedule-special-rule").value = "workday_only";
+    await $("schedule-special-rule").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {workday_only: true});
+    assert.equal($("select-every-day").hidden, false);
+    await $("select-every-day").trigger("click");
+    assert.equal($("schedule-special-rule").value, "");
+    weekdays.forEach(input => input.checked = false);
+    await weekdays[0].trigger("change");
 
     await $("schedule-form").trigger("change");
     const olderPreview = runPreview(), olderPreviewRequest = take("/schedules/preview", "POST");
@@ -490,7 +528,7 @@ const completionTimeout = setTimeout(() => {
     const draftSkipping = button("editor-actions", "skip_next").trigger("click");
     const draftSkipRequest = take("/schedules/alarm", "PUT");
     assert.deepEqual(JSON.parse(draftSkipRequest.options.body), {
-        rule: {}, enabled: true, skip_holidays: false, name: disabled.name, type: "alarm", time: "08:15", browser_sound: "bell", skip_next: enabledOccurrence
+        rule: {}, enabled: true, skip_holidays: false, name: disabled.name, type: "alarm", time: "08:15", browser_sound: "bell", browser_volume: 100, skip_next: enabledOccurrence
     }, "Skip atomically saves the currently enabled draft and its new time");
     assert.equal(button("editor-actions", "skip_next").disabled, true, "Do not submit another skip while saving");
     const draftSkipped = {...disabled, ...JSON.parse(draftSkipRequest.options.body), skipped_occurrences: [enabledOccurrence]};
@@ -537,7 +575,7 @@ const completionTimeout = setTimeout(() => {
     const cancelEditorPause = $("schedule-form").trigger("submit");
     const editorPausePreview = take("/schedules/preview", "POST");
     assert.deepEqual(JSON.parse(editorPausePreview.options.body), {
-        id: row.id, rule: {}, enabled: true, skip_holidays: false, browser_sound: "bell",
+        id: row.id, rule: {}, enabled: true, skip_holidays: false, browser_sound: "bell", browser_volume: 100,
         name: "Pause draft", type: "alarm", time: "08:15", skip_next: true
     }, "Preview uses the edited draft while calculating its enabled recurrence");
     pauseReply(editorPausePreview, "2026-10-01T08:15:00+08:00", "2026-10-02T08:15:00+08:00");
@@ -560,7 +598,7 @@ const completionTimeout = setTimeout(() => {
     await flush();
     const failedPauseSave = take("/schedules/alarm", "PUT");
     assert.deepEqual(JSON.parse(failedPauseSave.options.body), {
-        rule: {}, enabled: true, skip_holidays: false, browser_sound: "bell",
+        rule: {}, enabled: true, skip_holidays: false, browser_sound: "bell", browser_volume: 100,
         name: "Pause draft", type: "alarm", time: "08:15", skip_next: draftOccurrence
     }, "Saving edits and skipping the previewed occurrence is one atomic update");
     reply(failedPauseSave, {error: "Occurrence changed; preview again"}, false);
@@ -612,23 +650,31 @@ const completionTimeout = setTimeout(() => {
     await $("preview-sound").trigger("click");
     assert.equal($("status").textContent, "audio_unavailable");
     const previewed = [];
-    context.window.AlarmAudio = {unlock(sound) { previewed.push(sound); return true; }};
+    assert.equal($("select-every-day").hidden, true, "Existing daily alarms open with all weekdays selected");
+    context.window.AlarmAudio = {unlock(sound, volume) { previewed.push({sound, volume}); return true; }};
+    $("schedule-volume").value = "25";
+    await $("schedule-volume").trigger("input");
+    assert.equal($("schedule-volume-value").textContent, "25%");
     $("schedule-sound").value = "digital";
     await $("preview-sound").trigger("click");
-    assert.deepEqual(previewed, ["digital"]);
+    assert.deepEqual(previewed, [{sound: "digital", volume: 25}]);
     assert.equal($("status").textContent, "sound_previewed");
     $("schedule-sound").value = "silent";
     await $("preview-sound").trigger("click");
-    assert.deepEqual(previewed, ["digital"], "Silent preview must not play a sound");
+    assert.equal(previewed.length, 1, "Silent preview must not play a sound");
     $("schedule-sound").value = "digital";
+    $("schedule-volume").value = "0";
+    await $("preview-sound").trigger("click");
+    assert.equal(previewed.length, 1, "Zero-volume preview stays silent");
+    $("schedule-volume").value = "25";
     $("schedule-skip-holidays").checked = true;
     assert.equal($("schedule-id").value, row.id);
     assert.equal($("schedule-name").value, row.name);
     $("schedule-name").value = "Edited";
     const editing = $("schedule-form").trigger("submit");
     const editRequest = take("/schedules/alarm", "PUT");
-    assert.deepEqual(JSON.parse(editRequest.options.body), {rule: {}, enabled: true, skip_holidays: true, browser_sound: "digital", name: "Edited", type: "alarm", time: "07:30"});
-    const edited = {...row, name: "Edited", browser_sound: "digital", skip_holidays: true};
+    assert.deepEqual(JSON.parse(editRequest.options.body), {rule: {}, enabled: true, skip_holidays: true, browser_sound: "digital", browser_volume: 25, name: "Edited", type: "alarm", time: "07:30"});
+    const edited = {...row, name: "Edited", browser_sound: "digital", browser_volume: 25, skip_holidays: true};
     reply(editRequest, edited);
     await flush();
     scheduleReply(take("/schedules"), [edited]);
@@ -639,6 +685,8 @@ const completionTimeout = setTimeout(() => {
     assert.match(content($("schedule-list")), /Next ring: Tomorrow 07:30/);
     await button("schedule-list", "edit").trigger("click");
     assert.equal($("schedule-sound").value, "digital");
+    assert.equal($("schedule-volume").value, "25");
+    assert.equal($("schedule-volume-value").textContent, "25%");
     assert.equal($("schedule-skip-holidays").checked, true);
 
     showPanel("devices");
@@ -654,13 +702,13 @@ const completionTimeout = setTimeout(() => {
     $("schedule-type").value = "reminder";
     weekdays.forEach(input => input.checked = false);
     $("schedule-rule").value = "weekdays";
-    await $("schedule-rule").trigger("change");
     assert.equal($("weekday-field").hidden, false);
     await $("schedule-form").trigger("submit");
     assert.equal($("form-error").textContent, "select_weekday");
     assert.equal(pending.length, 0);
     weekdays[0].checked = true;
     weekdays[4].checked = true;
+    await weekdays[0].trigger("change");
     $("schedule-skip-holidays").checked = true;
     const creating = $("schedule-form").trigger("submit");
     const createRequest = take("/schedules", "POST");
@@ -678,14 +726,14 @@ const completionTimeout = setTimeout(() => {
     await $("add-schedule").trigger("click");
     assert.equal($("schedule-time").value, "07:30", "A new alarm must not inherit a cancelled canonical time");
     assert.equal($("schedule-sound").value, "bell");
+    assert.equal($("schedule-volume").value, "100", "New alarms do not inherit another alarm's volume");
     assert.equal($("schedule-skip-holidays").checked, false);
-    $("schedule-rule").value = "holiday_only";
+    $("schedule-special-rule").value = "holiday_only";
+    await $("schedule-special-rule").trigger("change");
     $("schedule-skip-holidays").checked = true;
     await $("schedule-form").trigger("submit");
     assert.equal($("form-error").textContent, "holiday_conflict");
     assert.equal(pending.length, 0, "Contradictory holiday options must not send a request");
-    $("schedule-rule").value = "dates";
-    await $("schedule-rule").trigger("change");
     assert.equal($("schedule-date-picker").disabled, false);
     $("schedule-date-picker").value = "2026-10-10";
     await $("schedule-date-picker").trigger("change");
@@ -827,7 +875,7 @@ const completionTimeout = setTimeout(() => {
     await datedPoll;
     assert.doesNotMatch(content($("schedule-list")), /once/, "A linked date may contain multiple events and must not promise one ring");
     for (const changeRule of [
-        async () => { $("schedule-rule").value = "once"; await $("schedule-rule").trigger("change"); },
+        async () => { await $("clear-schedule-date").trigger("click"); },
         async () => { $("schedule-date-picker").value = "2026-10-02"; await $("schedule-date-picker").trigger("change"); },
         async () => {
             weekdays[0].checked = true;

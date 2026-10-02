@@ -22,9 +22,9 @@ function browser(storage = {}, usePerformance = false) {
         setAttribute(key, value) { this.attrs[key] = value; },
     });
     const addEventListener = (name, handler) => (handlers[name] || (handlers[name] = [])).push(handler);
-    const sound = {ready: false, played: [], stopped: 0, unlocked: 0,
+    const sound = {ready: false, played: [], volumes: [], stopped: 0, unlocked: 0,
         isReady() { return this.ready; }, unlock() { this.ready = true; ++this.unlocked; },
-        play(value) { if (this.ready) this.played.push(value); return this.ready; }, stop() { ++this.stopped; }};
+        play(value, volume) { if (this.ready) { this.played.push(value); this.volumes.push(volume); } return this.ready; }, stop() { ++this.stopped; }};
     const window = {serverUrl: 'http://clock.example', location: {origin: 'http://clock.example'},
         AlarmAudio: sound, addEventListener};
     if (usePerformance) window.performance = {now: () => elapsed};
@@ -76,6 +76,7 @@ page.node('alarm-bell').onclick();
 page.advance(1000); page.tick();
 assert.ok(page.ringing());
 assert.deepEqual(page.sound.played, ['bell']);
+assert.deepEqual(page.sound.volumes, [100], 'old API responses default to maximum volume');
 page.dispatch('touchend');
 assert.equal(page.node('alarm-prompt').textContent, 'alarm_second_tap');
 page.dispatch('click');
@@ -117,6 +118,25 @@ assert.ok(silent.node('body').classList.items.has('alarm-steady'));
 silent.reply([]);
 assert.ok(!silent.ringing(), 'management disable/delete stops the active alarm');
 
+const volumes = browser();
+volumes.reply([{...alarm(volumes, 'Muted'), volume: 0}, {...alarm(volumes, 'Soft', 'chime'), volume: 25}]);
+volumes.node('alarm-bell').onclick();
+volumes.advance(1000); volumes.tick();
+assert.ok(volumes.ringing());
+assert.deepEqual(volumes.sound.played, ['chime'], 'a muted alarm must not block a simultaneous audible alarm');
+assert.deepEqual(volumes.sound.volumes, [25]);
+const muted = browser();
+muted.reply([{...alarm(muted), volume: 0}]);
+assert.equal(muted.node('alarm-status').textContent, '');
+muted.advance(1000); muted.tick();
+assert.ok(muted.ringing(), 'zero volume keeps the visual reminder');
+assert.deepEqual(muted.sound.played, []);
+for (const volume of [-1, 101, 2.5, null, '25']) {
+    const invalid = browser();
+    invalid.reply([{...alarm(invalid), volume}]);
+    assert.equal(invalid.node('alarm-status').textContent, 'alarm_sync_error');
+}
+
 const late = browser();
 late.reply([alarm(late)]); late.advance(61000); late.tick();
 assert.ok(!late.ringing(), 'suspended pages must not replay stale alarms');
@@ -150,11 +170,12 @@ assert.ok(!monotonic.ringing());
 assert.equal(monotonic.sound.unlocked, 1);
 
 let created = 0, starts = 0, stops = 0, context;
+const peaks = [], frequencies = [], waves = [];
 function LegacyAudioContext() {
     ++created; context = this; this.currentTime = 0; this.destination = {};
     this.createOscillator = () => ({frequency: {}, connect() {}, disconnect() {},
-        start() { ++starts; }, stop() { ++stops; }});
-    this.createGain = () => ({gain: {setValueAtTime() {}, linearRampToValueAtTime() {}}, connect() {}, disconnect() {}});
+        start() { ++starts; frequencies.push(this.frequency.value); waves.push(this.type); }, stop() { ++stops; }});
+    this.createGain = () => ({gain: {setValueAtTime() {}, linearRampToValueAtTime(value) { if (value) peaks.push(value); }}, connect() {}, disconnect() {}});
 }
 const legacyWindow = {webkitAudioContext: LegacyAudioContext};
 vm.runInNewContext(audioScript, {window: legacyWindow});
@@ -171,6 +192,23 @@ context.resume = () => { context.state = 'running'; };
 assert.equal(legacyWindow.AlarmAudio.unlock('beep'), true);
 assert.equal(starts, 6); assert.equal(created, 1);
 legacyWindow.AlarmAudio.stop(); assert.ok(stops >= starts);
+peaks.length = 0;
+legacyWindow.AlarmAudio.play('bell', 25);
+assert.deepEqual(peaks, [0.035, 0.035], 'ringing uses a quarter of full gain at 25%');
+peaks.length = 0;
+legacyWindow.AlarmAudio.unlock('bell', 25);
+assert.deepEqual(peaks, [0.035, 0.035], 'preview and actual ringing use the same volume');
+const beforeMute = starts;
+legacyWindow.AlarmAudio.play('bell', 0);
+assert.equal(starts, beforeMute, 'muting must not create oscillators');
+const signatures = new Set();
+for (const sound of ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar']) {
+    frequencies.length = waves.length = 0;
+    assert.equal(legacyWindow.AlarmAudio.play(sound, 100), true);
+    assert.ok(frequencies.length);
+    signatures.add(JSON.stringify([frequencies, waves]));
+}
+assert.equal(signatures.size, 7, 'each audible style has a distinct pattern');
 const unsupported = {};
 vm.runInNewContext(audioScript, {window: unsupported});
 assert.equal(unsupported.AlarmAudio.unlock('bell'), false);

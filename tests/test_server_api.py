@@ -26,7 +26,7 @@ class ServerApiTest(unittest.TestCase):
         self.addCleanup(token.stop)
         self.client = clock.app.test_client()
         self.schedule = dict(id='wake', name='起床', type='alarm', time='07:30', rule={},
-                             enabled=True, skipped_occurrences=[], browser_sound='bell', skip_holidays=False)
+                             enabled=True, skipped_occurrences=[], browser_sound='bell', browser_volume=100, skip_holidays=False)
 
     def config(self):
         return self.client.get('/api/v1/device/config').json
@@ -70,7 +70,8 @@ class ServerApiTest(unittest.TestCase):
         original = (self.root / 'schedules.json').read_bytes()
         for changes in ({'volume': 70}, {'sound': 'default.wav'}, {'repeat': 'once'}, {'snooze_minutes': 5},
                         {'rule': {'weekdays': [0]}}, {'time': '7:30'}, {'type': 'unsupported'}, {'extra': 1},
-                        {'browser_sound': 'unknown'}, {'skip_holidays': 'true'},
+                        {'browser_sound': 'unknown'}, {'browser_volume': -1}, {'browser_volume': 101},
+                        {'browser_volume': True}, {'browser_volume': '50'}, {'browser_volume': 2.5}, {'skip_holidays': 'true'},
                         {'skip_holidays': True, 'rule': {'holiday_only': True}}):
             response = self.client.put('/api/v1/schedules/wake', json=changes)
             self.assertEqual(response.status_code, 400, response.json)
@@ -293,7 +294,7 @@ class ServerApiTest(unittest.TestCase):
 
     def test_legacy_records_survive_edits_without_exposing_device_settings(self):
         legacy = dict({key: value for key, value in self.schedule.items()
-                       if key not in ('browser_sound', 'skip_holidays')},
+                       if key not in ('browser_sound', 'browser_volume', 'skip_holidays')},
                       sound='missing.wav', volume=25, repeat='once', snooze_minutes=10)
         path = self.root / 'schedules.json'
         path.write_text(json.dumps([legacy]))
@@ -302,16 +303,17 @@ class ServerApiTest(unittest.TestCase):
         self.assertEqual(response['schedules'], [self.schedule])
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(self.client.get('/api/v1/browser-alarms').json['alarms'][0]['sound'], 'bell')
+        self.assertEqual(self.client.get('/api/v1/browser-alarms').json['alarms'][0]['volume'], 100)
         self.assertEqual(self.client.put('/api/v1/schedules/wake', json={
             'name': 'Updated', 'browser_sound': 'beep', 'skip_holidays': True}).status_code, 200)
         stored = json.loads(path.read_text())[0]
-        self.assertEqual(stored, dict(legacy, name='Updated', browser_sound='beep', skip_holidays=True))
+        self.assertEqual(stored, dict(legacy, name='Updated', browser_sound='beep', browser_volume=100, skip_holidays=True))
         self.assertEqual(self.client.post('/api/v1/schedules', json=dict(self.schedule, id='second')).status_code, 201)
         self.assertEqual(json.loads(path.read_text())[0], stored)
         self.assertFalse((self.root / 'sounds').exists())
 
     def test_browser_alarms_keep_current_minute_and_local_dismissal(self):
-        for row in (self.schedule, dict(self.schedule, id='second', browser_sound='digital'),
+        for row in (self.schedule, dict(self.schedule, id='second', browser_sound='melody', browser_volume=25),
                     dict(self.schedule, id='disabled', enabled=False),
                     dict(self.schedule, id='text', type='reminder')):
             self.assertEqual(self.client.post('/api/v1/schedules', json=row).status_code, 201)
@@ -327,10 +329,11 @@ class ServerApiTest(unittest.TestCase):
             self.assertEqual(data['holiday_coverage'], clock.holiday_service.coverage)
             self.assertEqual([row['id'] for row in data['alarms']], ['second', 'wake'])
             for row in data['alarms']:
-                self.assertEqual(set(row), {'occurrence_id', 'id', 'name', 'starts_at', 'sound'})
+                self.assertEqual(set(row), {'occurrence_id', 'id', 'name', 'starts_at', 'sound', 'volume'})
                 self.assertEqual(row['starts_at'], int(now.replace(second=0).timestamp() * 1000))
                 self.assertEqual(row['occurrence_id'], row['id'] + '@2026-09-23T07:30:00+08:00')
-            self.assertEqual([row['sound'] for row in data['alarms']], ['digital', 'bell'])
+            self.assertEqual([row['sound'] for row in data['alarms']], ['melody', 'bell'])
+            self.assertEqual([row['volume'] for row in data['alarms']], [25, 100])
             self.assertEqual(self.client.get('/api/v1/browser-alarms').json, data)
             current.return_value = now.replace(second=59, microsecond=999999)
             self.assertEqual(self.client.get('/api/v1/browser-alarms').json['alarms'], data['alarms'])
@@ -367,7 +370,8 @@ class ServerApiTest(unittest.TestCase):
                     response = self.client.get(route)
                     self.assertEqual(response.status_code, 200, route)
                     self.assertIn('lang="' + language + '"', response.text)
-                for removed in ('enable-audio', 'sound-form', 'schedule-volume', 'schedule-snooze', 'ringing'):
+                self.assertIn('id="schedule-volume"', response.text)
+                for removed in ('enable-audio', 'sound-form', 'schedule-snooze', 'ringing'):
                     self.assertNotIn('id="' + removed + '"', response.text)
         for route in ('/api/v1/sounds', '/api/v1/sounds/default.wav', '/api/v1/device/sounds'):
             self.assertEqual(self.client.get(route).status_code, 404)

@@ -58,7 +58,7 @@ Alarm selection is independent from clock display selection. Weekday, explicit-d
 
 ## Browser alarms on iPad
 
-1. Add an alarm in `/schedules`, choosing its time, recurrence, and bell, beep, digital, or silent mode.
+1. Add an alarm in `/schedules` and choose its time and weekdays or date. “Every day” selects all seven weekdays, hides when all are selected, and reappears when any day is unchecked. Choose bell, beep, digital, chime, melody, pulse, sonar, or silent mode. Each alarm has its own 0–100% volume, defaulting to 100%; preview uses the same volume, and 0% keeps visual alerts only.
 2. Daily, weekday, and explicit-date rules may skip Taiwan holidays; make-up workdays remain workdays. Holiday-only and skip-holiday rules cannot be combined.
 3. On the iPad clock page, tap the bell to enable audio and confirm the short sound. Enable it again after every reload or reopen.
 4. When an alarm fires, tap twice to dismiss only this occurrence on the current page. The schedule and other devices remain active.

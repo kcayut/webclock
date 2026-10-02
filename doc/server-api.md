@@ -57,6 +57,7 @@ webclock_state/              私人執行資料，不進 Git
   "rule": {"weekdays": [1, 2, 3, 4, 5]},
   "skip_holidays": true,
   "browser_sound": "bell",
+  "browser_volume": 100,
   "enabled": true,
   "skipped_occurrences": []
 }
@@ -65,7 +66,8 @@ webclock_state/              私人執行資料，不進 Git
 - `type`：`alarm`、`reminder`、`announcement`；時鐘頁只執行 `alarm`，不將行事曆或文字提醒自動變成鬧鐘。硬體如何呈現仍由裝置決定。
 - `rule` 擇一：`{}` 每天、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}`。
 - `skip_holidays`：可在每天、星期或指定日期規則上過濾假日。補班日仍是工作日；`holiday_only=true` 同時 `skip_holidays=true` 會回 400。
-- `browser_sound`：`bell`、`beep`、`digital` 或 `silent`。這是網頁專用音色，和舊硬體 `sound` 欄位分開；`silent` 保留視覺提示。
+- `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar` 或 `silent`。這是網頁專用音色，和舊硬體 `sound` 欄位分開；`silent` 保留視覺提示。
+- `browser_volume`：每個鬧鐘獨立的網頁音量，整數 0–100；新舊排程未提供時均預設 100。0 只顯示提醒，試聽與實際響鈴共用此設定；實際音量仍受裝置音量影響，不沿用舊硬體 `volume`。
 - 星期採 ISO：星期一 `1` 至星期日 `7`。與舊手動提醒 API 的 `0–6` 不同。
 - 排程固定採 `Asia/Taipei`，與大字時鐘的顯示時區分開。
 - `skipped_occurrences` 是含時區的完整時間；跳過下一次仍保留排程 `enabled=true`，管理畫面在原定響鈴時間過後恢復啟用顯示。已有尚未到期的略過時間時，不可再跳過另一日期；略過預覽、修改及跳過 API 回 400 `Occurrence already skipped; wait for resume`。
@@ -127,6 +129,7 @@ API 接受 JSON，錯誤以 `{"error":"..."}` 回應（已匹配的 API 路由�
 | `alarms[].name` | 鬧鐘名稱 |
 | `alarms[].starts_at` | 下次發生時間，單位為 Unix 毫秒 |
 | `alarms[].sound` | 網頁音色，來自排程的 `browser_sound` |
+| `alarms[].volume` | 0–100 的網頁音量，來自 `browser_volume`；新版網頁讀到未提供此欄位的舊回應時使用 100 |
 | `holiday_coverage`、`holiday_known` | 假日資料涵蓋範圍與是否已知 |
 
 查詢從當分鐘起算，避免剛到時刻的鬧鐘因 API 延遲就直接跳至下一次；同一分鐘內不同秒的聯動行程會保留。這份回應不是完整離線排程快照。時鐘頁約每 15 秒更新一次；已載入的下次時間可在暫時斷線時觸發，重新開頁與取得後續週期仍需連線。超過 60 秒才恢復處理的過期鬧鐘不補響。

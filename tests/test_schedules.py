@@ -76,8 +76,11 @@ class ScheduleTests(unittest.TestCase):
 
     def test_browser_sound_and_holiday_exclusion(self):
         self.assertEqual(self.schedule()['browser_sound'], 'bell')
+        self.assertEqual(self.schedule()['browser_volume'], 100)
+        for volume in (0, 25, 100):
+            self.assertEqual(self.schedule(browser_volume=volume)['browser_volume'], volume)
         self.assertFalse(self.schedule()['skip_holidays'])
-        for sound in ('bell', 'beep', 'digital', 'silent'):
+        for sound in ('bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'):
             self.assertEqual(self.schedule(browser_sound=sound)['browser_sound'], sound)
         daily = self.schedule(skip_holidays=True)
         self.assertEqual(self.next(daily, '2026-09-24T08:00:00+08:00')['datetime'], '2026-09-29T07:30:00+08:00')
@@ -226,6 +229,7 @@ class ScheduleTests(unittest.TestCase):
                    dict(rule={'workday_only': False}), dict(rule={'dates': ['2026-02-30']}),
                    dict(sound='../alarm.wav'), dict(sound='-alarm.wav'), dict(sound='_alarm.wav'),
                    dict(browser_sound='file.wav'), dict(browser_sound=None), dict(browser_sound=[]),
+                   *[dict(browser_volume=value) for value in (-1, 101, True, '50', 2.5, None)],
                    dict(skip_holidays='false'), dict(skip_holidays=1),
                    dict(skip_holidays=True, rule={'holiday_only': True}),
                    dict(enabled='false'), dict(snooze_minutes=5),

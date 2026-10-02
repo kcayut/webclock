@@ -35,6 +35,7 @@
                 <h2 id="editor-title">{{ t.add }}</h2>
                 <form id="schedule-form">
                     <input type="hidden" id="schedule-id">
+                    <input type="hidden" id="schedule-rule">
                     <div class="schedule-editor-body">
                         <div class="schedule-time-column">
                             <div id="schedule-time-field" class="field"><label for="schedule-time">{{ t.time }}</label><input id="schedule-time" type="time" value="07:30" required aria-describedby="editor-timezone"></div>
@@ -47,7 +48,7 @@
                         <div class="schedule-settings">
                             <div class="setting-group">
                                 <p id="schedule-repeat-summary" class="repeat-summary">{{ t.once }}</p>
-                                <fieldset id="weekday-field"><legend>{{ t.weekdays_label }}</legend><div class="weekdays">{% for day in range(1, 8) %}<label class="weekday-choice"><input type="checkbox" name="weekday" value="{{ day }}"><span>{{ t.weekdays[day - 1] }}</span></label>{% endfor %}</div></fieldset>
+                                <fieldset id="weekday-field"><legend>{{ t.weekdays_label }}</legend><div class="weekday-options"><div class="weekdays">{% for day in range(1, 8) %}<label class="weekday-choice"><input type="checkbox" name="weekday" value="{{ day }}"><span>{{ t.weekdays[day - 1] }}</span></label>{% endfor %}</div><button id="select-every-day" type="button">{{ t.every_day }}</button></div></fieldset>
                                 <div id="date-field" class="field">
                                     <label for="schedule-date-picker">{{ t.pick_date }}</label>
                                     <div class="date-choice"><input id="schedule-date-picker" type="date" aria-describedby="date-once-hint"><button id="clear-schedule-date" type="button" hidden>{{ t.clear_date }}</button></div>
@@ -55,7 +56,7 @@
                                 </div>
                                 <details id="schedule-advanced">
                                     <summary>{{ t.advanced_rule }}</summary>
-                                    <div class="field setting-row"><label for="schedule-rule">{{ t.rule }}</label><select id="schedule-rule"><option value="once">{{ t.once }}</option><option value="every_day">{{ t.every_day }}</option><option value="weekdays">{{ t.weekdays_label }}</option><option value="workday_only">{{ t.workday_only }}</option><option value="holiday_only">{{ t.holiday_only }}</option><option value="dates">{{ t.dates }}</option></select></div>
+                                    <div class="field setting-row"><label for="schedule-special-rule">{{ t.rule }}</label><select id="schedule-special-rule"><option value="">{{ t.selected_days }}</option><option value="workday_only">{{ t.workday_only }}</option><option value="holiday_only">{{ t.holiday_only }}</option></select></div>
                                     <div id="multiple-dates-field" class="field" hidden><label for="schedule-dates">{{ t.dates }}</label><input id="schedule-dates" placeholder="2026-10-03, 2026-10-10" aria-describedby="dates-hint"><p id="dates-hint" class="help">{{ t.dates_hint }}</p></div>
                                     <label class="check setting-switch"><span>{{ t.skip_holidays }}</span><input id="schedule-skip-holidays" type="checkbox" role="switch" aria-describedby="skip-holidays-hint"></label>
                                     <p id="skip-holidays-hint" class="help">{{ t.skip_holidays_hint }}</p>
@@ -65,7 +66,11 @@
                             <div id="schedule-type-field" class="field setting-row"><label for="schedule-type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" hidden disabled>{{ t.alarm }}</option><option value="reminder">{{ t.reminder }}</option><option value="announcement">{{ t.announcement }}</option></select></div>
                             <div id="schedule-sound-field" class="field setting-row">
                                 <label for="schedule-sound">{{ t.browser_sound }}</label>
-                                <div class="sound-choice"><select id="schedule-sound"><option value="bell">{{ t.sound_bell }}</option><option value="beep">{{ t.sound_beep }}</option><option value="digital">{{ t.sound_digital }}</option><option value="silent">{{ t.sound_silent }}</option></select><button id="preview-sound" type="button">{{ t.preview_sound }}</button></div>
+                                <div class="sound-choice"><select id="schedule-sound">{% for sound in ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'] %}<option value="{{ sound }}">{{ t['sound_' + sound] }}</option>{% endfor %}</select><button id="preview-sound" type="button">{{ t.preview_sound }}</button></div>
+                            </div>
+                            <div id="schedule-volume-field" class="field setting-row">
+                                <label for="schedule-volume">{{ t.browser_volume }}</label>
+                                <div><div class="volume-choice"><input id="schedule-volume" type="range" min="0" max="100" step="1" value="100" aria-describedby="volume-hint"><output id="schedule-volume-value" for="schedule-volume">100%</output></div><p id="volume-hint" class="help">{{ t.volume_hint }}</p></div>
                             </div>
                             <div id="schedule-calendar-mode-field" class="field setting-row"><label for="schedule-calendar-mode">{{ t.calendar_link }}</label><select id="schedule-calendar-mode"><option value="none">{{ t.calendar_none }}</option><option value="event">{{ t.calendar_event }}</option><option value="day">{{ t.calendar_day }}</option></select></div>
                             <div id="schedule-offset-field" class="field setting-row" hidden><label for="schedule-offset">{{ t.calendar_offset }}</label><input id="schedule-offset" type="number" min="0" max="1440" step="1" value="0"></div>
