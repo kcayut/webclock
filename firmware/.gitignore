@@ -1,0 +1,11 @@
+# ESPHome local build state and generated firmware
+.esphome/
+build/
+*.bin
+*.elf
+*.map
+
+# Local credentials; a placeholder-only example may be tracked
+secrets.yaml
+secrets.*.yaml
+!secrets.example.yaml

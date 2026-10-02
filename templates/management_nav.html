@@ -1,4 +1,10 @@
 {% set m = translations[language] %}
+<script id="management-i18n" type="application/json">{{ translations|tojson }}</script>
+<script>
+    try {
+        document.documentElement.setAttribute('data-management-theme', window.localStorage.getItem('webclock-management-theme') === 'dark' ? 'dark' : 'light');
+    } catch (error) {}
+</script>
 {% macro nav_icon(name) -%}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
 {% if name == 'display' %}<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8m-4-4v4"/>
@@ -7,6 +13,8 @@
 {% elif name == 'devices' %}<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8m-8 5h.01m4 0h.01"/>
 {% elif name == 'backup' %}<path d="M4 8v11c0 3 16 3 16 0V8M4 13c0 3 16 3 16 0"/><ellipse cx="12" cy="6" rx="8" ry="3"/>
 {% elif name == 'about' %}<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>
+{% elif name == 'sun' %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+{% elif name == 'moon' %}<path d="M20.8 13A9 9 0 0 1 11 3.2 9 9 0 1 0 20.8 13Z"/>
 {% endif %}</svg>
 {%- endmacro %}
 <a class="skip-link" href="#management-main"><span data-i18n="management_skip_content">{{ m.management_skip_content }}</span></a>
@@ -15,15 +23,21 @@
         <img src="{{ url_for('static', filename='brand/logo.svg', v=2) }}" width="38" height="38" alt="" aria-hidden="true">
         <span>WebClock</span>
     </a>
-    <nav class="management-navigation" aria-label="{{ m.management_navigation }}">
+    <nav class="management-navigation" data-i18n-aria-label="management_navigation" aria-label="{{ m.management_navigation }}">
         {% for panel, path, key in [('display', '/admin#display', 'management_display'), ('calendar', '/admin#calendar-title', 'management_calendar'), ('alarms', '/schedules#alarms', 'management_alarms'), ('devices', '/schedules#devices', 'management_devices'), ('backup', '/admin#backup', 'management_backup'), ('about', '/admin#about', 'management_about')] %}
         <a href="{{ path }}" data-management-link="{{ panel }}">{{ nav_icon(panel) }}<span data-i18n="{{ key }}">{{ m[key] }}</span></a>
         {% endfor %}
     </nav>
     <div class="management-sidebar-tools">
+        <span id="management-theme-label" class="management-tool-label" data-i18n="management_theme">{{ m.management_theme }}</span>
+        <div id="management-theme-toggle" class="management-theme-toggle" role="group" aria-labelledby="management-theme-label" aria-describedby="management-theme-hint">
+            <button type="button" data-theme="light" aria-pressed="true" data-i18n-aria-label="management_theme_light" aria-label="{{ m.management_theme_light }}">{{ nav_icon('sun') }}</button>
+            <button type="button" data-theme="dark" aria-pressed="false" data-i18n-aria-label="management_theme_dark" aria-label="{{ m.management_theme_dark }}">{{ nav_icon('moon') }}</button>
+        </div>
+        <p id="management-theme-hint" class="help" data-i18n="management_theme_hint">{{ m.management_theme_hint }}</p>
         <label for="management-language-select">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.4 3 14.6 0 18M12 3c-3 3.4-3 14.6 0 18"/></svg>
-            <span>Language</span>
+            <span data-i18n="language">{{ m.language }}</span>
         </label>
         <select id="management-language-select" data-error="{{ m.settings_save_error }}">
             {% for code, label in languages.items() %}<option value="{{ code }}" {% if code == language %}selected{% endif %}>{{ label }}</option>{% endfor %}

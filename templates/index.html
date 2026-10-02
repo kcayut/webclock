@@ -340,22 +340,22 @@
         <span id="notice-close" onclick="hideNotice(true)" title="{{ translations[language].notice_close }}">x</span>
     </div>
 
-    <button id="connection-toggle" type="button" onclick="toggleConnectionPanel()" title="Connection settings">...</button>
+    <button id="connection-toggle" type="button" onclick="toggleConnectionPanel()" data-clock-i18n="connection_settings" data-clock-attribute="aria-label" aria-label="{{ translations[language].connection_settings }}" title="{{ translations[language].connection_settings }}">...</button>
     <div id="connection-panel" aria-live="polite">
         <div id="connection-status"></div>
         <p id="offline-status" role="status" data-ready="{{ translations[language].offline_ready }}" data-unavailable="{{ translations[language].offline_unavailable }}" data-failed="{{ translations[language].offline_failed }}"></p>
-        <label for="server-url-input">Server URL</label>
+        <label for="server-url-input" data-clock-i18n="connection_server_url">{{ translations[language].connection_server_url }}</label>
         <input id="server-url-input" type="url" inputmode="url" placeholder="http://192.168.1.10">
         <div class="connection-row">
-            <button type="button" onclick="saveServerUrl()">Save</button>
-            <button type="button" onclick="reconnectNow()">Reconnect</button>
+            <button type="button" onclick="saveServerUrl()" data-clock-i18n="save">{{ translations[language].save }}</button>
+            <button type="button" onclick="reconnectNow()" data-clock-i18n="connection_reconnect">{{ translations[language].connection_reconnect }}</button>
         </div>
         <form id="local-event-form" onsubmit="addLocalEvent(); return false;">
-            <label for="local-event-text">Offline reminder</label>
-            <input id="local-event-text" type="text" placeholder="Reminder text">
+            <label for="local-event-text" data-clock-i18n="local_reminder">{{ translations[language].local_reminder }}</label>
+            <input id="local-event-text" type="text" data-clock-i18n="local_reminder_placeholder" data-clock-attribute="placeholder" placeholder="{{ translations[language].local_reminder_placeholder }}">
             <div class="connection-row">
-                <input id="local-event-time" type="time" aria-label="Offline reminder time">
-                <button type="submit">Add</button>
+                <input id="local-event-time" type="time" data-clock-i18n="local_reminder_time" data-clock-attribute="aria-label" aria-label="{{ translations[language].local_reminder_time }}">
+                <button type="submit" data-clock-i18n="add">{{ translations[language].add }}</button>
             </div>
         </form>
         <div id="local-events-list"></div>
@@ -379,7 +379,7 @@
         var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
         var connectionMode = 'server';
         var activeSettings = {};
-        var lastServerStatus = 'Connecting...';
+        var lastServerStatus = 'connection_connecting';
 
         function t(key) {
             var pack = I18N[currentLanguage] || I18N['zh-TW'];
@@ -391,6 +391,17 @@
             currentLanguage = language;
             document.documentElement.lang = language;
             document.title = t('app_title');
+            var labels = document.querySelectorAll('[data-clock-i18n]');
+            for (var i = 0; i < labels.length; i++) {
+                var label = labels[i];
+                var attribute = label.getAttribute('data-clock-attribute');
+                var value = t(label.getAttribute('data-clock-i18n'));
+                if (attribute) label.setAttribute(attribute, value);
+                else label.textContent = value;
+            }
+            document.getElementById('notice-close').title = t('notice_close');
+            if (lastNoticeKey) document.getElementById('notice-text').textContent = t(lastNoticeKey);
+            setConnectionStatus(lastServerStatus, connectionMode === 'standalone');
             var offline = document.getElementById('offline-status');
             ['ready', 'unavailable', 'failed'].forEach(function (state) {
                 offline.setAttribute('data-' + state, t('offline_' + state));
@@ -570,8 +581,9 @@
             }
         }
 
-        function setConnectionStatus(message, isOffline) {
-            lastServerStatus = message;
+        function setConnectionStatus(key, isOffline) {
+            lastServerStatus = key;
+            var message = t(key).replace('{url}', function () { return serverUrl; });
             var status = document.getElementById('connection-status');
             var toggle = document.getElementById('connection-toggle');
             if (status) status.textContent = message;
@@ -586,7 +598,7 @@
             applySettings(getStoredSettings());
             renderList(getLocalEventsForToday());
             updateClock();
-            setConnectionStatus(message || 'Standalone mode: using device time and local reminders.', true);
+            setConnectionStatus(message || 'connection_standalone', true);
         }
 
         function enterServerMode(data) {
@@ -609,7 +621,7 @@
 
             renderList(data.events);
             updateClock();
-            setConnectionStatus('Server connected: ' + serverUrl, false);
+            setConnectionStatus('connection_connected', false);
         }
 
         function fetchStatus() {
@@ -622,27 +634,27 @@
                         enterServerMode(data);
                     } catch (e) {
                         showNotice('status_parse_failed');
-                        enterStandaloneMode('Standalone mode: server response could not be read.');
+                        enterStandaloneMode('connection_unreadable');
                     }
                 } else if (xhr.readyState === 4) {
                     showNotice('server_unavailable');
-                    enterStandaloneMode('Standalone mode: server is unavailable.');
+                    enterStandaloneMode('connection_unavailable');
                 }
             };
             xhr.onerror = function () {
                 showNotice('server_unavailable');
-                enterStandaloneMode('Standalone mode: server is unavailable.');
+                enterStandaloneMode('connection_unavailable');
             };
             xhr.ontimeout = function () {
                 showNotice('server_timeout');
-                enterStandaloneMode('Standalone mode: server timed out.');
+                enterStandaloneMode('connection_timeout');
             };
             xhr.timeout = 8000;
             try {
                 xhr.send();
             } catch (e) {
                 showNotice('server_unavailable');
-                enterStandaloneMode('Standalone mode: server is unavailable.');
+                enterStandaloneMode('connection_unavailable');
             }
         }
 
@@ -731,7 +743,7 @@
                 item.className = 'local-event-item';
                 text.textContent = (event.time ? window.WebClockTime.format(event.time, activeSettings.time_format, currentLanguage) + " " : "") + event.text;
                 button.type = 'button';
-                button.textContent = 'Delete';
+                button.textContent = t('delete');
                 button.setAttribute('data-event-id', event.id);
                 button.onclick = function () {
                     deleteLocalEvent(this.getAttribute('data-event-id'));
@@ -758,12 +770,12 @@
             if (!nextUrl) return;
             serverUrl = nextUrl;
             writeStoredValue(STORAGE_SERVER_URL, serverUrl);
-            setConnectionStatus('Server URL saved: ' + serverUrl, connectionMode === 'standalone');
+            setConnectionStatus('connection_saved', connectionMode === 'standalone');
         }
 
         function reconnectNow() {
             saveServerUrl();
-            setConnectionStatus('Connecting...', connectionMode === 'standalone');
+            setConnectionStatus('connection_connecting', connectionMode === 'standalone');
             fetchStatus();
         }
 
@@ -859,7 +871,7 @@
         window.addEventListener('pageshow', updateClock);
         applySettings(getStoredSettings());
         renderLocalEventsEditor();
-        setConnectionStatus('Connecting...', false);
+        setConnectionStatus('connection_connecting', false);
         setInterval(fetchStatus, 5000);
         fetchStatus();
     </script>

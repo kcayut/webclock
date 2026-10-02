@@ -4,7 +4,9 @@
 
 This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. It also lets the self-hosted clock page run browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders.
 
-Firmware, audio files, speakers, volume, snooze, RTC, buttons, and standalone offline execution belong to a future hardware project. Devices integrate through HTTP/JSON and do not import this project's Python modules.
+Firmware, speakers, hardware volume, snooze, RTC, buttons, and standalone offline execution are device responsibilities and are not implemented yet. [`firmware/`](../firmware/README.md) contains development preparation only: no compilable ESPHome configuration, flashable image, web installer, or OTA update service. Devices integrate through HTTP/JSON and do not import this project's Python modules.
+
+See the [ESPHome device guide](esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the planned workflow and complete response examples.
 
 There is currently one shared management space: **all devices use the same schedules and calendars**. Per-device schedule assignment, multi-tenancy, and user accounts are not implemented.
 
@@ -27,6 +29,7 @@ static/                      web CSS and JavaScript
 scripts/                     installation and update logic
 tests/                       server, API, and web regression tests
 doc/                         guides and API contracts
+firmware/                    ESPHome development preparation; no buildable firmware yet
 webclock_state/              private runtime data; never commit it
 ```
 
@@ -58,7 +61,7 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
 - `browser_volume`: per-alarm integer from 0 to 100, defaulting to 100 for new and existing schedules. Preview and ringing use the same level; 0 keeps visual alerts only. Device volume still affects loudness. Legacy hardware `volume` is not reused.
 - Weekdays use ISO values Monday `1` through Sunday `7`; the legacy reminder API uses `0–6`.
 - Schedules always use `Asia/Taipei`, independently from the large clock's display timezone.
-- `skipped_occurrences` contains complete timezone-aware timestamps. Skipping the next occurrence does not disable the schedule.
+- `skipped_occurrences` contains complete timezone-aware timestamps. A one-occurrence pause keeps `enabled=true`; the recurring alarm UI resumes after the skipped time. While a future skip remains pending, another skip is rejected with 400 `Occurrence already skipped; wait for resume`.
 - `next_occurrence` and `next_event` are previews, not execution logs or queued events.
 
 An alarm may include `calendar_link`; omit it or use `null` for a fixed-time schedule.
@@ -69,7 +72,9 @@ An alarm may include `calendar_link`; omit it or use `null` for a fixed-time sch
 
 - `event`: fire 0–1440 minutes before timed events; all-day events are ignored.
 - `day`: fire at the schedule's fixed `time` when a selected source has an event that day; all-day and multi-day events count.
-- `source_ids` contains stable source IDs; `local` means local reminders. Alarm selection is independent from clock display selection.
+- `source_ids` contains stable source IDs; `local` means server-local reminders managed in `/admin`, not browser-local reminders in the clock panel. Alarm selection is independent from clock display selection.
+- Optional `target` selects an event: `{"source_id":"work","uid":"meeting","scope":"occurrence","recurrence_id":"2026-09-30T02:30:00+00:00","title":"Weekly meeting"}`. Use `scope=occurrence` for one occurrence or `scope=series` for the recurring series; no target follows all selected-source events.
+- Get stable identifiers from the event catalog below. `recurrence_id` is empty for a nonrecurring event or a series, and is the original `RECURRENCE-ID` for an occurrence, even after rescheduling. `title` is display-only; current calendar data determines rescheduling and cancellation. Subscription caching may delay changes by up to five minutes.
 - Weekday, explicit-date, and holiday filters use the actual alarm date in Taiwan. Preview searches up to 366 days.
 - Persistent local text without a date or fixed window does not participate. Missing or unreadable sources do not fall back to daily alarms or stale data.
 - The server computes linked alarms for browser use. Schema 2 device responses exclude them so old hardware does not misread them as daily alarms.
@@ -78,12 +83,14 @@ The bundled Taiwan calendar covers **2023-01-01 through 2027-12-31**. It follows
 
 ## Management API
 
-APIs accept JSON and return errors as `{"error":"..."}`. Invalid input returns 400, missing resources 404, and write failures 500 without overwriting saved data. The request limit is 1 MiB.
+APIs accept JSON. Matched API routes return errors as `{"error":"..."}`: data validation returns 400, missing items 404, and failed storage writes 500 while retaining previous data. Other HTTP errors are listed below; unknown routes, unsupported methods, and proxy responses need not be JSON. Request bodies are limited to 1 MiB.
 
 | Path | Method and purpose |
 | --- | --- |
 | `/api/v1/schedules` | GET schedules and previews; POST a schedule |
 | `/api/calendar` | GET/POST calendar sources; PATCH display selection only |
+| `/api/v1/calendar-events?source_id=work` | GET selected-source event catalog for the next 366 days; repeat `source_id` for multiple sources |
+| `/api/v1/schedules/preview` | POST draft; optional `skip_next: true` previews the skipped and next occurrence without saving |
 | `/api/v1/schedules/<id>` | PUT selected fields; DELETE a schedule |
 | `/api/v1/schedules/<id>/skip-next` | POST to skip the next occurrence |
 | `/api/v1/browser-alarms` | GET upcoming browser alarms and holiday-data state |
@@ -94,6 +101,10 @@ APIs accept JSON and return errors as `{"error":"..."}`. Invalid input returns 4
 Management APIs assume a trusted LAN and have no login. The server rejects browser requests from a different Origin, but this is not full authentication. Restrict remote deployments at a reverse proxy and enable HTTPS.
 
 Each `/api/calendar` source contains `id`, `name`, `provider`, `url`, and `display_enabled`; `local_display_enabled` controls local reminders. Keep IDs stable when updating because alarms reference them. POST saves the complete source set, while PATCH accepts only source IDs and display flags. URLs appear only in the dedicated management response and never in clock, schedule, device, backup, or offline-cache output.
+
+`GET /api/v1/calendar-events` requires existing source IDs and returns `events` plus `server_time`. Event fields are `source_id`, `uid`, `text`, `starts_at`, `ends_at`, `all_day`, `recurring`, and `recurrence_id`; timestamps are Unix milliseconds and subscription URLs are excluded. Canceled/deleted events disappear from the catalog without changing an existing target to another event.
+
+`POST /api/v1/schedules/preview` returns `server_time`, `timezone`, and `next_occurrence`, plus `skipped_occurrence` for `skip_next: true`. The editor uses server time for the next-ring countdown. The resume countdown ends at the skipped time, not the following ring. `PUT /api/v1/schedules/<id>` may save edits with `skip_next: "full preview timestamp"`; `POST /api/v1/schedules/<id>/skip-next` accepts `expected_occurrence` to reject stale previews with 400 `Occurrence changed; preview again`. Permanent disable uses `enabled=false`. Early resume keeps expired skips, removes future skips, and sets `enabled=true`.
 
 ## Browser alarms
 
@@ -112,13 +123,13 @@ Each `/api/calendar` source contains `id`, `name`, `provider`, `url`, and `displ
 
 The query starts at the current minute so API latency does not skip an alarm that just became due. It is not a complete offline schedule snapshot. The page refreshes about every 15 seconds. A loaded next occurrence can fire during a brief disconnection, but reopening or loading later occurrences requires a connection. Alarms processed more than 60 seconds late are not replayed.
 
-The page synthesizes three tones with native Web Audio. Users must tap the bell and hear a confirmation after every page load. iOS may interrupt audio and timers when switching apps or tabs or locking the screen; keep the page visible and the screen on. Background or locked-screen alarms are not guaranteed.
+The page synthesizes seven tones with native Web Audio and also provides `silent` mode. Users must tap the bell and hear a confirmation after every page load. iOS may interrupt audio and timers when switching apps or tabs or locking the screen; keep the page visible and the screen on. Background or locked-screen alarms are not guaranteed.
 
 The visual alert pulses the red border every two seconds. Users may disable flashing for a steady border, and browsers with `prefers-reduced-motion` also use a steady border. Two separate taps dismiss only the current occurrence on the current page; schedules and other devices are unchanged.
 
 ## Device API
 
-Device paths remain under `/api/v1/device/*`; configuration responses use **`schema_version: 2`**. The device API does not expose old hardware playback fields. `browser_sound` is for the web page only. Schema 1 prototypes must be updated.
+Device paths remain under `/api/v1/device/*`; configuration responses use **`schema_version: 2`**. The device API does not expose old hardware playback fields. `browser_sound` and `browser_volume` describe browser playback, not hardware tone or volume commands. Schema 1 prototypes must be updated.
 
 | Path | Method and purpose |
 | --- | --- |
@@ -130,15 +141,36 @@ Device paths remain under `/api/v1/device/*`; configuration responses use **`sch
 
 Schedule and holiday endpoints are read-only. Set `DEVICE_API_TOKEN` in `.env` and send `Authorization: Bearer <token>` for all device calls. An empty value keeps trusted-LAN mode. This is one shared token, not per-device identity, and does not protect management APIs.
 
+### Transport, scope, and input limits
+
+POST bodies must be JSON objects with `Content-Type: application/json`; unknown fields are rejected. Requests are limited to 1 MiB. GET responses use `Cache-Control: private, no-cache`; registration and status use `no-store`. A supplied Origin must match the server origin. Validate HTTPS certificates on the device.
+
+GET does not require registration and does not filter by device ID, date range, or page. Schedules include disabled records and non-alarm types; clients must evaluate their rules. Calendar-linked schedules are excluded entirely. The holiday snapshot is the complete government workday table, not subscribed calendar events: currently 1826 dates, roughly 122 KB or more depending on serialization. Its `days` object is keyed by date, with `type`, `name`, and `makeup_workday` values. Dates outside coverage are absent and must be treated as unknown. Config has no server time; devices need a separate time source.
+
+| Request | Accepted input |
+| --- | --- |
+| register | Required `id` and `name` only. ID: 1–64 ASCII letters, digits, underscores or hyphens. Name: nonblank string, input length at most 100; surrounding whitespace is trimmed |
+| status | Required `id`; optional `firmware`, `config_revision`, `schedule_revision`, `holiday_revision`, `acknowledged_commands` only |
+| Status strings | Nonblank strings, input length at most 128 each; trimmed on save. Omission preserves old values; null or empty strings cannot clear them |
+| ACK list | At most 100 IDs, each using the device ID format |
+
+Repeated registration still returns 201, updates the name, and preserves previous status and commands. Registration itself does not update the heartbeat; new devices have `online: false` and no `last_seen`. Status returns 200 with `device` and `commands`; the same pending list also appears under `device.commands`. Server-generated registration, heartbeat, and command timestamps are UTC ISO strings, not Unix milliseconds. RTC, Wi-Fi, battery, error, and actual ringing fields are not accepted yet. Reported revision strings are stored without proving that the device persisted or executed anything.
+
+Validation errors use 400; token failures 401; Origin failures 403; missing registered devices 404; unsupported methods 405; oversized bodies 413; missing JSON Content-Type 415; storage I/O failures 500. Check HTTP status and Content-Type before parsing: routing errors or proxy pages may be HTML. Retry transient failures with backoff; do not ACK failed synchronization or downgrade to an empty token after authentication failure. Complete response examples and management input limits are in the [Traditional Chinese reference](server-api.md#裝置-api).
+
 ### Synchronization flow
 
 1. Register with a stable device `id`.
 2. GET `config` and verify `schema_version=2`.
 3. Compare revisions and download only changed schedules or holidays; fetch everything on first connection.
-4. GET `config` again after downloads. Retry if a revision changed, and replace local cache only after validation.
+4. Check each downloaded revision against the first config, then GET `config` again. Retry if the version set changed. Only after validation and durable storage succeed, switch configuration, schedules, holidays, and their revisions together.
 5. POST `status` with persisted revisions. The server does not treat a download as proof that hardware executed a schedule.
 
 Revisions are SHA-256 strings. All three GET resources support `If-None-Match` or `?revision=...` and return 304 when unchanged. For `config`, use its response ETag rather than `config_revision`, because the ETag also covers schedule and holiday revisions. Holiday snapshot `schema_version=1` describes only that snapshot format and is separate from device configuration schema 2.
+
+Treat revisions as opaque values; do not hash raw HTTP bodies or order revisions as timestamps. Preserve each resource's own ETag. A 304 has no body and is usable only with a complete, validated local copy; missing or damaged cache requires an unconditional download. The second config check must compare with the first config from the same synchronization attempt.
+
+Replace the complete snapshot only after validation and durable storage, including deletions and a valid empty schedule list. Do not silently truncate oversized responses. On download, parsing, schema, or storage failure, retain the previous complete valid snapshot and do not report new revisions or ACK. Polling must not block local timekeeping or alarms. No current device contract provides authorization expiry or immediate offline revocation.
 
 ### Status and command acknowledgement
 
@@ -157,6 +189,20 @@ The minimum status is `{"id":"bedroom"}`. Optional string fields preserve their 
 
 `online` means a status report was received within 120 seconds. About one report per 60 seconds is recommended. **Request sync** queues only a `sync` command. It remains in status responses until acknowledged. Repeated requests keep one pending command. Devices should deduplicate by command ID and acknowledge only after success.
 
+Reproducible request → poll → ACK sequence (example IDs):
+
+1. `POST /api/v1/device/register` with `{"id":"bedroom","name":"Bedroom"}`.
+2. Management sends `POST /api/v1/devices/bedroom/commands` with `{"action":"sync"}`. Call the returned `command.id` `C`; 202 is queued, not completed.
+3. The device sends `POST /api/v1/device/status` with `{"id":"bedroom"}` and receives `C` in `commands`. Polling without ACK returns the same pending command, including after a server restart.
+4. The device downloads, validates, and persists data using the sync flow above, then posts its three saved revisions and `"acknowledged_commands":["C"]` to `status`.
+5. The response no longer includes `C`, and refreshing the management list removes the pending command. Retry the ACK if its successful response is lost. On sync failure, keep the old cache and do not ACK. Only this device's matching command is removed.
+
+The UI's “sync requested,” `online`, matching revisions, or an absent pending command do not prove that hardware rang successfully.
+
+### Planned extensions
+
+A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. Per-device credentials, pairing, account ownership, and deployment-mode switching are also unimplemented. See the [ESPHome guide](esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
+
 ## Legacy data and storage
 
 - Old audio APIs, sound files, the hardware sound service, and the simulated Python device were removed. The only current device command is `sync`.
@@ -173,12 +219,16 @@ One server process writes JSON, with limits of 1000 schedules and 100 devices. M
 ```bash
 python -m unittest discover -s tests -p 'test_*.py'
 node tests/test_clock.js
+node tests/test_time_format.js
 node tests/test_offline.js
 node tests/test_schedule_ui.js
 node tests/test_alarms.js
 node tests/test_calendar_ui.js
 node tests/test_management_navigation.js
+node tests/test_management_theme.js
 bash -n setup.sh scripts/setup.sh update_clock.sh
 ```
 
 Tests cover management CRUD, workdays, make-up workdays, skips, revisions, access checks, device reporting, acknowledgements, and legacy-data preservation. Update integration tests exercise real old/new server processes and Git/data rollback, but systemd, pip, and Linux service queries are mocked. They do not prove deployment on a target host or physical hardware acceptance.
+
+See the [phase-one acceptance record](phase1-acceptance.md) for local verification, pending iPad mini 1 / iOS 9 checks, and Taiwan calendar maintenance after 2027 (Traditional Chinese).

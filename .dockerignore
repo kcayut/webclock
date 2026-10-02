@@ -7,4 +7,8 @@ venv
 manual_notes.json
 webclock_state
 .webclock-update*
+.webclock-backup*
+.webclock-restore-*
+**/.webclock-backup*
+**/.webclock-restore-*
 **/__pycache__

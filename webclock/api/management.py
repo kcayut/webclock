@@ -53,7 +53,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
     @api.route('/schedules')
     def management():
         context = template_context()
-        return render_template('schedules.html', schedule_translations=SCHEDULE_TRANSLATIONS[context['language']], **context)
+        return render_template('schedules.html', schedule_translations=SCHEDULE_TRANSLATIONS[context['language']],
+                               schedule_languages=SCHEDULE_TRANSLATIONS, **context)
 
     @api.route('/api/v1/calendar-events')
     def calendar_event_catalog():

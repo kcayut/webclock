@@ -50,7 +50,7 @@ python app.py
 
 デプロイ前に `.env` の `WEBCLOCK_LANGUAGE=zh-TW`、`en`、`ja` で初期表示言語を設定できます。Linux インストーラーは `.env` の初回作成時に選択を求めます。デプロイ後も管理サイドバー下部から切り替えられ、選択結果は `webclock_state/settings.json` に保存されます。
 
-**詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [端末 API](doc/server-api_jp.md)
+**詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [端末 API](doc/server-api_jp.md) · [ESPHome 開発ガイド](doc/esp-home.md) · [ファームウェア開発準備](firmware/README.md)（最後の 2 件は繁体字中国語。書き込み可能なファームウェアはまだありません）。
 
 ## 開発支援
 

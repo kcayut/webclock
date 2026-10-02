@@ -62,22 +62,53 @@ checkNavigation('calendar', ['display', 'calendar', 'backup']); // Invalid remin
 checkNavigation('alarms', ['alarms', 'devices']);
 
 async function checkLanguage() {
-    let handler, request, reloads = 0;
+    let handler, request, reloads = 0, failure = false, alerts = 0, timeRefreshes = 0, calendarRefreshes = 0;
+    const attrs = {'data-error': 'save failed'};
     const select = {value: 'en', disabled: false,
         addEventListener: (name, callback) => { if (name === 'change') handler = callback; },
-        getAttribute: () => 'save failed'};
+        getAttribute: key => attrs[key], setAttribute: (key, value) => { attrs[key] = value; }};
+    const label = {textContent: '語言', getAttribute: () => 'language'};
+    const weekday = {textContent: '一', getAttribute: () => '1'};
+    const draft = {note: 'unsaved reminder', nightStart: '22:30', privateUrl: 'https://private.example/draft.ics'};
+    const before = JSON.stringify(draft);
+    const packs = {en: {language: 'Language', admin_title: 'Settings', weekdays: ['Sun', 'Mon'], settings_save_error: 'Save failed'},
+        'zh-TW': {language: '語言', admin_title: '設定', weekdays: ['日', '一'], settings_save_error: '儲存失敗'}};
     const window = {location: {hash: '', reload: () => { reloads++; }}, addEventListener() {},
-        requestAnimationFrame: callback => callback(), scrollTo() {}, alert() {}};
-    const context = {window, document: {documentElement: {lang: 'zh-TW'}, body: {getAttribute: () => 'display'},
-        getElementById: id => id === 'management-language-select' ? select : null, querySelectorAll: () => []},
-        fetch(url, options) { request = {url, options}; return Promise.resolve({ok: true}); }};
-    vm.runInNewContext(source, context);
+        CalendarSettings: {applyLanguage: () => { calendarRefreshes++; }},
+        requestAnimationFrame: callback => callback(), scrollTo() {}, alert() { alerts++; }};
+    const context = {window, I18N: packs, currentLanguage: 'zh-TW', currentTimeFormat: '12h',
+        applyTimeFormat: format => { assert.equal(format, '12h'); timeRefreshes++; },
+        document: {documentElement: {lang: 'zh-TW'}, body: {getAttribute: () => 'display'},
+            getElementById: id => id === 'management-language-select' ? select : id === 'management-i18n' ? {textContent: JSON.stringify(packs)} : null,
+            querySelectorAll: selector => selector === '[data-i18n]' ? [label] : selector === '[data-weekday]' ? [weekday] : []},
+        fetch(url, options) { request = {url, options}; return failure === 'network' ? Promise.reject(new Error('offline')) : Promise.resolve({ok: !failure}); }};
+    vm.createContext(context);
+    const admin = fs.readFileSync(require('node:path').join(__dirname, '../templates/admin.html'), 'utf8');
+    vm.runInContext(admin.slice(admin.indexOf('function t(key)'), admin.indexOf('function setWindowMode(')), context);
+    vm.runInContext(source, context);
     handler.call(select);
-    await new Promise(resolve => setImmediate(resolve));
     assert.equal(select.disabled, true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(select.disabled, false);
     assert.equal(request.url, '/api/control');
     assert.deepEqual(JSON.parse(request.options.body), {language: 'en'});
-    assert.equal(reloads, 1);
+    assert.equal(context.currentLanguage, 'en');
+    assert.equal(context.document.documentElement.lang, 'en');
+    assert.equal(context.document.title, 'Settings');
+    assert.equal(label.textContent, 'Language');
+    assert.equal(weekday.textContent, 'Mon');
+    assert.equal(timeRefreshes, 1); assert.equal(calendarRefreshes, 1);
+    for (const fail of [true, 'network']) {
+        failure = fail; select.value = 'zh-TW'; handler.call(select);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(select.disabled, false);
+        assert.equal(select.value, 'en');
+        assert.equal(context.document.documentElement.lang, 'en');
+    }
+    assert.equal(alerts, 2);
+    assert.equal(reloads, 0, 'Successful and failed language changes must never reload away drafts');
+    assert.equal(JSON.stringify(draft), before);
 }
 
-checkLanguage().then(() => console.log('Management navigation and shared language switching passed.'));
+checkLanguage().then(() => console.log('Management navigation, in-place language changes and failed saves preserve drafts.'))
+    .catch(error => { console.error(error); process.exitCode = 1; });

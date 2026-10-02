@@ -1,0 +1,102 @@
+# ESP32-S3-DevKitC-1-N8R8 + SSD1306 128x64 I2C + passive piezo + stop button.
+# Copy secrets.example.yaml to secrets.yaml before compiling.
+substitutions:
+  oled_address: "0x3C"
+
+esphome:
+  name: webclock-alarm
+  friendly_name: WebClock Alarm
+  name_add_mac_suffix: true
+  min_version: 2026.9.1
+  project:
+    name: smallmac.webclock
+    version: 0.1.0
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 8MB
+  partitions: partitions.csv
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "y"
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL: "y"
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN: "n"
+
+psram:
+  mode: octal
+  speed: 80MHz
+  ignore_not_found: false
+
+# Use the board's USB-to-UART connector for flashing, logs and Improv Serial.
+logger:
+  hardware_uart: UART0
+  baud_rate: 115200
+  level: INFO
+
+# Provision Wi-Fi through ESPHome Web (Improv), or the fallback captive portal.
+# No Wi-Fi credentials are embedded in the firmware.
+wifi:
+  reboot_timeout: 0s
+  ap:
+    password: !secret fallback_ap_password
+
+improv_serial:
+
+captive_portal:
+
+time:
+  - platform: sntp
+    id: wall_time
+    timezone: Asia/Taipei
+    update_interval: 1h
+
+i2c:
+  sda: GPIO8
+  scl: GPIO9
+  scan: true
+  frequency: 100kHz
+
+output:
+  - platform: ledc
+    id: piezo
+    pin: GPIO4
+    frequency: 4000Hz
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [webclock]
+
+webclock:
+  id: alarm_clock
+  time_id: wall_time
+  buzzer_id: piezo
+  server_url: !secret webclock_url
+  api_token: !secret webclock_token
+  device_name: !secret device_name
+  # Hardware volume ceiling; adjust after testing the selected passive piezo.
+  volume_limit: 0.25
+
+binary_sensor:
+  - platform: gpio
+    id: stop_button
+    internal: true
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on_off: 30ms
+    on_press:
+      - lambda: id(alarm_clock).stop();
+
+display:
+  - platform: ssd1306_i2c
+    model: SSD1306 128x64
+    address: ${oled_address}
+    contrast: 30%
+    update_interval: 1s
+    lambda: |-
+      id(alarm_clock).draw(it);

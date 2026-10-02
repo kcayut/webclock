@@ -28,13 +28,15 @@ WEBCLOCK_LANGUAGE=en
 
 `WEBCLOCK_LANGUAGE` sets the interface language on first start and accepts `zh-TW`, `en`, or `ja`. You can switch it later at the bottom of the management sidebar. That choice is saved to `webclock_state/settings.json` and takes precedence over the deployment default.
 
+Under **Appearance** in the management sidebar, choose the sun for **Light** or the moon for **Dark**. The selected icon is highlighted; light is the default. Navigation and content share the same palette. The choice stays in this browser’s same-origin `localStorage`, shared by `/admin` and `/schedules` and retained on reopening. It does not change the main clock or server display settings. Theme changes do not reload the page, so unsaved form values remain.
+
 Enter calendar URLs in the admin page, not in `.env`. Existing installations may continue using `ICAL_URL` until calendar sources are first saved in the admin page.
 
 ## Calendars and text reminders
 
 Under **Calendars & reminders** in `/admin`, expand **Calendar source settings** to add named Google, Apple iCloud, or other ICS sources. Multiple sources are supported. URLs remain masked until the eye button is pressed and are masked again after saving.
 
-Source settings and clock display selection are saved separately. Hiding a source does not delete its URL or change alarm source selection. URLs are stored in `webclock_state/calendar.json` and are excluded from the public clock, status APIs, and downloaded backups. Never commit this file or private URLs to a public repository.
+Source settings and clock display selection are saved separately. Hiding a source does not delete its URL or change alarm source selection. URLs are stored in `webclock_state/calendar.json` and are excluded from the public clock, status APIs, and JSON backups downloaded from the admin page. Never commit this file or private URLs to a public repository.
 
 ### Apple iCloud
 
@@ -50,14 +52,24 @@ Manual reminders can use a specific date and time or a daily/weekly display wind
 
 Expired reminders are hidden rather than deleted. Pausing preserves the content but stops display until resumed. During a brief server disconnection, the loaded clock continues with saved display settings and browser-local reminders; calendars and server reminders return after reconnection.
 
+### Browser-local reminders and the connection panel
+
+Open the connection panel with the connection-status button at the bottom left of the clock. Enter reminder text and an optional time, then add or delete it. These reminders stay in `localStorage` for the current site and browser and appear when the server is unavailable. The time is display text: it does not play a sound or hide the reminder afterward. New reminders have no date and remain until deleted; edit by deleting and adding again.
+
+Browser-local reminders are not uploaded, shared across devices, or included in server backups. Clearing site data removes them. They are separate from the server's **Local reminders** source in `/admin` and cannot drive calendar-linked alarms. After reconnection, the clock displays server events and reminders again; browser-local items remain in the panel.
+
+The same panel saves the Server URL; use **Reconnect now** to test it. Saving alone does not confirm a connection, so check the reported status. Opening the clock at another origin uses separate site storage. Saving local reminders and reopening offline are separate capabilities; offline reopening still requires the cache conditions below.
+
 ## Calendar-linked alarms
 
-Each alarm can independently select one or more calendar sources, including local reminders:
+Each alarm can independently select one or more calendar sources, including server-local reminders from `/admin`:
 
 - **Alarm at event time:** trigger 0–1440 minutes before a timed event; all-day events are ignored.
 - **Alarm if the day has an event:** trigger at the alarm's fixed time when any selected source has an event that day; all-day and multi-day events count.
 
 Alarm selection is independent from clock display selection. Weekday, explicit-date, and Taiwan holiday conditions still apply and are evaluated against the actual alarm date in Taiwan. A failed or removed source produces no alarms, while other readable sources continue to work.
+
+After selecting sources, you can target one event and choose an occurrence or the entire recurring series. Without a target, the alarm follows all events from the selected sources. Occurrence links keep the original event identity across rescheduling and do not switch to another event after cancellation; series links follow that series. Subscription changes may take up to about five minutes to refresh; check the next-ring preview afterward.
 
 ## Browser alarms on iPad
 
@@ -69,6 +81,16 @@ Alarm selection is independent from clock display selection. Weekday, explicit-d
 Keep Safari in the foreground with the screen on, and check volume and mute settings. iOS may interrupt web audio and timers after screen lock, app switching, or tab switching, so background and locked-screen alarms are not guaranteed. Silent alarms still show the red-border alert.
 
 The page refreshes each alarm's next occurrence about every 15 seconds. A loaded next occurrence can fire during a short disconnection, but reopening the page or loading later occurrences requires a connection. Alarms processed more than 60 seconds late are not replayed. Dates outside holiday-data coverage remain unknown rather than guessed.
+
+## Next event, pause, and resume
+
+The `/schedules` summary shows the next alarm. Its add/edit window shows current Taiwan time, the next ring, and time remaining. The main clock still cycles event/reminder text without an event countdown. Previews and countdowns do not prove execution or successful ringing.
+
+Turning off a fixed-time recurring alarm offers a one-occurrence pause or permanent disable. A one-occurrence pause shows the skipped time and a resume countdown. After that skipped time, the enabled display returns and the next ring still follows the original rule. Turn it on during the pause to resume early; a permanently disabled alarm needs manual re-enabling. Date-based and calendar-linked alarms offer **Skip next** in the editor. Another date cannot be skipped while a future skipped occurrence is still pending.
+
+## Device sync status
+
+**Request sync** on the `/schedules` device page only queues a server command. The device polls by reporting its status, receives `sync`, downloads and validates its cache, then sends an ACK before the pending command disappears. Repeated requests reuse the pending command; an offline device cannot complete immediately. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing. See the [device contract](server-api_en.md#status-and-command-acknowledgement).
 
 ## Night mode and offline use
 
@@ -82,11 +104,33 @@ Offline reopening of the self-hosted clock requires HTTPS or localhost and a com
 
 The admin page can download and import JSON backups. After validation and confirmation, an import replaces server display settings and manual reminders. Limits are 1 MiB, 1,000 reminders, and 1,000 characters per reminder. Pre-import data is stored in `webclock_state/before-import.json` and replaced on each import.
 
-Downloaded backups exclude calendar URLs, `.env`, and browser-local reminders. Before moving a host or updating, separately preserve:
+Admin version 1 JSON backups still contain only settings and manual reminders. They exclude smart schedules, devices, private calendar URLs, `.env`, and browser-local reminders; the existing import and `before-import.json` behavior is unchanged.
 
-- `.env`
-- `manual_notes.json` from older installations
-- the complete `webclock_state/` directory
+### Complete host-side data backup and restore
+
+On Linux/macOS, run `scripts/backup_clock.py` with Python that already has the WebClock dependencies installed. It preserves the current single data space: `.env`, legacy `manual_notes.json`, default and custom state directories, and a custom reminder file, including smart schedules, devices, and `calendar.json` stored there. Source code, venv, runtime environment overrides, systemd units, Docker configuration, and browser localStorage are excluded. Preserve those separately and prepare matching source and dependencies when moving hosts.
+
+**Before creating or restoring a backup, stop every service, container, and other process that writes this data.** `--stopped` is your confirmation; the tool does not stop or start services. Run the following from the installation directory with an account that can read and write the data; use administrator privileges when required to preserve original ownership. Each backup and pre-restore directory must be new and must not overlap data paths.
+
+```bash
+mkdir -p -m 700 "$HOME/private-webclock-backups"
+venv/bin/python scripts/backup_clock.py create "$HOME/private-webclock-backups/backup-001" --project "$PWD" --stopped
+venv/bin/python scripts/backup_clock.py verify "$HOME/private-webclock-backups/backup-001"
+```
+
+When a restore is needed, confirm every writer is stopped before running:
+
+```bash
+venv/bin/python scripts/backup_clock.py restore "$HOME/private-webclock-backups/backup-001" --project "$PWD" --stopped --yes --rollback-dir "$HOME/private-webclock-backups/before-restore-001"
+```
+
+`create` makes a mode `700` backup directory and mode `600` `manifest.json`, then verifies file contents with SHA-256. `verify` checks only the backup and needs no downtime. **Backups are unencrypted and contain private URLs and credentials.** Store them in a private directory outside the project and restrict access. Inside the project, only names matching `.webclock-backup*` are ignored by Git; arbitrary backup directories are not automatically ignored. Symlinks and special files are unsupported.
+
+Target data paths come only from the target host's effective environment, `.env`, and explicit `--state-dir /target/state --notes-file /target/reminders.json` options, never from the source host's archived paths. If service environment overrides select custom paths, explicitly pass the actual paths to `create` and `restore`. Backups using custom locations require corresponding target locations with the same nesting and relative paths within each data root. The tool adjusts `WEBCLOCK_STATE_DIR` / `NOTES_FILE` only when an archived `.env` exists and target data paths differ, preserving its other settings. If the source used runtime environment variables without an `.env`, restore that environment separately before starting services. For Docker, stop the container first, then run host Python with the dependencies installed and pass host mount paths, not container `/app/...` paths. For Docker volumes, establish the actual host data location first.
+
+`restore` requires `--yes` and a new `--rollback-dir`. It retains a complete pre-restore copy before replacing target data; items absent from the backup are restored as absent. It attempts recovery on failure but does not resume automatically after power loss. If recovery is incomplete, keep services stopped and retain the pre-restore copy and `.webclock-restore-*` staging data for recovery. Copies preserve numeric UID/GID. After a privileged restore to another host or an external directory, check that the service account can traverse parent directories and read/write the data. After success, check data, paths, and permissions before manually starting services. This does not establish Raspberry Pi, Docker, or iPad acceptance.
+
+### Updating the application
 
 After obtaining updated source, rebuild Docker with:
 
@@ -112,3 +156,5 @@ git show origin/main:update_clock.py > "$updater_file" &&
 ```
 
 This entry point loads the new updater and switches source only after validation and backup. Do not run the old update script, `git pull`, or overwrite the installation first. A non-Git installation cannot automatically recover overwritten source, and automatic recovery after power loss is not guaranteed.
+
+See the [phase-one acceptance record](phase1-acceptance.md) for local verification, pending iPad mini 1 / iOS 9 checks, and Taiwan calendar maintenance after 2027 (Traditional Chinese).

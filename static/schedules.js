@@ -2,7 +2,8 @@
 "use strict";
 
 (function () {
-    const labels = JSON.parse(document.getElementById("schedule-i18n").textContent);
+    const languages = JSON.parse(document.getElementById("schedule-i18n").textContent);
+    let labels = languages[document.documentElement.lang];
     const $ = id => document.getElementById(id);
     const t = key => labels[key] || key;
     const format = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
@@ -10,7 +11,7 @@
     let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
-    let calendarEvents = [], calendarTarget = null, calendarRequest = 0;
+    let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null;
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
     const displayTime = value => window.WebClockTime.format(value, timeFormat, document.documentElement.lang);
     const refreshTimeInputs = () => window.WebClockTimeInputs.refresh($("schedule-form"), timeFormat, document.documentElement.lang);
@@ -325,13 +326,44 @@
         schedules = data.schedules;
         renderSchedules();
         renderNextEvent();
-        const day = data.day || {};
-        $("day-status").textContent = (day.date || "") + " · " + t(day.type || "unknown");
-        const coverage = data.holiday_coverage;
-        $("day-source").textContent = (day.known === false ? t("unknown_calendar") + " " : "") + t("official") + (coverage ? " · " + format("coverage", coverage) : "");
+        day = data.day || {};
+        holidayCoverage = data.holiday_coverage;
+        renderDayStatus();
         renderEditorTime();
         queuePreview();
     }
+    function renderDayStatus() {
+        $("day-status").textContent = (day.date || "") + " · " + t(day.type || "unknown");
+        $("day-source").textContent = (day.known === false ? t("unknown_calendar") + " " : "") + t("official") + (holidayCoverage ? " · " + format("coverage", holidayCoverage) : "");
+    }
+    window.applyManagementLanguage = language => {
+        labels = languages[language];
+        document.title = t("title") + " · WebClock";
+        document.querySelectorAll('[data-schedule-i18n]').forEach(element => {
+            element.textContent = t(element.getAttribute('data-schedule-i18n'));
+        });
+        document.querySelectorAll('[data-schedule-weekday]').forEach(element => {
+            element.textContent = t("weekdays")[Number(element.getAttribute('data-schedule-weekday'))];
+        });
+        ["placeholder", "aria-label"].forEach(attribute => {
+            document.querySelectorAll('[data-schedule-' + attribute + ']').forEach(element => {
+                element.setAttribute(attribute, t(element.getAttribute('data-schedule-' + attribute)));
+            });
+        });
+        renderSchedules();
+        renderDevices();
+        renderNextEvent();
+        renderDayStatus();
+        if (!$("editor").hidden) {
+            const alarm = $("schedule-type").value === "alarm";
+            $("editor-title").textContent = t($("schedule-id").value ? (alarm ? "edit_alarm" : "edit_other") : (alarm ? "add_alarm" : "add_other"));
+            renderCalendarSources(selectedCalendarSources());
+            setRule();
+            setCalendarMode();
+            queuePreview();
+            renderEditorTime();
+        }
+    };
     function setRule(manual = false) {
         const mode = $("schedule-rule").value;
         $("schedule-special-rule").value = ["workday_only", "holiday_only"].includes(mode) ? mode : "";

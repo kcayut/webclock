@@ -41,8 +41,16 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertNotIn('backup_title', pack)
             self.assertNotIn('countdown', pack)
             self.assertNotIn('standard_time_unavailable', pack)
-            for key in ['weekdays', 'offline_ready', 'offline_unavailable', 'offline_failed']:
+            for key in ['weekdays', 'offline_ready', 'offline_unavailable', 'offline_failed',
+                        'connection_connecting', 'connection_connected', 'connection_saved',
+                        'connection_standalone', 'connection_unreadable', 'connection_unavailable',
+                        'connection_timeout', 'delete']:
                 self.assertEqual(pack[key], clock.UI_TRANSLATIONS[language][key])
+            with patch.dict(clock.display_settings, language=language):
+                localized_page = self.client.get('/').text
+                for key in re.findall(r'data-clock-i18n="([^"]+)"', localized_page):
+                    self.assertIn(key, pack)
+                    self.assertIn(pack[key], localized_page)
         self.assertIn('calendar_url', self.client.get('/admin').text)
 
     def test_weekday_overnight_edit_pause_and_countdown(self):

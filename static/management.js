@@ -5,18 +5,46 @@
     var links = document.querySelectorAll('[data-management-link]');
     var aliases = {'calendar-title': 'calendar', 'devices-title': 'devices'};
     var initial = document.body.getAttribute('data-initial-panel');
+    var themeToggle = document.getElementById('management-theme-toggle');
+    if (themeToggle) {
+        var themeButtons = themeToggle.querySelectorAll('button');
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-management-theme', theme);
+            for (var i = 0; i < themeButtons.length; i++) {
+                themeButtons[i].setAttribute('aria-pressed', String(themeButtons[i].getAttribute('data-theme') === theme));
+            }
+        }
+        applyTheme(document.documentElement.getAttribute('data-management-theme') === 'dark' ? 'dark' : 'light');
+        for (var i = 0; i < themeButtons.length; i++) {
+            themeButtons[i].addEventListener('click', function () {
+                var theme = this.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+                applyTheme(theme);
+                try { window.localStorage.setItem('webclock-management-theme', theme); } catch (error) {}
+            });
+        }
+    }
     var languageSelect = document.getElementById('management-language-select');
     if (languageSelect) {
         languageSelect.addEventListener('change', function () {
-            var select = this;
+            var select = this, language = select.value;
             select.disabled = true;
             fetch('/api/control', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({language: select.value})
+                body: JSON.stringify({language: language})
             }).then(function (response) {
                 if (!response.ok) throw new Error('Language not saved');
-                window.location.reload();
+                var labels = JSON.parse(document.getElementById('management-i18n').textContent)[language];
+                document.documentElement.lang = language;
+                document.querySelectorAll('[data-i18n]').forEach(function (element) {
+                    element.textContent = labels[element.getAttribute('data-i18n')];
+                });
+                document.querySelectorAll('[data-i18n-aria-label]').forEach(function (element) {
+                    element.setAttribute('aria-label', labels[element.getAttribute('data-i18n-aria-label')]);
+                });
+                select.setAttribute('data-error', labels.settings_save_error);
+                window.applyManagementLanguage(language);
+                select.disabled = false;
             }).catch(function () {
                 select.disabled = false;
                 select.value = document.documentElement.lang;

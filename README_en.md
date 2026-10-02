@@ -50,7 +50,7 @@ Open the clock home page when installation finishes. Management is at `/admin`; 
 
 Set the initial interface language in `.env` before deployment with `WEBCLOCK_LANGUAGE=zh-TW`, `en`, or `ja`. The Linux installer asks when it first creates `.env`. After deployment, the language remains available at the bottom of the management sidebar and is saved to `webclock_state/settings.json`.
 
-**More information:** [English guide](doc/guide_en.md) · [Device API](doc/server-api_en.md)
+**More information:** [English guide](doc/guide_en.md) · [Device API](doc/server-api_en.md) · [ESPHome development guide](doc/esp-home.md) · [Firmware preparation](firmware/README.md) (last two links: Traditional Chinese; no installable firmware yet).
 
 ## Support WebClock
 

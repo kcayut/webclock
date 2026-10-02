@@ -96,12 +96,22 @@ console.log('Night schedule boundaries, manual override and daytime restoration 
 
 // Run the self-hosted page with the APIs available to an old, offline browser.
 const template = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
-const serverScript = template.match(/<script>([\s\S]*?)<\/script>/)[1]
-    .replace('{{ translations | tojson }}', JSON.stringify({'zh-TW': {
+const clockLabels = {};
+for (const language of ['zh-TW', 'en', 'ja']) {
+    const pack = clockLabels[language] = {
         weekdays: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
         server_unavailable: 'Server unavailable', server_timeout: 'Server timed out',
         status_parse_failed: 'Unreadable response', page_error: 'Page error',
-    }}))
+    };
+    for (const key of ['delete', 'offline_ready', 'offline_unavailable', 'offline_failed',
+        'connection_connecting', 'connection_connected', 'connection_saved', 'connection_standalone',
+        'connection_unreadable', 'connection_unavailable', 'connection_timeout',
+        ...Array.from(template.matchAll(/data-clock-i18n="([^"]+)"/g), match => match[1])]) {
+        pack[key] = language + ':' + key + (['connection_connected', 'connection_saved'].includes(key) ? ' {url}' : '');
+    }
+}
+const serverScript = template.match(/<script>([\s\S]*?)<\/script>/)[1]
+    .replace('{{ translations | tojson }}', JSON.stringify(clockLabels))
     .replace('{{ language | tojson }}', '"zh-TW"');
 function checkLegacyPage(failOptionalEditor) {
     const elements = {};
@@ -111,6 +121,7 @@ function checkLegacyPage(failOptionalEditor) {
     let storageAvailable = false;
     function makeNode() {
         const classes = new Set();
+        const attributes = {};
         return {
             style: {}, children: [],
             classList: {
@@ -122,10 +133,18 @@ function checkLegacyPage(failOptionalEditor) {
             removeChild(child) { this.children.splice(this.children.indexOf(child), 1); },
             querySelectorAll(selector) { return this.children.filter(child => selector === '.event-row' && child.className === 'event-row'); },
             querySelector: () => null,
-            setAttribute() {}, getAttribute: () => '',
+            setAttribute(name, value) { attributes[name] = value; },
+            getAttribute: name => attributes[name] || '',
         };
     }
     const node = id => elements[id] || (elements[id] = makeNode());
+    const labels = Array.from(template.matchAll(/<[^>]+data-clock-i18n="([^"]+)"[^>]*>/g), ([tag, key]) => {
+        const id = (tag.match(/\bid="([^"]+)"/) || [])[1];
+        const label = id ? node(id) : makeNode();
+        label.setAttribute('data-clock-i18n', key);
+        label.setAttribute('data-clock-attribute', (tag.match(/data-clock-attribute="([^"]+)"/) || [])[1] || '');
+        return label;
+    });
     const legacy = vm.createContext({
         Date: DeviceDate, Intl: undefined, Promise: undefined, fetch: undefined,
         navigator: {},
@@ -137,7 +156,9 @@ function checkLegacyPage(failOptionalEditor) {
                 return node(id);
             },
             createElement: makeNode,
-            addEventListener() {}, querySelectorAll: () => [], querySelector: () => null,
+            addEventListener() {},
+            querySelectorAll: selector => selector === '[data-clock-i18n]' ? labels : [],
+            querySelector: () => null,
         },
         window: {
             location: {origin: 'http://clock.example'}, addEventListener() {},
@@ -254,6 +275,46 @@ function checkLegacyPage(failOptionalEditor) {
         assert.equal(node('local-events-list').children[0].children[0].textContent, '下午 01:10 Offline reminder');
         assert.equal(node('list-container').children[0].children[0].children[0].textContent, '下午 01:10');
         assert.equal(JSON.parse(storage['webclock.localEvents'])[0].time, '13:10', 'formatting never changes stored reminder time');
+        legacy.serverUrl = 'http://clock.example/$&';
+        legacy.setConnectionStatus('connection_saved', false);
+        assert.equal(node('connection-status').textContent, 'zh-TW:connection_saved http://clock.example/$&');
+        legacy.serverUrl = 'http://clock.example';
+        const savedEvents = storage['webclock.localEvents'];
+        node('local-event-text').value = 'Unsent reminder';
+        node('local-event-time').value = '14:25';
+        node('server-url-input').value = 'http://unsent.example';
+        for (const language of ['en', 'ja', 'zh-TW']) {
+            const settings = {time_format: '12h', language, timezone_offset: 8};
+            legacy.saveSettings(settings);
+            legacy.applySettings(settings);
+            for (const label of labels) {
+                const key = label.getAttribute('data-clock-i18n');
+                const attribute = label.getAttribute('data-clock-attribute');
+                assert.equal(attribute ? label.getAttribute(attribute) : label.textContent, clockLabels[language][key]);
+            }
+            assert.equal(node('local-events-list').children.at(-1).children[1].textContent, clockLabels[language].delete);
+            legacy.enterServerMode({events: []});
+            assert.equal(node('connection-status').textContent, clockLabels[language].connection_connected.replace('{url}', 'http://clock.example'));
+            for (const [fail, key] of [
+                [xhr => xhr.onerror(), 'connection_unavailable'],
+                [xhr => xhr.ontimeout(), 'connection_timeout'],
+                [xhr => reply(xhr, '{broken'), 'connection_unreadable'],
+            ]) {
+                fail(newRequest());
+                assert.equal(node('connection-status').textContent, clockLabels[language][key]);
+            }
+            for (const state of ['ready', 'unavailable', 'failed']) {
+                node('offline-status').setAttribute('data-state', state);
+                legacy.setLanguage(language === 'en' ? 'ja' : 'en');
+                legacy.setLanguage(language);
+                assert.equal(node('offline-status').textContent, clockLabels[language]['offline_' + state]);
+            }
+            assert.equal(node('local-event-text').value, 'Unsent reminder');
+            assert.equal(node('local-event-time').value, '14:25');
+            assert.equal(node('server-url-input').value, 'http://unsent.example');
+            assert.equal(storage['webclock.localEvents'], savedEvents, 'language changes preserve stored local reminders');
+            assert.equal(legacy.activeSettings.time_format, '12h');
+        }
         legacy.saveLocalEvents([]);
         const reminderForm = node('local-event-form');
         const reminderText = node('local-event-text');
@@ -296,7 +357,7 @@ for (const page of [html, template]) {
     assert.doesNotMatch(page, /id="next-event"/);
     assert.ok(page.indexOf('offline.js') > page.indexOf('setInterval(update'), 'optional offline script loads after clock startup');
 }
-assert.match(template, /<form id="local-event-form"[^>]*onsubmit="addLocalEvent\(\); return false;">[\s\S]*?<button type="submit">Add<\/button>[\s\S]*?<\/form>/,
+assert.match(template, /<form id="local-event-form"[^>]*onsubmit="addLocalEvent\(\); return false;">[\s\S]*?<button type="submit" data-clock-i18n="add">[\s\S]*?<\/button>[\s\S]*?<\/form>/,
     'the real Add action uses native form validation for the time input proxies');
 console.log('Legacy startup checks passed: no modern APIs/storage/network response, optional UI failure, brightness and reminders without countdown.');
 console.log('Server time checks passed: no external time API, repeated calibration, offline ticking, invalid timestamps and connection-warning recovery.');

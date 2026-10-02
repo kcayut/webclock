@@ -149,10 +149,14 @@ assert.equal(display('apple1').checked, false, 'Unsaved display selection surviv
 assert.equal($('calendar-display-status').textContent, 'calendar_display_pending');
 assert.equal(display('google2').checked, true);
 assert.equal($('calendar-status').textContent, 'calendar_saved');
+input(sourceRows('apple')[0], 'url').value = 'https://private.example/unsaved.ics';
+input(sourceRows('apple')[0], 'name').value = 'Unsaved source';
 language = 'zh-TW';
 context.window.CalendarSettings.applyLanguage();
 assert.equal($('calendar-source-summary').textContent, 'saved · 已設定 3 個來源');
 assert.equal(display('apple1').checked, false, 'Language changes preserve unsaved selection');
+assert.equal(input(sourceRows('apple')[0], 'url').value, 'https://private.example/unsaved.ics');
+assert.equal(input(sourceRows('apple')[0], 'name').value, 'Unsaved source');
 buttons[2].trigger('click');
 submit('calendar-form');
 assert.equal($('calendar-status').textContent, 'calendar_required');

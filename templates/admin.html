@@ -71,7 +71,7 @@
         </div>
     <div class="panel">
         <h2 data-i18n="display_control">{{ translations[language].display_control }}</h2>
-        <div class="fields">
+        <div class="fields display-fields">
         <div class="field">
         <div id="display-mode-controls" class="mode-controls">
             <button id="mode-normal" type="button" class="btn {% if settings.mode == 'normal' %}active{% endif %}" onclick="setMode('normal')" aria-pressed="{{ 'true' if settings.mode == 'normal' else 'false' }}"
@@ -91,8 +91,6 @@
             </div>
         </div>
 
-        </div>
-        <div class="fields">
         <div class="field">
             <label for="timezone-select" data-i18n="timezone">{{ translations[language].timezone }}</label>
             <select id="timezone-select" onchange="setTimezone(this.value)">
@@ -134,6 +132,7 @@
             </select>
             <p class="help" data-i18n="time_format_hint">{{ translations[language].time_format_hint }}</p>
             <p id="time-format-status" role="status" aria-live="polite"></p>
+        </div>
         </div>
     </div>
 
@@ -285,7 +284,7 @@
                     <path d="M24 31h5l3-7 4 14 3-7h5"/>
                 </svg>
             </div>
-            <div class="support-links" aria-label="{{ translations[language].about_support_title }}">
+            <div class="support-links" data-i18n-aria-label="about_support_title" aria-label="{{ translations[language].about_support_title }}">
                 <a class="support-card" href="https://www.paypal.com/paypalme/oilstuck" target="_blank" rel="noopener">
                     <span class="support-logo"><img src="{{ url_for('static', filename='images/support/paypal.svg') }}" alt=""></span>
                     <strong>PayPal</strong>
@@ -327,7 +326,7 @@
     <script src="{{ url_for('static', filename='time-format.js') }}"></script>
     <script src="{{ url_for('static', filename='time-inputs.js') }}"></script>
     <script>
-        var I18N = {{ translations | tojson }};
+        var I18N = JSON.parse(document.getElementById('management-i18n').textContent);
         var currentLanguage = {{ language | tojson }};
         var currentTimeFormat = {{ time_format | tojson }};
 
@@ -337,6 +336,16 @@
             var pack = I18N[currentLanguage] || I18N['zh-TW'];
             return pack[key] || I18N['zh-TW'][key] || key;
         }
+
+        window.applyManagementLanguage = function (language) {
+            currentLanguage = language;
+            document.title = t('admin_title');
+            document.querySelectorAll('[data-weekday]').forEach(function (el) {
+                el.textContent = t('weekdays')[Number(el.getAttribute('data-weekday'))];
+            });
+            applyTimeFormat(currentTimeFormat);
+            if (window.CalendarSettings) window.CalendarSettings.applyLanguage();
+        };
 
         function setWindowMode(select) {
             select.closest('fieldset').querySelector('.repeat-days').hidden = select.value !== 'daily';

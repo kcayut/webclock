@@ -50,7 +50,7 @@ python app.py
 
 部署前可在 `.env` 設定初始介面語言：`WEBCLOCK_LANGUAGE=zh-TW`（繁體中文）、`en`（English）或 `ja`（日本語）。Linux 安裝腳本會在首次建立 `.env` 時詢問；部署後也可隨時從管理側欄底部切換，選擇結果會儲存在 `webclock_state/settings.json`。
 
-**詳細說明：**[繁體中文使用指南](doc/guide.md) · [裝置 API](doc/server-api.md)
+**詳細說明：**[繁體中文使用指南](doc/guide.md) · [裝置 API](doc/server-api.md) · [ESPHome 接入與開發](doc/esp-home.md) · [韌體目錄（開發準備）](firmware/README.md)
 
 ## 支持開發
 

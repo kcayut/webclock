@@ -14,6 +14,7 @@ assert.match(template, /alarm-audio\.js/);
 assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
 assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
 assert.ok(template.indexOf("time-inputs.js") < template.indexOf("schedules.js"));
+assert.ok(template.indexOf("schedules.js") < template.indexOf("management.js"), "Language controls wait for the schedule translation hook");
 const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "07:30", rule: {},
     skipped_occurrences: [], next_occurrence: "2026-10-01T07:30:00+08:00"};
 const nextDate = "2026-10-02T07:30:00+08:00";
@@ -51,7 +52,7 @@ const $ = id => {
     assert.ok(elements.has(id), "The management template must contain " + id);
     return elements.get(id);
 };
-$("schedule-i18n").textContent = JSON.stringify({
+const englishLabels = {
     alarm: "Alarm",
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     today: "Today", tomorrow: "Tomorrow", this_week: "This {weekday}", next_week: "Next {weekday}", next_ring: "Next ring: {datetime}",
@@ -62,7 +63,8 @@ $("schedule-i18n").textContent = JSON.stringify({
     duration_days: "{count} d", duration_hours: "{count} hr", duration_minutes: "{count} min", under_minute: "Under 1 min",
     weekly_summary: "Weekly {days}", pause_title: "Disable {name}?", pause_skip: "Skip {datetime}",
     resume_at: "Resumes {datetime} (in {duration})", resume_saved: "Skipped once · Resumes {datetime} (in {duration})"
-});
+};
+$("schedule-i18n").textContent = JSON.stringify({en: englishLabels, 'zh-TW': {...englishLabels, alarm: "鬧鐘", edit_alarm: "編輯鬧鐘", weekdays: ["一", "二", "三", "四", "五", "六", "日"]}});
 $("editor").hidden = true;
 const weekdays = Array.from({length: 7}, (_, i) => Object.assign(element("input"), {value: String(i + 1)}));
 $("alarms-panel").setAttribute("data-management-panel", "alarms");
@@ -100,7 +102,7 @@ const context = vm.createContext({
         getElementById: id => elements.get(id) || null, createElement: element, addEventListener() {},
         querySelectorAll(selector) {
             if (selector === '[data-management-panel]') return [$("alarms-panel"), $("devices-panel")];
-            if (selector === '[data-management-link]') return [];
+            if (selector === '[data-management-link]' || selector.startsWith('[data-schedule-')) return [];
             if (selector === '[name="calendar-source"]:checked') return descendants($("schedule-calendar-sources")).filter(input => input.name === "calendar-source" && input.checked);
             assert.ok(['[name="weekday"]', '[name="weekday"]:checked'].includes(selector));
             return selector.endsWith(":checked") ? weekdays.filter(input => input.checked) : weekdays;
@@ -924,6 +926,23 @@ const completionTimeout = setTimeout(() => {
     await $("schedule-calendar-target").trigger("change");
     const occurrenceTarget = {...seriesTarget, scope: "occurrence", recurrence_id: meeting.recurrence_id};
     assert.deepEqual(plain(qa.scheduleData().calendar_link.target), occurrenceTarget, "Occurrence identity uses the original recurrence ID");
+    // Changing language must preserve the entire draft, including calendar target identity.
+    $("schedule-name").value = "Draft meeting alarm";
+    $("schedule-volume").value = "37";
+    $("schedule-advanced").open = true;
+    $("schedule-enabled").checked = false;
+    const languageDraft = plain(qa.scheduleData());
+    for (const language of ["zh-TW", "en"]) {
+        context.document.documentElement.lang = language;
+        context.window.applyManagementLanguage(language);
+        assert.equal($("editor").hidden, false);
+        assert.equal($("schedule-advanced").open, true);
+        assert.deepEqual(plain(qa.scheduleData()), languageDraft);
+        reply(take("/calendar-events?source_id=work"), {events: calendarEvents});
+        await flush();
+        assert.deepEqual(plain(qa.scheduleData()), languageDraft);
+        assert.equal(inputRefreshes.at(-1).language, language);
+    }
     const saveTarget = $("schedule-form").trigger("submit");
     const targetRequest = take("/schedules", "POST");
     const targeted = {...row, calendar_link: JSON.parse(targetRequest.options.body).calendar_link};

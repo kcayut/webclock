@@ -13,6 +13,8 @@ manual_notes.json
 webclock_state/
 .webclock-update-*/
 .webclock-update.lock
+.webclock-backup*/
+.webclock-restore-*/
 .playwright-cli/
 *.log
 .DS_Store
