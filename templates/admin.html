@@ -276,6 +276,24 @@
         </form>
         </section>
     </section>
+    <section class="management-panel" data-management-panel="about" aria-labelledby="about-title">
+        <div class="page-heading">
+            <div>
+                <h1 id="about-title" class="page-title" data-i18n="management_about">{{ translations[language].management_about }}</h1>
+                <p class="page-description" data-i18n="about_hint">{{ translations[language].about_hint }}</p>
+            </div>
+        </div>
+        <div class="panel about-panel">
+            <h2 data-i18n="about_support_title">{{ translations[language].about_support_title }}</h2>
+            <p data-i18n="about_support_text">{{ translations[language].about_support_text }}</p>
+            <div class="support-links">
+                <a href="https://www.paypal.com/paypalme/oilstuck" target="_blank" rel="noopener"><span>PayPal</span></a>
+                <a href="https://ko-fi.com/kcayut" target="_blank" rel="noopener"><span>Ko-fi</span></a>
+                <a href="https://payment.opay.tw/Broadcaster/Donate/6CF8CF9E519E0ED13E244399607ADDD7" target="_blank" rel="noopener"><span>O’Pay（歐付寶）<small>歐付寶會員編號：2218408</small></span></a>
+                <a href="https://p.ecpay.com.tw/A2FA21C" target="_blank" rel="noopener"><span>ECPay（綠界科技）</span></a>
+            </div>
+        </div>
+    </section>
     </main>
 
     <script src="{{ url_for('static', filename='time-format.js') }}"></script>

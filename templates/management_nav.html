@@ -6,6 +6,7 @@
 {% elif name == 'alarms' %}<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
 {% elif name == 'devices' %}<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8m-8 5h.01m4 0h.01"/>
 {% elif name == 'backup' %}<path d="M4 8v11c0 3 16 3 16 0V8M4 13c0 3 16 3 16 0"/><ellipse cx="12" cy="6" rx="8" ry="3"/>
+{% elif name == 'about' %}<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>
 {% endif %}</svg>
 {%- endmacro %}
 <a class="skip-link" href="#management-main"><span data-i18n="management_skip_content">{{ m.management_skip_content }}</span></a>
@@ -15,7 +16,7 @@
         <span>WebClock</span>
     </a>
     <nav class="management-navigation" aria-label="{{ m.management_navigation }}">
-        {% for panel, path, key in [('display', '/admin#display', 'management_display'), ('calendar', '/admin#calendar-title', 'management_calendar'), ('alarms', '/schedules#alarms', 'management_alarms'), ('devices', '/schedules#devices', 'management_devices'), ('backup', '/admin#backup', 'management_backup')] %}
+        {% for panel, path, key in [('display', '/admin#display', 'management_display'), ('calendar', '/admin#calendar-title', 'management_calendar'), ('alarms', '/schedules#alarms', 'management_alarms'), ('devices', '/schedules#devices', 'management_devices'), ('backup', '/admin#backup', 'management_backup'), ('about', '/admin#about', 'management_about')] %}
         <a href="{{ path }}" data-management-link="{{ panel }}">{{ nav_icon(panel) }}<span data-i18n="{{ key }}">{{ m[key] }}</span></a>
         {% endfor %}
     </nav>
