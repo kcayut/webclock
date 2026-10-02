@@ -23,7 +23,10 @@ Docker uses host port `80` by default. The Linux installer and manual run defaul
 ```env
 PORT=5000
 HOST=0.0.0.0
+WEBCLOCK_LANGUAGE=en
 ```
+
+`WEBCLOCK_LANGUAGE` sets the interface language on first start and accepts `zh-TW`, `en`, or `ja`. You can switch it later at the bottom of the management sidebar. That choice is saved to `webclock_state/settings.json` and takes precedence over the deployment default.
 
 Enter calendar URLs in the admin page, not in `.env`. Existing installations may continue using `ICAL_URL` until calendar sources are first saved in the admin page.
 

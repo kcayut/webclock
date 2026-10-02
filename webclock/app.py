@@ -53,11 +53,20 @@ def add_cors_headers(response):
     return response
 
 DEFAULT_NIGHT = {'enabled': False, 'start': '22:00', 'end': '07:00', 'brightness': 15, 'black': False}
+
+
+def deployment_language():
+    language = os.getenv('WEBCLOCK_LANGUAGE', DEFAULT_LANGUAGE)
+    if language not in SUPPORTED_LANGUAGES:
+        raise ValueError('WEBCLOCK_LANGUAGE must be one of: ' + ', '.join(SUPPORTED_LANGUAGES))
+    return language
+
+
 DEFAULT_SETTINGS = {
     'mode': 'normal',
     'brightness': 100,
     'timezone_offset': 8,
-    'language': DEFAULT_LANGUAGE,
+    'language': deployment_language(),
     'time_format': '24h',
 }
 # ponytail: single-process file storage; use a database before adding writer processes.
@@ -603,14 +612,14 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
 
 
 def template_context():
-    language = display_settings.get('language', DEFAULT_LANGUAGE)
+    language = display_settings.get('language', DEFAULT_SETTINGS['language'])
     if language not in SUPPORTED_LANGUAGES:
-        language = DEFAULT_LANGUAGE
+        language = DEFAULT_SETTINGS['language']
     return {
         'language': language,
         'time_format': display_settings.get('time_format', '24h'),
         'languages': SUPPORTED_LANGUAGES,
-        'translations': UI_TRANSLATIONS,
+        'translations': {code: UI_TRANSLATIONS[code] for code in SUPPORTED_LANGUAGES},
     }
 
 

@@ -4,7 +4,7 @@
     function labels(language) {
         if (language === 'en') return {am: 'AM', pm: 'PM', hour: 'Hour', minute: 'Minute', date: 'Date', period: 'AM / PM'};
         if (language === 'ja') return {am: '午前', pm: '午後', hour: '時', minute: '分', date: '日付', period: '午前 / 午後'};
-        return {am: '上午', pm: '下午', hour: language === 'zh-CN' ? '小时' : '小時', minute: language === 'zh-CN' ? '分钟' : '分鐘', date: '日期', period: '上午 / 下午'};
+        return {am: '上午', pm: '下午', hour: '小時', minute: '分鐘', date: '日期', period: '上午 / 下午'};
     }
     function period(hour, language) { return labels(language)[hour < 12 ? 'am' : 'pm']; }
     function pad(value) { return ('0' + value).slice(-2); }

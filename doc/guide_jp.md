@@ -23,7 +23,10 @@ Docker の既定ホストポートは `80`、Linux インストーラーと手�
 ```env
 PORT=5000
 HOST=0.0.0.0
+WEBCLOCK_LANGUAGE=ja
 ```
+
+`WEBCLOCK_LANGUAGE` は初回起動時の表示言語で、`zh-TW`、`en`、`ja` を指定できます。後から管理サイドバー下部で切り替えられ、その選択は `webclock_state/settings.json` に保存され、デプロイ時の既定値より優先されます。
 
 カレンダー URL は `.env` ではなく管理画面で入力します。既存環境の `ICAL_URL` は、管理画面で新しいカレンダー参照元を初めて保存するまで利用できます。
 

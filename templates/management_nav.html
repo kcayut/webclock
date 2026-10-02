@@ -20,7 +20,16 @@
         <a href="{{ path }}" data-management-link="{{ panel }}">{{ nav_icon(panel) }}<span data-i18n="{{ key }}">{{ m[key] }}</span></a>
         {% endfor %}
     </nav>
-    <p class="management-sidebar-footer">WebClock <span data-i18n="management_title">{{ m.management_title }}</span></p>
+    <div class="management-sidebar-tools">
+        <label for="management-language-select">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.4 3 14.6 0 18M12 3c-3 3.4-3 14.6 0 18"/></svg>
+            <span>Language</span>
+        </label>
+        <select id="management-language-select" data-error="{{ m.settings_save_error }}">
+            {% for code, label in languages.items() %}<option value="{{ code }}" {% if code == language %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <p class="management-sidebar-footer">WebClock <span data-i18n="management_title">{{ m.management_title }}</span></p>
+    </div>
 </aside>
 <header class="management-topbar">
     <span class="management-location" data-i18n="management_title">{{ m.management_title }}</span>

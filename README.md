@@ -16,7 +16,7 @@
 - **直接使用：**開啟[線上時鐘](https://kcayut.github.io/webclock/)，不需帳號或伺服器。時間與時區跟隨裝置，適合舊 iPad、平板與閒置螢幕。
 - **自行架設：**在電腦、NAS 或 Raspberry Pi 執行完整版。`/admin` 管理顯示、行事曆與文字提醒；`/schedules` 管理鬧鐘與裝置狀態。
 
-自行架設版支援繁中、簡中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址保存在主機，不會出現在公開時鐘、狀態或備份中。
+自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址保存在主機，不會出現在公開時鐘、狀態或備份中。
 
 ## 快速安裝
 
@@ -47,6 +47,8 @@ python app.py
 ```
 
 完成後開啟時鐘首頁；管理畫面在 `/admin`，鬧鐘與裝置管理在 `/schedules`。
+
+部署前可在 `.env` 設定初始介面語言：`WEBCLOCK_LANGUAGE=zh-TW`（繁體中文）、`en`（English）或 `ja`（日本語）。Linux 安裝腳本會在首次建立 `.env` 時詢問；部署後也可隨時從管理側欄底部切換，選擇結果會儲存在 `webclock_state/settings.json`。
 
 **詳細說明：**[繁體中文使用指南](doc/guide.md) · [裝置 API](doc/server-api.md)
 
@@ -84,6 +86,12 @@ WebClock 目前所有功能皆可免費使用。如果這個專案對你有幫�
     </td>
   </tr>
 </table>
+
+## 使用與智慧財產聲明
+
+本專案與相關內容之著作權及智慧財產權均由作者保留。允許個人於非商業目的下下載、安裝、修改及使用；任何商業使用、營利服務、轉售或以本專案提供收費服務，皆須事先取得作者書面授權。
+
+除上述明確允許的個人非商業使用外，未授予其他權利。如需商業授權，請透過 [WebClock GitHub 專案頁面](https://github.com/kcayut/webclock) 聯絡作者。
 
 ## 問題與建議
 

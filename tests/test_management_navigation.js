@@ -21,7 +21,7 @@ function checkNavigation(initial, names) {
     const frames = [];
     const window = {location: {hash: ''}, addEventListener: (name, fn) => { events[name] = fn; },
         requestAnimationFrame: fn => frames.push(fn), scrollTo(x, y) { scrollY = y; }};
-    const context = {window, document: {body: {getAttribute: () => initial},
+    const context = {window, document: {body: {getAttribute: () => initial}, getElementById: () => null,
         querySelectorAll: selector => selector === '[data-management-panel]' ? panels : links}};
     vm.runInNewContext(source, context);
     function selected(name) {
@@ -60,4 +60,24 @@ function checkNavigation(initial, names) {
 checkNavigation('display', ['display', 'calendar', 'backup']);
 checkNavigation('calendar', ['display', 'calendar', 'backup']); // Invalid reminder submission.
 checkNavigation('alarms', ['alarms', 'devices']);
-console.log('Management navigation: direct links, back/forward, errors and retained drafts passed.');
+
+async function checkLanguage() {
+    let handler, request, reloads = 0;
+    const select = {value: 'en', disabled: false,
+        addEventListener: (name, callback) => { if (name === 'change') handler = callback; },
+        getAttribute: () => 'save failed'};
+    const window = {location: {hash: '', reload: () => { reloads++; }}, addEventListener() {},
+        requestAnimationFrame: callback => callback(), scrollTo() {}, alert() {}};
+    const context = {window, document: {documentElement: {lang: 'zh-TW'}, body: {getAttribute: () => 'display'},
+        getElementById: id => id === 'management-language-select' ? select : null, querySelectorAll: () => []},
+        fetch(url, options) { request = {url, options}; return Promise.resolve({ok: true}); }};
+    vm.runInNewContext(source, context);
+    handler.call(select);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(select.disabled, true);
+    assert.equal(request.url, '/api/control');
+    assert.deepEqual(JSON.parse(request.options.body), {language: 'en'});
+    assert.equal(reloads, 1);
+}
+
+checkLanguage().then(() => console.log('Management navigation and shared language switching passed.'));

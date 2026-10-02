@@ -23,7 +23,10 @@ Docker 預設使用主機的 `80` 連接埠；Linux 安裝腳本與手動執行�
 ```env
 PORT=5000
 HOST=0.0.0.0
+WEBCLOCK_LANGUAGE=zh-TW
 ```
+
+`WEBCLOCK_LANGUAGE` 是首次啟動的介面語言，可設為 `zh-TW`、`en` 或 `ja`。之後可直接在管理側欄底部切換；介面選擇會儲存在 `webclock_state/settings.json`，並優先於部署預設值。
 
 行事曆網址直接在管理頁輸入，不必寫入 `.env`。舊安裝的 `ICAL_URL` 可繼續使用，直到第一次在管理頁儲存新的行事曆來源。
 

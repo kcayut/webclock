@@ -17,3 +17,5 @@ webclock_state/
 *.log
 .DS_Store
 Thumbs.db
+
+TODO.md

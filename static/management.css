@@ -31,7 +31,12 @@ svg { flex: 0 0 auto; }
 .management-navigation a svg { width: 23px; height: 23px; }
 .management-navigation a:hover { background: #24373e; }
 .management-navigation a[aria-current] { background: #b9d9d3; color: #183f39; font-weight: 650; }
-.management-sidebar-footer { margin: auto 14px 8px; color: #99aeb8; font-size: 13px; }
+.management-sidebar-tools { margin: auto 14px 0; }
+.management-sidebar-tools label { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; color: #d9e4e8; font-size: 13px; font-weight: 600; }
+.management-sidebar-tools label svg { width: 18px; height: 18px; }
+.management-sidebar-tools select { min-height: 42px; padding: 8px 10px; border-color: #52656d; background: #24373e; color: #fff; font-size: 14px; }
+.management-sidebar-tools select:focus { border-color: #b9d9d3; }
+.management-sidebar-footer { margin: 12px 0 8px; color: #99aeb8; font-size: 13px; }
 .management-topbar { height: 72px; margin-left: var(--sidebar-width); background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 32px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .management-location { font-size: 14px; color: var(--muted); }
 .clock-link { white-space: nowrap; }
@@ -112,6 +117,34 @@ details[open] > summary { margin-bottom: 12px; }
 .weekday-options label, .weekdays label { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 15px; }
 .empty { background: #fff; border: 1px dashed #c8d4d9; border-radius: 8px; padding: 36px 24px; color: var(--muted); text-align: center; }
 .backup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.about-panel { overflow: hidden; padding: 0; }
+.support-intro { min-height: 190px; display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 38px 42px; background: #e9f3f0; }
+.support-intro > div { max-width: 680px; }
+.support-intro h2 { margin-bottom: 10px; font-size: 26px; color: #183f39; }
+.support-intro p { margin: 0; color: #3d5c57; font-size: 17px; line-height: 1.8; }
+.support-heart { width: 92px; height: 92px; flex: 0 0 auto; fill: #fff; stroke: var(--accent); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 8px 14px rgba(36, 99, 91, .12)); }
+.support-links { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 28px; }
+.support-card { min-width: 0; min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 24px 18px 18px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); text-align: center; text-decoration: none; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.support-card:hover { transform: translateY(-3px); border-color: #9dc5bd; box-shadow: 0 12px 26px rgba(23, 37, 43, .09); }
+.support-logo { width: 100%; height: 70px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+.support-logo img { display: block; max-width: 130px; max-height: 58px; width: auto; height: auto; object-fit: contain; }
+.support-card strong { font-size: 17px; line-height: 1.4; }
+.support-card small { min-height: 24px; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.support-action { margin-top: auto; padding-top: 18px; display: inline-flex; align-items: center; gap: 7px; color: var(--accent); font-size: 14px; font-weight: 650; }
+.support-action svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
+.support-card:hover .support-action svg { transform: translateX(3px); }
+.about-github { margin: 0 28px 28px; min-height: 82px; display: flex; align-items: center; gap: 16px; padding: 17px 20px; border-radius: 8px; background: #17252b; color: #fff; text-decoration: none; transition: background .18s ease, transform .18s ease; }
+.about-github:hover { background: #24373e; transform: translateY(-2px); }
+.about-github > svg { width: 34px; height: 34px; fill: currentColor; flex: 0 0 auto; }
+.about-github > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
+.about-github strong { font-size: 16px; }
+.about-github small { color: #b9cbd2; font-size: 13px; overflow-wrap: anywhere; }
+.about-github .support-action { margin: 0 0 0 auto; padding: 0; color: #b9d9d3; white-space: nowrap; }
+.about-github:hover .support-action svg { transform: translateX(3px); }
+.about-license { margin: 0 28px 28px; display: flex; align-items: flex-start; gap: 16px; padding: 20px; border: 1px solid #d8e2e5; border-radius: 8px; background: #f8fafb; }
+.about-license > svg { width: 28px; height: 28px; flex: 0 0 auto; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.about-license h2 { margin: 0 0 5px; font-size: 16px; }
+.about-license p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.75; }
 @media (min-width: 1800px) { .management-content { margin-right: auto; } }
 @media (max-width: 1150px) {
     :root { --sidebar-width: 224px; }
@@ -120,6 +153,7 @@ details[open] > summary { margin-bottom: 12px; }
     .management-navigation a { font-size: 15px; padding: 14px; gap: 13px; }
     .management-content { padding: 30px 28px 48px; }
     .settings-grid { grid-template-columns: 1fr; }
+    .support-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
     .management-sidebar { position: sticky; top: 0; width: 100%; padding: 14px 16px 12px; }
@@ -129,6 +163,9 @@ details[open] > summary { margin-bottom: 12px; }
     .management-navigation a { min-height: 44px; font-size: 12px; line-height: 1.4; padding: 9px 7px; gap: 6px; justify-content: center; text-align: center; }
     .management-navigation a span { min-width: 0; }
     .management-navigation a svg { width: 16px; height: 16px; }
+    .management-sidebar-tools { margin: 10px 0 0; display: grid; grid-template-columns: auto minmax(130px, 1fr); align-items: center; gap: 8px 12px; }
+    .management-sidebar-tools label { margin: 0; font-size: 12px; }
+    .management-sidebar-tools select { min-height: 38px; padding: 6px 9px; font-size: 13px; }
     .management-sidebar-footer { display: none; }
     .management-topbar { height: 58px; margin-left: 0; padding: 0 20px; }
     .clock-link { min-height: 36px; padding: 7px 12px; font-size: 13px; }
@@ -149,5 +186,14 @@ details[open] > summary { margin-bottom: 12px; }
     .calendar-display-settings .actions { margin-top: 8px; }
     .calendar-source-settings > summary { flex-wrap: wrap; gap: 4px 10px; }
     #calendar-source-summary { flex-basis: 100%; order: 1; }
+    .support-intro { min-height: 0; padding: 28px 22px; }
+    .support-intro h2 { font-size: 22px; }
+    .support-intro p { font-size: 15px; }
+    .support-heart { width: 64px; height: 64px; }
+    .support-links { grid-template-columns: 1fr; padding: 18px; }
+    .support-card { min-height: 190px; }
+    .about-github { margin: 0 18px 18px; align-items: flex-start; flex-wrap: wrap; }
+    .about-github .support-action { width: 100%; margin-left: 50px; }
+    .about-license { margin: 0 18px 18px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }

@@ -38,6 +38,14 @@ if [ ! -f ".env" ]; then
     # Replace value in .env
     sed -i "s|ICAL_URL=|ICAL_URL=$user_ical_url|g" .env
 
+    read -r -p "Initial interface language (zh-TW/en/ja, default zh-TW): " user_language
+    user_language=${user_language:-zh-TW}
+    case "$user_language" in
+        zh-TW|en|ja) ;;
+        *) echo "Invalid language. Choose zh-TW, en, or ja."; exit 1 ;;
+    esac
+    sed -i "s|^WEBCLOCK_LANGUAGE=.*|WEBCLOCK_LANGUAGE=$user_language|g" .env
+
     echo ".env created."
 else
     echo ".env already exists, skipping."

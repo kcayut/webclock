@@ -16,7 +16,7 @@ Turn an iPad, tablet, or spare screen into a large clock. Use the public clock d
 - **Use it online:** open the [public clock](https://kcayut.github.io/webclock/). No account or server is required. Time and timezone follow the device.
 - **Self-host it:** run the full version on a computer, NAS, or Raspberry Pi. `/admin` manages the display, calendars, and text reminders; `/schedules` manages alarms and device status.
 
-The self-hosted UI supports Traditional Chinese, Simplified Chinese, English, and Japanese. It can subscribe to Google, Apple iCloud, and other ICS calendars. Calendar URLs stay on your server and are excluded from the public clock, status responses, and backups.
+The self-hosted UI supports Traditional Chinese, English, and Japanese. It can subscribe to Google, Apple iCloud, and other ICS calendars. Calendar URLs stay on your server and are excluded from the public clock, status responses, and backups.
 
 ## Quick installation
 
@@ -47,6 +47,8 @@ python app.py
 ```
 
 Open the clock home page when installation finishes. Management is at `/admin`; alarms and devices are at `/schedules`.
+
+Set the initial interface language in `.env` before deployment with `WEBCLOCK_LANGUAGE=zh-TW`, `en`, or `ja`. The Linux installer asks when it first creates `.env`. After deployment, the language remains available at the bottom of the management sidebar and is saved to `webclock_state/settings.json`.
 
 **More information:** [English guide](doc/guide_en.md) · [Device API](doc/server-api_en.md)
 

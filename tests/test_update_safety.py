@@ -34,7 +34,7 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(clock.load_display_settings(), expected)
         previous = self.path.read_bytes()
         for data in ({'brightness': 101}, {'brightness': True}, {'brightness': 3.5},
-                     {'timezone_offset': '-13'}, {'language': 'unknown'},
+                     {'timezone_offset': '-13'}, {'language': 'unknown'}, {'language': 'zh-CN'},
                      {'mode': 'invalid'}, {'other': 1}, [], None):
             with self.subTest(data=data):
                 response = self.client.post('/api/control', data=json.dumps(data), content_type='application/json')
@@ -43,6 +43,14 @@ class SettingsTest(unittest.TestCase):
                 self.assertEqual(clock.display_settings, expected)
         self.assertEqual(self.client.post('/api/control', json={'brightness': '40'}).status_code, 200)
         self.assertEqual(clock.load_display_settings()['brightness'], 40)
+
+    def test_deployment_language_validation(self):
+        for language in ('zh-TW', 'en', 'ja'):
+            with self.subTest(language=language), patch.dict(clock.os.environ, WEBCLOCK_LANGUAGE=language):
+                self.assertEqual(clock.deployment_language(), language)
+        with patch.dict(clock.os.environ, WEBCLOCK_LANGUAGE='zh-CN'):
+            with self.assertRaisesRegex(ValueError, 'zh-TW, en, ja'):
+                clock.deployment_language()
 
     def test_write_failure_keeps_previous_settings_and_corrupt_file_is_not_overwritten(self):
         self.client.post('/api/control', json={'brightness': 40})

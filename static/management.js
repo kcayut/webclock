@@ -5,6 +5,25 @@
     var links = document.querySelectorAll('[data-management-link]');
     var aliases = {'calendar-title': 'calendar', 'devices-title': 'devices'};
     var initial = document.body.getAttribute('data-initial-panel');
+    var languageSelect = document.getElementById('management-language-select');
+    if (languageSelect) {
+        languageSelect.addEventListener('change', function () {
+            var select = this;
+            select.disabled = true;
+            fetch('/api/control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({language: select.value})
+            }).then(function (response) {
+                if (!response.ok) throw new Error('Language not saved');
+                window.location.reload();
+            }).catch(function () {
+                select.disabled = false;
+                select.value = document.documentElement.lang;
+                window.alert(select.getAttribute('data-error'));
+            });
+        });
+    }
     for (var n = 0; n < links.length; n++) {
         links[n].addEventListener('click', function (event) {
             if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
