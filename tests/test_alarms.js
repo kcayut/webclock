@@ -10,6 +10,8 @@ for (const code of [script, audioScript]) {
     assert.doesNotMatch(code, /\b(?:const|let|async)\b|=>|\?\./, 'clock extras must remain ES5');
 }
 assert.ok(!fs.readFileSync(path.join(root, 'index.html'), 'utf8').includes('alarms.js'));
+assert.doesNotMatch(script, /alarm-status|alarm_sync_error|alarm_unknown_holiday|alarm_sound_unavailable/,
+    'alarm faults must not create automatic main-screen status text');
 
 function browser(storage = {}, usePerformance = false) {
     let instant = Date.parse('2026-09-30T00:00:00Z');
@@ -29,7 +31,11 @@ function browser(storage = {}, usePerformance = false) {
         AlarmAudio: sound, addEventListener};
     if (usePerformance) window.performance = {now: () => elapsed};
     const context = vm.createContext({window,
-        document: {getElementById: node, body: node('body'), addEventListener, hidden: false},
+        document: {getElementById(id) {
+            assert.ok(!['alarm-status', 'notice', 'notice-text'].includes(id),
+                'optional alarms must not use an automatic error notice surface');
+            return node(id);
+        }, body: node('body'), addEventListener, hidden: false},
         Date: function () { this.getTime = () => instant; },
         t: key => key,
         readStoredJson: (key, fallback) => storage[key] ? JSON.parse(storage[key]) : fallback,
@@ -71,7 +77,7 @@ const page = browser(saved);
 const due = alarm(page);
 page.reply([due]);
 assert.equal(page.node('alarm-bell').style.display, 'block');
-assert.equal(page.node('alarm-status').textContent, 'alarm_enable_sound');
+assert.equal(page.node('alarm-bell').attrs['aria-label'], 'alarm_set · alarm_enable_sound');
 page.node('alarm-bell').onclick();
 page.advance(1000); page.tick();
 assert.ok(page.ringing());
@@ -127,14 +133,45 @@ assert.deepEqual(volumes.sound.played, ['chime'], 'a muted alarm must not block 
 assert.deepEqual(volumes.sound.volumes, [25]);
 const muted = browser();
 muted.reply([{...alarm(muted), volume: 0}]);
-assert.equal(muted.node('alarm-status').textContent, '');
+assert.equal(muted.node('alarm-bell').attrs['aria-label'], 'alarm_set');
 muted.advance(1000); muted.tick();
 assert.ok(muted.ringing(), 'zero volume keeps the visual reminder');
 assert.deepEqual(muted.sound.played, []);
 for (const volume of [-1, 101, 2.5, null, '25']) {
     const invalid = browser();
+    invalid.node('alarm-bell').onclick();
     invalid.reply([{...alarm(invalid), volume}]);
-    assert.equal(invalid.node('alarm-status').textContent, 'alarm_sync_error');
+    invalid.advance(1000); invalid.tick();
+    assert.ok(!invalid.ringing(), 'invalid alarm data remains inert without showing an error on the clock');
+    assert.deepEqual(invalid.sound.played, [], 'invalid alarm data never plays a tone at its due time');
+}
+
+for (const fail of [
+    xhr => { xhr.status = 401; xhr.onload(); },
+    xhr => { xhr.status = 403; xhr.onload(); },
+    xhr => { xhr.status = 503; xhr.onload(); },
+    xhr => { xhr.status = 200; xhr.responseText = '{broken'; xhr.onload(); },
+    xhr => { xhr.status = 200; xhr.responseText = '<!doctype html><title>Login</title>'; xhr.onload(); },
+    xhr => xhr.onerror(),
+    xhr => xhr.ontimeout(),
+]) {
+    const failed = browser();
+    fail(failed.requests.at(-1));
+    failed.advance(1000); failed.tick();
+    assert.equal(failed.node('alarm-bell').style.display, 'none');
+    assert.equal(failed.node('alarm-message').style.display, 'none');
+    assert.ok(!failed.ringing(), 'an API fault never becomes a visual alarm');
+    assert.equal(failed.node('connection-panel').classList.items.has('open'), false);
+
+    // A valid reply after the fault still enables the existing local gesture
+    // and ringing flow; removing diagnostics must not disable the feature.
+    failed.poll(); failed.reply([alarm(failed)]);
+    failed.node('alarm-bell').onclick();
+    failed.advance(1000); failed.tick();
+    assert.ok(failed.ringing());
+    assert.deepEqual(failed.sound.played, ['bell']);
+    failed.dispatch('click'); failed.dispatch('click');
+    assert.ok(!failed.ringing());
 }
 
 const late = browser();

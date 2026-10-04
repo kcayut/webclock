@@ -124,6 +124,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
     const storage = bootSettings ? {'webclock.settings': bootSettings.raw} : {};
     let storageAvailable = !!bootSettings;
     let storageWritable = true;
+    let failNextSend = false;
     function makeNode() {
         const classes = new Set();
         const attributes = {};
@@ -131,7 +132,11 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             style: {}, children: [],
             classList: {
                 add: name => classes.add(name), remove: name => classes.delete(name),
-                toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
+                toggle(name, on) {
+                    if (arguments.length < 2) on = !classes.has(name);
+                    if (on) classes.add(name); else classes.delete(name);
+                    return on;
+                },
                 contains: name => classes.has(name),
             },
             appendChild(child) { this.children.push(child); },
@@ -178,10 +183,16 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             this.open = (method, url) => {
                 assert.match(node('time').textContent, /^\d\d:\d\d$/);
                 assert.equal(method, 'GET');
-                assert.match(url, /^http:\/\/clock\.example\/api\/status\?nocache=\d+$/);
+                assert.match(url, /^http:\/\/[^/]+\/api\/status\?nocache=\d+$/);
+                this.url = url;
                 requests.push(this);
             };
-            this.send = () => {}; // A stalled request must never hold up the clock.
+            this.send = () => {
+                if (failNextSend) {
+                    failNextSend = false;
+                    throw new Error('send failed');
+                }
+            }; // A stalled request must never hold up the clock.
         },
     });
     vm.runInContext('Number.isFinite = undefined;', legacy);
@@ -190,6 +201,9 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
     vm.runInContext(coreScript, legacy);
     if (failOptionalEditor) assert.throws(() => vm.runInContext(serverScript, legacy), /optional editor failed/);
     else vm.runInContext(serverScript, legacy);
+    assert.equal(elements.notice, undefined, 'optional failures never create a main-screen notice');
+    assert.equal(node('connection-panel').classList.contains('open'), false,
+        'optional initialization never opens the connection panel');
     const tick = ticks.find(timer => timer.delay === 1000);
     assert.ok(tick, 'clock timer starts before optional initialization');
     const before = node('time').textContent;
@@ -214,6 +228,8 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
     if (!failOptionalEditor) {
         assert.deepEqual(ticks.map(timer => timer.delay), [1000, 5000], 'clock only polls its own status server');
         assert.equal(requests.length, 1, 'startup makes one status request and no external time request');
+        assert.equal(node('connection-toggle').textContent, '...', 'the connection entry stays neutral while connecting');
+        assert.equal(node('connection-toggle').title, clockLabels['zh-TW'].connection_settings);
         function reply(xhr, data, status = 200) {
             Object.assign(xhr, {readyState: 4, status, responseText: typeof data === 'string' ? data : JSON.stringify(data)});
             xhr.onreadystatechange();
@@ -232,37 +248,168 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         reply(newRequest(), {events: [], server_timestamp: serverNow});
         assert.equal(legacy.getClockUtcMs(), serverNow, 'every status reply replaces the previous time base');
         assert.equal(node('time').textContent, '08:02');
-        for (const [fail, message] of [
-            [xhr => reply(xhr, '', 503), 'Server unavailable'],
-            [xhr => xhr.onerror(), 'Server unavailable'],
-            [xhr => xhr.ontimeout(), 'Server timed out'],
-            [xhr => reply(xhr, '{broken'), 'Unreadable response'],
+
+        storage['webclock.localEvents'] = JSON.stringify([{id: 900, text: 'Keep local reminder', time: '09:00'}]);
+        const localEventsBeforeRaces = storage['webclock.localEvents'];
+
+        const slowRequest = newRequest();
+        const nextPoll = newRequest();
+        serverNow += 60000;
+        reply(slowRequest, {events: [{text: 'Slow response', time: '08:03'}], server_timestamp: serverNow});
+        assert.equal(legacy.getClockUtcMs(), serverNow,
+            'an older in-flight request can calibrate after a newer poll has only been issued');
+        serverNow += 60000;
+        reply(nextPoll, {events: [{text: 'Next response', time: '08:04'}], server_timestamp: serverNow});
+        assert.equal(legacy.getClockUtcMs(), serverNow);
+
+        const oldSuccess = newRequest();
+        const newSuccess = newRequest();
+        serverNow += 60000;
+        reply(newSuccess, {events: [{text: 'Newest state', time: '08:05'}], settings: {brightness: 44},
+            server_timestamp: serverNow});
+        const newestClock = legacy.getClockUtcMs();
+        reply(oldSuccess, {events: [{text: 'Stale state', time: '07:00'}], settings: {brightness: 10},
+            server_timestamp: serverNow - 3600000});
+        assert.equal(legacy.getClockUtcMs(), newestClock, 'an older success cannot replace a newer response');
+        assert.equal(legacy.activeSettings.brightness, 44);
+        assert.equal(node('list-container').children[0].children[0].children[1].textContent, 'Newest state');
+
+        for (const fail of [
+            xhr => reply(xhr, '{broken'),
+            xhr => { reply(xhr, '', 0); xhr.onerror(); },
+            xhr => { reply(xhr, '', 0); xhr.ontimeout(); },
+            xhr => reply(xhr, '', 503),
+        ]) {
+            const oldFailure = newRequest();
+            const newBeforeFailure = newRequest();
+            serverNow += 60000;
+            reply(newBeforeFailure, {events: [{text: 'Still current', time: '08:06'}], server_timestamp: serverNow});
+            const savedSettings = storage['webclock.settings'];
+            fail(oldFailure);
+            assert.equal(legacy.connectionMode, 'server',
+                'each older failure independently cannot undo a newer success');
+            assert.equal(legacy.lastServerStatus, 'connection_connected');
+            assert.equal(legacy.getClockUtcMs(), serverNow);
+            assert.equal(storage['webclock.settings'], savedSettings);
+            assert.equal(node('list-container').children[0].children[0].children[1].textContent, 'Still current');
+        }
+
+        const duplicate = newRequest();
+        serverNow += 60000;
+        reply(duplicate, {events: [{text: 'Only terminal state', time: '08:07'}], server_timestamp: serverNow});
+        const duplicateClock = legacy.getClockUtcMs();
+        duplicate.onerror();
+        duplicate.ontimeout();
+        reply(duplicate, {events: [{text: 'Duplicate callback', time: '01:00'}],
+            server_timestamp: serverNow - 3600000});
+        assert.equal(legacy.getClockUtcMs(), duplicateClock, 'one request is applied only once');
+        assert.equal(legacy.connectionMode, 'server');
+        assert.equal(node('list-container').children[0].children[0].children[1].textContent, 'Only terminal state');
+
+        const oldSource = newRequest();
+        node('server-url-input').value = 'http://second.example';
+        assert.equal(legacy.saveServerUrl(), true);
+        reply(oldSource, {events: [{text: 'Old source', time: '01:00'}], settings: {brightness: 12},
+            server_timestamp: serverNow - 7200000});
+        assert.equal(legacy.activeSettings.brightness, 44, 'switching servers invalidates the previous source');
+        const secondSource = newRequest();
+        assert.match(secondSource.url, /^http:\/\/second\.example\/api\/status/);
+        serverNow += 60000;
+        reply(secondSource, {events: [{text: 'Second server', time: '08:08'}], settings: {brightness: 46},
+            server_timestamp: serverNow});
+
+        const beforeSameUrlReconnect = newRequest();
+        node('server-url-input').value = 'http://second.example';
+        legacy.reconnectNow();
+        const afterSameUrlReconnect = requests[requests.length - 1];
+        beforeSameUrlReconnect.onerror();
+        assert.equal(legacy.lastServerStatus, 'connection_connecting',
+            'reconnect rejects old callbacks even before its first response');
+        serverNow += 60000;
+        reply(afterSameUrlReconnect, {events: [{text: 'Reconnected', time: '08:09'}], server_timestamp: serverNow});
+        beforeSameUrlReconnect.onerror();
+        reply(beforeSameUrlReconnect, {events: [{text: 'Before reconnect', time: '01:00'}],
+            server_timestamp: serverNow - 7200000});
+        assert.equal(legacy.connectionMode, 'server');
+        assert.equal(node('list-container').children[0].children[0].children[1].textContent, 'Reconnected',
+            'same-URL reconnect invalidates its previous generation');
+
+        node('server-url-input').value = 'http://clock.example';
+        legacy.reconnectNow();
+        const firstARequest = requests[requests.length - 1];
+        node('server-url-input').value = 'http://second.example';
+        legacy.reconnectNow();
+        const staleBRequest = requests[requests.length - 1];
+        node('server-url-input').value = 'http://clock.example';
+        legacy.reconnectNow();
+        const currentARequest = requests[requests.length - 1];
+        reply(firstARequest, {events: [{text: 'First A', time: '01:00'}], settings: {brightness: 13},
+            server_timestamp: serverNow - 7200000});
+        staleBRequest.ontimeout();
+        assert.equal(legacy.activeSettings.brightness, 46,
+            'the first A generation stays invalid before the current A responds');
+        assert.equal(legacy.lastServerStatus, 'connection_connecting');
+        serverNow += 60000;
+        reply(currentARequest, {events: [{text: 'Current A', time: '08:10'}], settings: {brightness: 48},
+            server_timestamp: serverNow});
+        assert.equal(legacy.serverUrl, 'http://clock.example');
+        assert.equal(legacy.activeSettings.brightness, 48,
+            'A to B to A does not make the first A generation current again');
+        assert.equal(node('list-container').children[0].children[0].children[1].textContent, 'Current A');
+        assert.equal(storage['webclock.localEvents'], localEventsBeforeRaces,
+            'request races and source switches do not delete local reminders');
+        delete storage['webclock.localEvents'];
+
+        failNextSend = true;
+        const sendFailure = newRequest();
+        assert.equal(legacy.connectionMode, 'standalone', 'a synchronous send failure uses the offline fallback');
+        sendFailure.onerror();
+        assert.equal(legacy.lastServerStatus, 'connection_unavailable',
+            'a later callback cannot terminate a synchronous send failure twice');
+
+        for (const [fail, statusKey] of [
+            [xhr => reply(xhr, '', 503), 'connection_unavailable'],
+            [xhr => reply(xhr, '', 401), 'connection_unavailable'],
+            [xhr => reply(xhr, '', 403), 'connection_unavailable'],
+            [xhr => xhr.onerror(), 'connection_unavailable'],
+            [xhr => { reply(xhr, '', 0); xhr.onerror(); }, 'connection_unavailable'],
+            [xhr => xhr.ontimeout(), 'connection_timeout'],
+            [xhr => { reply(xhr, '', 0); xhr.ontimeout(); }, 'connection_timeout'],
+            [xhr => reply(xhr, '<!doctype html><title>Login</title>'), 'connection_unreadable'],
+            [xhr => reply(xhr, '{broken'), 'connection_unreadable'],
         ]) {
             fail(newRequest());
-            assert.equal(node('notice').style.display, 'block');
-            assert.equal(node('notice-text').textContent, message);
+            assert.equal(elements.notice, undefined, 'network failures stay off the main clock');
+            assert.equal(node('connection-panel').classList.contains('open'), false);
+            assert.equal(node('connection-toggle').textContent, '...', 'failure does not turn the entry into a warning symbol');
+            assert.equal(node('connection-toggle').title, clockLabels['zh-TW'].connection_settings);
+            assert.equal(node('connection-status').textContent, clockLabels['zh-TW'][statusKey]);
             const offlineTime = legacy.getClockUtcMs();
             now += 60000;
             tick.callback();
             assert.equal(legacy.getClockUtcMs(), offlineTime + 60000, 'the corrected clock advances while disconnected');
-            legacy.hideNotice(true);
-            assert.equal(node('notice').style.display, 'none');
             serverNow += 60000;
             reply(newRequest(), {events: [], server_timestamp: serverNow});
-            assert.equal(node('notice').style.display, 'none', 'recovery clears the connection warning');
-            assert.equal(legacy.lastNoticeKey, '');
-            assert.equal(legacy.noticeMutedUntil, 0);
+            assert.equal(elements.notice, undefined);
+            assert.equal(node('connection-panel').classList.contains('open'), false);
+            assert.equal(node('connection-toggle').textContent, '...');
             fail(newRequest());
-            assert.equal(node('notice').style.display, 'block', 'a new failure after recovery is not muted');
-            assert.equal(node('notice-text').textContent, message);
+            assert.equal(elements.notice, undefined, 'a new failure after recovery is also quiet');
+            assert.equal(node('connection-panel').classList.contains('open'), false);
+            assert.equal(node('connection-toggle').textContent, '...');
             reply(newRequest(), {events: [], server_timestamp: serverNow});
-            assert.equal(node('notice').style.display, 'none', 'recovery also clears a visible connection warning');
         }
-        legacy.window.onerror();
-        assert.equal(node('notice-text').textContent, 'Page error');
-        reply(newRequest(), {events: [], server_timestamp: serverNow});
-        assert.equal(node('notice').style.display, 'block', 'status recovery preserves unrelated page errors');
-        assert.equal(node('notice-text').textContent, 'Page error');
+        assert.equal(legacy.window.location.origin, 'http://clock.example',
+            'authentication and parse failures never redirect the clock');
+        assert.equal(legacy.window.onerror, undefined, 'runtime errors do not install a main-screen notice handler');
+        legacy.toggleConnectionPanel();
+        assert.equal(node('connection-panel').classList.contains('open'), true,
+            'the user can still open the connection panel');
+        assert.equal(node('server-url-input').value, legacy.serverUrl);
+        assert.equal(node('connection-status').textContent,
+            clockLabels['zh-TW'].connection_connected.replace('{url}', legacy.serverUrl));
+        legacy.toggleConnectionPanel();
+        assert.equal(node('connection-panel').classList.contains('open'), false);
         for (const invalid of [NaN, Infinity, -Infinity, '123', null, undefined, 0, -1]) {
             legacy.enterServerMode({events: [], server_timestamp: invalid});
             assert.equal(legacy.getClockUtcMs(), serverNow, 'invalid timestamps must not replace the corrected time base');
@@ -520,8 +667,11 @@ for (const bootSettings of [
 }
 for (const page of [html, template]) {
     assert.doesNotMatch(page, /id="next-event"/);
+    assert.doesNotMatch(page, /id="notice(?:-text|-close)?"|showNotice\(|window\.onerror/,
+        'the clock has no automatic system-error notice surface');
     assert.ok(page.indexOf('offline.js') > page.indexOf('WebClockCore.start'), 'optional offline script loads after clock startup');
 }
+assert.doesNotMatch(template, /id="alarm-status"/, 'alarm synchronization failures stay off the main clock');
 assert.match(template, /<form id="local-event-form"[^>]*onsubmit="addLocalEvent\(\); return false;">[\s\S]*?<button type="submit" data-clock-i18n="add">[\s\S]*?<\/button>[\s\S]*?<\/form>/,
     'the real Add action uses native form validation for the time input proxies');
 console.log('Legacy startup checks passed: no modern APIs/storage/network response, optional UI failure, brightness and reminders without countdown.');

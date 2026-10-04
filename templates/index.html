@@ -18,11 +18,6 @@
             border-radius: 50%; background: #111; color: #e8b45a; cursor: pointer;
         }
         #alarm-bell.sound-ready { color: #fff; border-color: #bbb; }
-        #alarm-status {
-            display: none; position: fixed; top: 48px; right: 10px; z-index: 140;
-            max-width: 70%; color: #e8b45a; background: #111; padding: 4px 8px;
-            font-size: 13px; text-align: right;
-        }
         #alarm-flash {
             display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             z-index: 135; pointer-events: none; border: 12px solid #e00000;
@@ -126,8 +121,7 @@
         }
 
         .force-black #clock-container,
-        .force-black #list-container,
-        .force-black #notice {
+        .force-black #list-container {
             opacity: 0 !important;
         }
 
@@ -142,32 +136,6 @@
             border-radius: 12px;
             z-index: 20;
             pointer-events: none;
-        }
-
-        #notice {
-            position: fixed;
-            right: 8px;
-            bottom: 8px;
-            max-width: 90%;
-            color: #aaa;
-            background: rgba(0, 0, 0, 0.65);
-            border: 1px solid #333;
-            border-radius: 4px;
-            padding: 5px 24px 5px 8px;
-            font-size: 12px;
-            line-height: 1.4;
-            z-index: 100;
-            display: none;
-        }
-
-        #notice-close {
-            position: absolute;
-            top: 2px;
-            right: 6px;
-            color: #ccc;
-            font-size: 16px;
-            line-height: 16px;
-            cursor: pointer;
         }
 
         #connection-toggle {
@@ -319,7 +287,6 @@
     <button id="alarm-bell" type="button" aria-label="{{ translations[language].alarm_set }}">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4M12 2v2"/></svg>
     </button>
-    <div id="alarm-status" role="status"></div>
     <div id="alarm-flash" aria-hidden="true"></div>
     <div id="alarm-message" role="alert"><div id="alarm-name"></div><div id="alarm-prompt"></div></div>
     <div id="clock-container">
@@ -333,11 +300,6 @@
 
     <div id="list-container">
         <div id="event-counter"></div>
-    </div>
-
-    <div id="notice">
-        <span id="notice-text"></span>
-        <span id="notice-close" onclick="hideNotice(true)" title="{{ translations[language].notice_close }}">x</span>
     </div>
 
     <button id="connection-toggle" type="button" onclick="toggleConnectionPanel()" data-clock-i18n="connection_settings" data-clock-attribute="aria-label" aria-label="{{ translations[language].connection_settings }}" title="{{ translations[language].connection_settings }}">...</button>
@@ -378,14 +340,13 @@
         var STORAGE_SERVER_URL = 'webclock.serverUrl';
         var STORAGE_SETTINGS = 'webclock.settings';
         var STORAGE_LOCAL_EVENTS = 'webclock.localEvents';
-        var NOTICE_HIDE_MS = 12 * 60 * 60 * 1000;
-        var noticeTimer = null;
-        var lastNoticeKey = "";
-        var noticeMutedUntil = 0;
         var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
         var connectionMode = 'server';
         var activeSettings = {};
         var lastServerStatus = 'connection_connecting';
+        var connectionGeneration = 1;
+        var statusRequestSequence = 0;
+        var lastHandledStatusSequence = 0;
 
         function t(key) {
             var pack = I18N[currentLanguage] || I18N['zh-TW'];
@@ -405,8 +366,6 @@
                 if (attribute) label.setAttribute(attribute, value);
                 else label.textContent = value;
             }
-            document.getElementById('notice-close').title = t('notice_close');
-            if (lastNoticeKey) document.getElementById('notice-text').textContent = t(lastNoticeKey);
             setConnectionStatus(lastServerStatus, connectionMode === 'standalone');
             var offline = document.getElementById('offline-status');
             ['ready', 'unavailable', 'failed'].forEach(function (state) {
@@ -461,8 +420,8 @@
             return trimmed.replace(/\/+$/, "");
         }
 
-        function getStatusUrl() {
-            return serverUrl + '/api/status?nocache=' + new Date().getTime();
+        function getStatusUrl(sourceUrl) {
+            return sourceUrl + '/api/status?nocache=' + new Date().getTime();
         }
 
         function defaultDisplaySettings() {
@@ -630,45 +589,6 @@
             document.getElementById('list-container').style.opacity = effective.brightness / 100;
         }
 
-        function showNotice(key) {
-            var notice = document.getElementById('notice');
-            var text = document.getElementById('notice-text');
-            var nowMs = new Date().getTime();
-            if (!notice || !text) return;
-            if (key === lastNoticeKey && nowMs < noticeMutedUntil) return;
-            if (key === lastNoticeKey && notice.style.display === 'block') return;
-
-            lastNoticeKey = key;
-            text.textContent = t(key);
-            notice.style.display = 'block';
-
-            if (noticeTimer) {
-                clearTimeout(noticeTimer);
-            }
-            noticeTimer = setTimeout(function () {
-                hideNotice(true);
-            }, NOTICE_HIDE_MS);
-        }
-
-        function hideNotice(mute) {
-            var notice = document.getElementById('notice');
-            if (notice) {
-                notice.style.display = 'none';
-            }
-            if (mute) {
-                noticeMutedUntil = new Date().getTime() + NOTICE_HIDE_MS;
-            }
-            if (noticeTimer) {
-                clearTimeout(noticeTimer);
-                noticeTimer = null;
-            }
-        }
-
-        window.onerror = function () {
-            showNotice('page_error');
-            return true;
-        };
-
         var timezoneOffset = 8;
         var clockBaseUtcMs = null;
         var clockBaseDeviceMs = null;
@@ -702,8 +622,8 @@
             var toggle = document.getElementById('connection-toggle');
             if (status) status.textContent = message;
             if (toggle) {
-                toggle.textContent = isOffline ? '!' : '.';
-                toggle.title = message;
+                toggle.textContent = '...';
+                toggle.title = t('connection_settings');
             }
         }
 
@@ -722,13 +642,6 @@
                 saveSettings(activeSettings);
             }
             setClockBase(data.server_timestamp);
-            if (lastNoticeKey === 'server_unavailable' || lastNoticeKey === 'server_timeout' ||
-                    lastNoticeKey === 'status_parse_failed') {
-                hideNotice(false);
-                lastNoticeKey = "";
-                noticeMutedUntil = 0;
-            }
-
             var dayPart = document.getElementById('day-part');
             if (data.is_holiday) dayPart.classList.add('holiday-highlight');
             else dayPart.classList.remove('holiday-highlight');
@@ -738,37 +651,66 @@
             setConnectionStatus('connection_connected', false);
         }
 
+        function beginConnectionGeneration() {
+            connectionGeneration += 1;
+            lastHandledStatusSequence = 0;
+        }
+
+        function finishStatusRequest(request, callback) {
+            if (request.finished) return;
+            request.finished = true;
+            if (request.sourceUrl !== serverUrl || request.generation !== connectionGeneration ||
+                    request.sequence <= lastHandledStatusSequence) return;
+            // Compare with handled responses, not merely issued polls: a valid
+            // response may take longer than the five-second polling interval.
+            lastHandledStatusSequence = request.sequence;
+            callback();
+        }
+
         function fetchStatus() {
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', getStatusUrl(), true);
+            var request = {
+                sourceUrl: serverUrl,
+                generation: connectionGeneration,
+                sequence: statusRequestSequence += 1,
+                finished: false
+            };
+            xhr.open('GET', getStatusUrl(request.sourceUrl), true);
             xhr.onreadystatechange = function () {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    try {
-                        var data = JSON.parse(xhr.responseText);
-                        enterServerMode(data);
-                    } catch (e) {
-                        showNotice('status_parse_failed');
-                        enterStandaloneMode('connection_unreadable');
+                if (xhr.readyState !== 4) return;
+                // Network errors and timeouts first report DONE with status 0.
+                // Their terminal event supplies the cause and finishes once.
+                if (xhr.status === 0) return;
+                finishStatusRequest(request, function () {
+                    if (xhr.status === 200) {
+                        try {
+                            var data = JSON.parse(xhr.responseText);
+                            enterServerMode(data);
+                        } catch (e) {
+                            enterStandaloneMode('connection_unreadable');
+                        }
+                    } else {
+                        enterStandaloneMode('connection_unavailable');
                     }
-                } else if (xhr.readyState === 4) {
-                    showNotice('server_unavailable');
-                    enterStandaloneMode('connection_unavailable');
-                }
+                });
             };
             xhr.onerror = function () {
-                showNotice('server_unavailable');
-                enterStandaloneMode('connection_unavailable');
+                finishStatusRequest(request, function () {
+                    enterStandaloneMode('connection_unavailable');
+                });
             };
             xhr.ontimeout = function () {
-                showNotice('server_timeout');
-                enterStandaloneMode('connection_timeout');
+                finishStatusRequest(request, function () {
+                    enterStandaloneMode('connection_timeout');
+                });
             };
             xhr.timeout = 8000;
             try {
                 xhr.send();
             } catch (e) {
-                showNotice('server_unavailable');
-                enterStandaloneMode('connection_unavailable');
+                finishStatusRequest(request, function () {
+                    enterStandaloneMode('connection_unavailable');
+                });
             }
         }
 
@@ -881,14 +823,17 @@
         function saveServerUrl() {
             var input = document.getElementById('server-url-input');
             var nextUrl = input ? normalizeServerUrl(input.value) : "";
-            if (!nextUrl) return;
+            if (!nextUrl) return false;
+            var changed = nextUrl !== serverUrl;
             serverUrl = nextUrl;
+            if (changed) beginConnectionGeneration();
             writeStoredValue(STORAGE_SERVER_URL, serverUrl);
             setConnectionStatus('connection_saved', connectionMode === 'standalone');
+            return changed;
         }
 
         function reconnectNow() {
-            saveServerUrl();
+            if (!saveServerUrl()) beginConnectionGeneration();
             setConnectionStatus('connection_connecting', connectionMode === 'standalone');
             fetchStatus();
         }

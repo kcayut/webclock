@@ -3,11 +3,10 @@
     'use strict';
     var bell = document.getElementById('alarm-bell');
     if (!bell) return;
-    var hint = document.getElementById('alarm-status');
     var message = document.getElementById('alarm-message');
     var motion = document.getElementById('alarm-motion');
     var source = '', queue = [], active = [], handled = {}, dismissed = [];
-    var enabled = 0, confirmed = false, failed = false, holidayKnown = true, attemptedSound = false;
+    var enabled = 0, confirmed = false;
     var baseTime = null, baseElapsedTime = 0, requestNumber = 0, lastTouch = -1000, lastTone = -1600;
 
     function text(node, value) {
@@ -33,12 +32,6 @@
         bell.setAttribute('aria-label', label);
         bell.title = label;
         bell.className = ready() ? 'sound-ready' : '';
-        var status = failed ? t('alarm_sync_error') : !holidayKnown ? t('alarm_unknown_holiday') : '';
-        if (!status && enabled && audible() && !ready()) {
-            status = t(attemptedSound ? 'alarm_sound_unavailable' : 'alarm_enable_sound');
-        }
-        text(hint, status);
-        hint.style.display = status ? 'block' : 'none';
         message.style.display = active.length ? 'block' : 'none';
         if (active.length) {
             text(document.getElementById('alarm-name'), t('alarm_ringing') + ' · ' + active[0].name +
@@ -82,10 +75,8 @@
         }
         queue = data.alarms;
         enabled = data.enabled_count;
-        holidayKnown = data.holiday_known !== false;
         baseTime = data.server_timestamp;
         baseElapsedTime = elapsedNow();
-        failed = false;
         var ringingCount = active.length;
         active = active.filter(function (item) { return data.enabled_ids.indexOf(item.id) >= 0; });
         if (active.length !== ringingCount && window.AlarmAudio) window.AlarmAudio.stop();
@@ -114,9 +105,7 @@
         xhr.open('GET', target + '/api/v1/browser-alarms', true);
         xhr.timeout = 8000;
         function failure() {
-            if (sequence !== requestNumber || target !== sourceUrl()) return;
-            failed = true;
-            render();
+            /* Alarm polling faults stay quiet; loaded alarms and the clock keep running. */
         }
         xhr.onload = function () {
             if (sequence !== requestNumber || target !== sourceUrl()) return;
@@ -166,7 +155,6 @@
         else { confirmed = true; render(); }
     }
     bell.onclick = function () {
-        attemptedSound = true;
         if (window.AlarmAudio) window.AlarmAudio.unlock('bell');
         render();
     };
