@@ -445,7 +445,9 @@
         function writeStoredJson(key, value) {
             try {
                 window.localStorage.setItem(key, JSON.stringify(value));
+                return true;
             } catch (e) {
+                return false;
             }
         }
 
@@ -463,49 +465,155 @@
             return serverUrl + '/api/status?nocache=' + new Date().getTime();
         }
 
-        function getStoredSettings() {
-            var defaults = {
+        function defaultDisplaySettings() {
+            return {
                 mode: 'normal',
                 brightness: 100,
                 timezone_offset: 8,
                 language: currentLanguage,
-                time_format: '24h'
+                time_format: '24h',
+                night: {enabled: false, start: '22:00', end: '07:00', brightness: 15, black: false}
             };
-            var stored = readStoredJson(STORAGE_SETTINGS, {});
-            for (var key in stored) {
-                if (stored.hasOwnProperty(key)) defaults[key] = stored[key];
+        }
+
+        function copyDisplaySettings(settings) {
+            return {
+                mode: settings.mode,
+                brightness: settings.brightness,
+                timezone_offset: settings.timezone_offset,
+                language: settings.language,
+                time_format: settings.time_format,
+                night: {
+                    enabled: settings.night.enabled,
+                    start: settings.night.start,
+                    end: settings.night.end,
+                    brightness: settings.night.brightness,
+                    black: settings.night.black
+                }
+            };
+        }
+
+        function isSettingsObject(value) {
+            return value !== null && Object.prototype.toString.call(value) === '[object Object]';
+        }
+
+        function owns(object, key) {
+            return Object.prototype.hasOwnProperty.call(object, key);
+        }
+
+        function normalizedInteger(value, low, high) {
+            if (typeof value === 'string') {
+                if (!/^-?\d+$/.test(value)) return null;
+            } else if (typeof value !== 'number') {
+                return null;
             }
-            return defaults;
+            var number = Number(value);
+            if (!isFinite(number) || Math.floor(number) !== number || number < low || number > high) return null;
+            return number;
+        }
+
+        function validClockTime(value) {
+            var match = typeof value === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+            return !!match;
+        }
+
+        function normalizeDisplaySettings(candidate, fallback) {
+            if (!isSettingsObject(candidate)) return null;
+            var base = fallback && fallback.night ? copyDisplaySettings(fallback) : defaultDisplaySettings();
+            var allowed = {
+                mode: true, brightness: true, timezone_offset: true,
+                language: true, time_format: true, night: true
+            };
+            var key;
+            for (key in candidate) {
+                if (owns(candidate, key) && !owns(allowed, key)) return null;
+            }
+
+            if (owns(candidate, 'mode')) {
+                if (candidate.mode !== 'normal' && candidate.mode !== 'black') return null;
+                base.mode = candidate.mode;
+            }
+            if (owns(candidate, 'brightness')) {
+                var brightness = normalizedInteger(candidate.brightness, 0, 100);
+                if (brightness === null) return null;
+                base.brightness = brightness;
+            }
+            if (owns(candidate, 'timezone_offset')) {
+                var offset = normalizedInteger(candidate.timezone_offset, -12, 14);
+                if (offset === null) return null;
+                base.timezone_offset = offset;
+            }
+            if (owns(candidate, 'language')) {
+                if (typeof candidate.language !== 'string' || !owns(I18N, candidate.language)) return null;
+                base.language = candidate.language;
+            }
+            if (owns(candidate, 'time_format')) {
+                if (candidate.time_format !== '24h' && candidate.time_format !== '12h') return null;
+                base.time_format = candidate.time_format;
+            }
+            if (owns(candidate, 'night')) {
+                var night = candidate.night;
+                if (!isSettingsObject(night)) return null;
+                var nightAllowed = {enabled: true, start: true, end: true, brightness: true, black: true};
+                for (key in night) {
+                    if (owns(night, key) && !owns(nightAllowed, key)) return null;
+                }
+                if (owns(night, 'enabled')) {
+                    if (typeof night.enabled !== 'boolean') return null;
+                    base.night.enabled = night.enabled;
+                }
+                if (owns(night, 'start')) {
+                    if (!validClockTime(night.start)) return null;
+                    base.night.start = night.start;
+                }
+                if (owns(night, 'end')) {
+                    if (!validClockTime(night.end)) return null;
+                    base.night.end = night.end;
+                }
+                if (owns(night, 'brightness')) {
+                    var nightBrightness = normalizedInteger(night.brightness, 0, 100);
+                    if (nightBrightness === null) return null;
+                    base.night.brightness = nightBrightness;
+                }
+                if (owns(night, 'black')) {
+                    if (typeof night.black !== 'boolean') return null;
+                    base.night.black = night.black;
+                }
+                if (base.night.start === base.night.end) return null;
+            }
+            return base;
+        }
+
+        function getStoredSettings() {
+            var base = defaultDisplaySettings();
+            var stored = readStoredJson(STORAGE_SETTINGS, null);
+            return normalizeDisplaySettings(stored, base) || base;
         }
 
         function saveSettings(settings) {
-            if (!settings) return;
-            writeStoredJson(STORAGE_SETTINGS, {
-                mode: settings.mode || 'normal',
-                brightness: settings.brightness === undefined ? 100 : Number(settings.brightness),
-                timezone_offset: settings.timezone_offset === undefined ? timezoneOffset : Number(settings.timezone_offset),
-                language: settings.language || currentLanguage,
-                time_format: settings.time_format === '12h' ? '12h' : '24h',
-                night: settings.night || {enabled: false}
-            });
+            var normalized = normalizeDisplaySettings(settings,
+                activeSettings && activeSettings.night ? activeSettings : defaultDisplaySettings());
+            if (!normalized) return false;
+            return writeStoredJson(STORAGE_SETTINGS, normalized);
         }
 
         function applySettings(settings) {
-            if (!settings) return;
-            var formatChanged = activeSettings.time_format !== settings.time_format ||
-                (settings.language && settings.language !== currentLanguage);
-            activeSettings = settings;
-            document.body.classList.toggle('uses-12-hour', settings.time_format === '12h');
-            if (settings.language) {
-                setLanguage(settings.language);
+            var normalized = normalizeDisplaySettings(settings,
+                activeSettings && activeSettings.night ? activeSettings : defaultDisplaySettings());
+            if (!normalized) return false;
+            var formatChanged = activeSettings.time_format !== normalized.time_format ||
+                normalized.language !== currentLanguage;
+            activeSettings = normalized;
+            document.body.classList.toggle('uses-12-hour', normalized.time_format === '12h');
+            if (normalized.language) {
+                setLanguage(normalized.language);
             }
-            if (settings.timezone_offset !== undefined) {
-                timezoneOffset = Number(settings.timezone_offset);
-            }
+            timezoneOffset = normalized.timezone_offset;
 
             applyDisplay();
             if (formatChanged) renderLocalEventsEditor();
             refreshLocalTimeInput();
+            return true;
         }
 
         function refreshLocalTimeInput() {
@@ -601,7 +709,8 @@
 
         function enterStandaloneMode(message) {
             connectionMode = 'standalone';
-            applySettings(getStoredSettings());
+            // Keep the latest live settings, even if saving them failed. The cache
+            // is only restored at startup, when no valid in-memory state exists.
             renderList(getLocalEventsForToday());
             updateClock();
             setConnectionStatus(message || 'connection_standalone', true);
@@ -609,9 +718,8 @@
 
         function enterServerMode(data) {
             connectionMode = 'server';
-            if (data.settings) {
-                applySettings(data.settings);
-                saveSettings(data.settings);
+            if (data.settings && applySettings(data.settings)) {
+                saveSettings(activeSettings);
             }
             setClockBase(data.server_timestamp);
             if (lastNoticeKey === 'server_unavailable' || lastNoticeKey === 'server_timeout' ||

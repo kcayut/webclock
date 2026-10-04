@@ -117,12 +117,13 @@ const coreScript = inlineScripts.find(script => script.includes('WebClockCore.st
 const serverScript = inlineScripts.find(script => script.includes('var I18N ='))
     .replace('{{ translations | tojson }}', JSON.stringify(clockLabels))
     .replace('{{ language | tojson }}', '"zh-TW"');
-function checkLegacyPage(failOptionalEditor) {
+function checkLegacyPage(failOptionalEditor, bootSettings) {
     const elements = {};
     const ticks = [];
     const requests = [];
-    const storage = {};
-    let storageAvailable = false;
+    const storage = bootSettings ? {'webclock.settings': bootSettings.raw} : {};
+    let storageAvailable = !!bootSettings;
+    let storageWritable = true;
     function makeNode() {
         const classes = new Set();
         const attributes = {};
@@ -168,7 +169,7 @@ function checkLegacyPage(failOptionalEditor) {
             location: {origin: 'http://clock.example'}, addEventListener() {},
             localStorage: {
                 getItem(key) { if (!storageAvailable) throw new Error('storage unavailable'); return storage[key] || null; },
-                setItem(key, value) { storage[key] = value; },
+                setItem(key, value) { if (!storageWritable) throw new Error('storage unavailable'); storage[key] = value; },
             },
         },
         setInterval: (callback, delay) => ticks.push({callback, delay}),
@@ -195,6 +196,21 @@ function checkLegacyPage(failOptionalEditor) {
     now += 60000;
     tick.callback();
     assert.notEqual(node('time').textContent, before);
+    if (bootSettings) {
+        assert.equal(legacy.activeSettings.brightness, bootSettings.brightness);
+        assert.equal(legacy.activeSettings.timezone_offset, 8);
+        assert.equal(legacy.activeSettings.night.enabled, false);
+        assert.equal(legacy.activeSettings.night.start, '22:00');
+        assert.equal(legacy.activeSettings.time_format, '24h');
+        assert.match(node('time').textContent, /^\d\d:\d\d$/);
+        assert.match(node('date-part').textContent, /^\d{1,2}\/\d{1,2}$/);
+        assert.ok(node('day-part').textContent);
+        assert.equal(node('clock-container').style.opacity, bootSettings.brightness / 100);
+        assert.equal(node('body').classList.contains('force-black'), false);
+        assert.equal(storage['webclock.settings'], bootSettings.raw,
+            'startup does not overwrite an unreadable or legacy cache');
+        return;
+    }
     if (!failOptionalEditor) {
         assert.deepEqual(ticks.map(timer => timer.delay), [1000, 5000], 'clock only polls its own status server');
         assert.equal(requests.length, 1, 'startup makes one status request and no external time request');
@@ -258,6 +274,118 @@ function checkLegacyPage(failOptionalEditor) {
         assert.equal(node('list-container').style.display, 'none');
         assert.equal(node('body').classList.contains('has-events'), false);
         assert.equal(elements['next-event'], undefined);
+        const validSettings = JSON.stringify(legacy.activeSettings);
+        const savedValidSettings = storage['webclock.settings'];
+        for (const invalidSettings of [
+            {brightness: null}, {brightness: ''}, {brightness: ' '}, {brightness: NaN}, {brightness: 101},
+            {timezone_offset: null}, {timezone_offset: 'bad'}, {timezone_offset: Infinity}, {timezone_offset: 15},
+            {mode: 'invisible'}, {language: 'unknown'}, {language: ['en'], brightness: 0}, {time_format: 'invalid'},
+            {night: null}, {night: {enabled: true, start: 'bad'}},
+            {night: {enabled: true, start: '22:00', end: '22:00'}}, {unknown: true},
+            {constructor: true, brightness: 0}, {toString: true, brightness: 0},
+            JSON.parse('{"__proto__": {}, "brightness": 0}'),
+            {night: {toString: true}, brightness: 0},
+        ]) {
+            legacy.enterServerMode({events: [], settings: invalidSettings});
+            assert.equal(JSON.stringify(legacy.activeSettings), validSettings,
+                'invalid settings retain the last valid display state');
+            assert.equal(storage['webclock.settings'], savedValidSettings,
+                'invalid settings are not persisted');
+            assert.match(node('time').textContent, /^\d\d:\d\d$/);
+            assert.doesNotMatch(node('time').textContent + node('date-part').textContent, /NaN/);
+            assert.match(node('date-part').textContent, /^\d{1,2}\/\d{1,2}$/);
+            assert.ok(node('day-part').textContent);
+            assert.ok(Number(node('clock-container').style.opacity) > 0,
+                'invalid settings cannot hide the basic clock');
+            assert.notEqual(node('clock-container').style.display, 'none');
+            assert.notEqual(node('clock-container').style.visibility, 'hidden');
+            assert.equal(node('body').classList.contains('force-black'), false,
+                'invalid settings cannot trigger black mode');
+        }
+        legacy.enterServerMode({
+            settings: {brightness: 0, timezone_offset: 'bad'},
+            server_timestamp: Date.parse('2026-10-01T01:23:00Z'),
+            events: [{text: 'Valid event with invalid settings', time: '09:23'}],
+        });
+        assert.equal(JSON.stringify(legacy.activeSettings), validSettings);
+        assert.equal(node('time').textContent, '09:23',
+            'invalid settings do not reject the valid server time in the same reply');
+        assert.equal(node('list-container').children[0].children[0].children[1].textContent,
+            'Valid event with invalid settings');
+
+        storageAvailable = false;
+        legacy.enterStandaloneMode();
+        assert.equal(JSON.stringify(legacy.activeSettings), validSettings,
+            'unavailable storage retains the current valid settings');
+        storageAvailable = true;
+        storage['webclock.settings'] = '{broken';
+        legacy.enterStandaloneMode();
+        assert.equal(JSON.stringify(legacy.activeSettings), validSettings,
+            'malformed stored JSON retains the current valid settings');
+        storage['webclock.settings'] = JSON.stringify({brightness: null, timezone_offset: 'bad'});
+        legacy.enterStandaloneMode();
+        assert.equal(JSON.stringify(legacy.activeSettings), validSettings,
+            'invalid stored settings retain the current valid settings');
+        storage['webclock.settings'] = savedValidSettings;
+        storageWritable = false;
+        legacy.enterServerMode({events: [], settings: {brightness: 45}});
+        assert.equal(legacy.activeSettings.brightness, 45,
+            'a storage write failure does not reject an otherwise valid live setting');
+        assert.equal(node('clock-container').style.opacity, 0.45);
+        assert.equal(storage['webclock.settings'], savedValidSettings,
+            'a storage write failure leaves the previous stored settings intact');
+        legacy.enterStandaloneMode();
+        assert.equal(legacy.activeSettings.brightness, 45,
+            'disconnecting after a failed save must not restore stale cached settings');
+        assert.equal(node('clock-container').style.opacity, 0.45);
+        const beforeWriteFailureTick = node('time').textContent;
+        now += 60000;
+        tick.callback();
+        assert.notEqual(node('time').textContent, beforeWriteFailureTick,
+            'the clock keeps advancing after a storage write failure');
+        storageWritable = true;
+
+        legacy.enterServerMode({events: [], settings: {brightness: 0}});
+        assert.equal(node('clock-container').style.opacity, 0,
+            'an explicit zero brightness remains a valid user setting');
+        legacy.enterServerMode({events: [], settings: {brightness: 35, mode: 'black'}});
+        assert.equal(node('body').classList.contains('force-black'), true,
+            'manual black mode remains valid');
+        const beforeBlackTick = node('time').textContent;
+        now += 60000;
+        tick.callback();
+        assert.notEqual(node('time').textContent, beforeBlackTick,
+            'the underlying clock keeps advancing during intentional black mode');
+        legacy.enterServerMode({events: [], settings: {
+            mode: 'normal', brightness: 35,
+            night: {enabled: true, start: '22:00', end: '07:00', brightness: 0, black: false},
+        }, server_timestamp: Date.parse('2026-10-01T15:59:00Z')});
+        assert.equal(node('clock-container').style.opacity, 0,
+            'zero night brightness remains valid independently of black mode');
+        assert.equal(node('body').classList.contains('force-black'), false);
+        legacy.enterServerMode({events: [], settings: {night: {black: true}}});
+        assert.equal(node('body').classList.contains('force-black'), true,
+            'a valid active night black setting remains supported');
+        const beforeNightDate = node('date-part').textContent;
+        const beforeNightDay = node('day-part').textContent;
+        now += 60000;
+        tick.callback();
+        assert.equal(node('time').textContent, '00:00');
+        assert.notEqual(node('date-part').textContent, beforeNightDate);
+        assert.notEqual(node('day-part').textContent, beforeNightDay,
+            'time, date and weekday keep updating while intentionally black');
+        now += 7 * 3600000;
+        tick.callback();
+        assert.equal(node('time').textContent, '07:00');
+        assert.equal(node('body').classList.contains('force-black'), false,
+            'night mode ends automatically without another server response');
+        assert.equal(node('clock-container').style.opacity, 0.35,
+            'night end restores the last valid daytime brightness');
+        legacy.enterServerMode({events: [], settings: {
+            night: {enabled: false}, mode: 'normal', brightness: 35,
+        }});
+        assert.equal(node('body').classList.contains('force-black'), false);
+        assert.equal(node('clock-container').style.opacity, 0.35);
         legacy.enterServerMode({events: [{text: 'Visible reminder', time: '08:10'}]});
         assert.equal(node('list-container').style.display, 'block');
         assert.equal(node('body').classList.contains('has-events'), true);
@@ -358,6 +486,12 @@ function checkLegacyPage(failOptionalEditor) {
 }
 checkLegacyPage(false);
 checkLegacyPage(true);
+for (const bootSettings of [
+    {raw: '{broken', brightness: 100},
+    {raw: JSON.stringify({brightness: null, mode: 'black'}), brightness: 100},
+    {raw: JSON.stringify({language: ['en'], brightness: 0}), brightness: 100},
+    {raw: JSON.stringify({brightness: '65', night: {enabled: false}}), brightness: 65},
+]) checkLegacyPage(false, bootSettings);
 // A separately parsed optional script can be missing or contain invalid syntax
 // without preventing the already-started clock from crossing midnight.
 {
