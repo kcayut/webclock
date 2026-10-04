@@ -110,7 +110,11 @@ for (const language of ['zh-TW', 'en', 'ja']) {
         pack[key] = language + ':' + key + (['connection_connected', 'connection_saved'].includes(key) ? ' {url}' : '');
     }
 }
-const serverScript = template.match(/<script>([\s\S]*?)<\/script>/)[1]
+const inlineScripts = Array.from(template.matchAll(/<script>([\s\S]*?)<\/script>/g), match => match[1]);
+const coreScript = inlineScripts.find(script => script.includes('WebClockCore.start'))
+    .replace('{{ translations[language].weekdays | tojson }}', JSON.stringify(clockLabels['zh-TW'].weekdays))
+    .replace('{{ language | tojson }}', '"zh-TW"');
+const serverScript = inlineScripts.find(script => script.includes('var I18N ='))
     .replace('{{ translations | tojson }}', JSON.stringify(clockLabels))
     .replace('{{ language | tojson }}', '"zh-TW"');
 function checkLegacyPage(failOptionalEditor) {
@@ -182,6 +186,7 @@ function checkLegacyPage(failOptionalEditor) {
     vm.runInContext('Number.isFinite = undefined;', legacy);
     vm.runInContext(fs.readFileSync(path.join(root, 'static/time-format.js'), 'utf8'), legacy);
     vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), legacy);
+    vm.runInContext(coreScript, legacy);
     if (failOptionalEditor) assert.throws(() => vm.runInContext(serverScript, legacy), /optional editor failed/);
     else vm.runInContext(serverScript, legacy);
     const tick = ticks.find(timer => timer.delay === 1000);
@@ -353,9 +358,35 @@ function checkLegacyPage(failOptionalEditor) {
 }
 checkLegacyPage(false);
 checkLegacyPage(true);
+// A separately parsed optional script can be missing or contain invalid syntax
+// without preventing the already-started clock from crossing midnight.
+{
+    const isolatedNodes = {'time': {}, 'time-period': {style: {}}, 'date-part': {}, 'day-part': {}};
+    const isolatedTimers = [];
+    const isolated = vm.createContext({
+        Date: DeviceDate,
+        document: {
+            getElementById: id => isolatedNodes[id],
+            addEventListener() {},
+        },
+        window: {addEventListener() {}},
+        setInterval: (callback, delay) => isolatedTimers.push({callback, delay}),
+    });
+    vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), isolated);
+    vm.runInContext(coreScript, isolated);
+    assert.throws(() => vm.runInContext('var optionalFeature = ;', isolated), /Unexpected token/);
+    isolated.window.WebClockCore.useUpdater(function () { throw new Error('optional updater failed'); });
+    now = Date.parse('2026-12-31T23:59:00Z');
+    isolatedTimers[0].callback();
+    const beforeDate = isolatedNodes['date-part'].textContent;
+    now += 60000;
+    isolatedTimers[0].callback();
+    assert.notEqual(isolatedNodes['date-part'].textContent, beforeDate);
+    assert.equal(isolatedNodes.time.textContent, '00:00');
+}
 for (const page of [html, template]) {
     assert.doesNotMatch(page, /id="next-event"/);
-    assert.ok(page.indexOf('offline.js') > page.indexOf('setInterval(update'), 'optional offline script loads after clock startup');
+    assert.ok(page.indexOf('offline.js') > page.indexOf('WebClockCore.start'), 'optional offline script loads after clock startup');
 }
 assert.match(template, /<form id="local-event-form"[^>]*onsubmit="addLocalEvent\(\); return false;">[\s\S]*?<button type="submit" data-clock-i18n="add">[\s\S]*?<\/button>[\s\S]*?<\/form>/,
     'the real Add action uses native form validation for the time input proxies');

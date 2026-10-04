@@ -36,3 +36,56 @@ function clockDisplaySettings(settings, utcMs, timezoneOffset) {
         brightness: active ? night.brightness : (settings.brightness === undefined ? 100 : settings.brightness)
     };
 }
+
+/*
+ * Start the essential clock before any optional page feature is parsed or run.
+ * A richer page can replace the updater without creating a second timer.  If
+ * that updater later fails, the device-time clock remains the last-resort path.
+ */
+(function (root) {
+    var runtime = null;
+
+    function start(options) {
+        if (runtime) return runtime;
+        options = options || {};
+        runtime = {
+            weekDays: options.weekDays || ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+            language: options.language || 'en',
+            updater: null,
+            timer: null
+        };
+
+        function renderBasicClock() {
+            renderClock(new Date().getTime(), null, runtime.weekDays, '24h', runtime.language);
+        }
+
+        runtime.tick = function () {
+            if (runtime.updater) {
+                try {
+                    runtime.updater();
+                    return;
+                } catch (e) {
+                    /* Optional display work must not stop the basic clock. */
+                }
+            }
+            renderBasicClock();
+        };
+
+        runtime.tick();
+        runtime.timer = setInterval(runtime.tick, 1000);
+        document.addEventListener('visibilitychange', runtime.tick);
+        root.addEventListener('pageshow', runtime.tick);
+        return runtime;
+    }
+
+    function useUpdater(updater) {
+        if (!runtime || typeof updater !== 'function') return;
+        runtime.updater = updater;
+        runtime.tick();
+    }
+
+    root.WebClockCore = {
+        start: start,
+        useUpdater: useUpdater
+    };
+}(window));

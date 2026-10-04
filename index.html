@@ -61,14 +61,10 @@
     <noscript>請啟用 JavaScript，以顯示裝置時間。</noscript>
     <script src="static/clock.js"></script>
     <script>
-        function updateDeviceClock() {
-            renderClock(new Date().getTime(), null, ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']);
-        }
-
-        updateDeviceClock();
-        setInterval(updateDeviceClock, 1000);
-        document.addEventListener('visibilitychange', updateDeviceClock);
-        window.addEventListener('pageshow', updateDeviceClock);
+        window.WebClockCore.start({
+            weekDays: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
+            language: 'zh-TW'
+        });
     </script>
     <script src="static/offline.js"></script>
 </body>

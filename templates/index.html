@@ -364,8 +364,14 @@
         <p id="alarm-help">{{ translations[language].alarm_sound_hint }}</p>
     </div>
 
-    <script src="{{ url_for('static', filename='time-format.js') }}"></script>
     <script src="{{ url_for('static', filename='clock.js') }}"></script>
+    <script>
+        window.WebClockCore.start({
+            weekDays: {{ translations[language].weekdays | tojson }},
+            language: {{ language | tojson }}
+        });
+    </script>
+    <script src="{{ url_for('static', filename='time-format.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
         var currentLanguage = {{ language | tojson }};
@@ -864,11 +870,8 @@
             applyScrolling(nextItem);
         }
 
-        // Start the clock before optional settings, reminders or network work.
-        setInterval(updateClock, 1000);
-        updateClock();
-        document.addEventListener('visibilitychange', updateClock);
-        window.addEventListener('pageshow', updateClock);
+        // Upgrade the already-running basic clock without creating another timer.
+        window.WebClockCore.useUpdater(updateClock);
         applySettings(getStoredSettings());
         renderLocalEventsEditor();
         setConnectionStatus('connection_connecting', false);
