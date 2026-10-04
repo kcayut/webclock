@@ -5,7 +5,7 @@
 本專案負責管理排程、台灣工作日資料、裝置登錄、同步版本及最後回報，並讓自架時鐘頁執行網頁鬧鐘。
 `/schedules` 編輯與預覽鬧鐘排程，時鐘頁 `/` 播放內建音色並顯示紅邊提示；`/admin` 分開管理顯示設定、訂閱行事曆與文字提醒。
 
-獨立硬體的韌體、音檔、喇叭播放、音量、貪睡、RTC、按鍵及離線執行由裝置端負責，目前尚未實作。ESPHome 的開發準備放在 [`firmware/`](../firmware/README.md)，使用與開發流程見 [ESPHome 裝置指南](esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不控制硬體播放器。
+獨立硬體由裝置端執行。[`firmware/`](../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
 目前是單一管理空間，**所有裝置共用同一組排程與日曆**。尚未提供個別裝置的排程指派、多租戶或使用者帳號。
@@ -34,7 +34,7 @@ static/                      網頁 CSS / JS
 scripts/                     安裝與更新
 tests/                       Server、API 與網頁回歸測試
 doc/                         架構與 API 契約
-firmware/                    ESPHome 韌體開發準備，尚無可燒錄成品
+firmware/                    ESP32-S3 ESPHome YAML、同步元件與核心測試；已編譯，待實機驗收
 webclock_state/              私人執行資料，不進 Git
   calendar.json              多來源行事曆網址、名稱及顯示選擇
   settings.json
@@ -189,7 +189,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 
 ## 裝置 API
 
-路徑保留 `/api/v1/device/*`，設定回應的 **`schema_version` 為 2**。裝置 API 不提供舊硬體 `sound`、`volume`、`repeat`、`snooze_minutes` 播放欄位；`browser_sound` 僅供網頁呈現，不是硬體播放指令。舊原型 client 需要更新，不能將 schema 2 視為 schema 1 相容。
+路徑保留 `/api/v1/device/*`，設定回應的 **`schema_version` 為 2**。裝置 API 不提供舊硬體 `sound`、`volume`、`repeat`、`snooze_minutes` 播放欄位；`browser_sound` 原本描述網頁音色，不是通用硬體播放指令。ESPHome 原型明確將非靜音音色映射成同一種嗶聲，音量另乘裝置上限，詳見[硬體映射](esp-home.md#顯示聲音與按鍵)。schema 1 的舊 client 需要更新，不能將 schema 2 視為 schema 1 相容。
 
 | 路徑 | 方法與用途 |
 | --- | --- |
@@ -289,7 +289,7 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 
 日曆快照的 `schema_version=1` 只描述日曆格式，與裝置設定的 `schema_version=2` 是不同契約。
 
-韌體實作還需遵守以下規則：
+各韌體實作需遵守以下規則：
 
 - 把 revision 當不透明版本字串；不能比較大小推斷新舊，也不能直接雜湊 HTTP 本文來比對。Server 雜湊的是排序後的資料內容，排程只雜湊陣列，不包含外層 `revision`。
 - 每個資源保存各自的 ETag。`If-None-Match` 傳回原本含引號的 ETag；使用 query 時只傳不含引號的值。兩者擇一即可。
@@ -299,7 +299,7 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 - 所有下載與解析都要設容量／逾時限制；超量、未知 schema、缺欄位、半份 JSON、Flash 寫入失敗均不得當作成功。不可截掉超額排程後回報整份已同步。
 - 網路錯誤時退避重試並保留原有效快取；只在資料變動時寫入 Flash。輪詢不能阻塞本機響鈴。已知認證失效時停止存取受保護資料，不能改用空 token 重試；現有 schema 2 沒有授權有效期／離線撤銷協定。
 
-例如，可每 30 秒檢查 config、每 60 秒回報 status；這是客戶端起始建議，不是 Server 主動推送或已實作的韌體預設。
+一般客戶端可每 30 秒檢查 config、每 60 秒回報 status；這是起始建議，不是 Server 主動推送。目前 ESPHome 原型約每 30 秒檢查並回報一次，失敗時退避，詳見[原型同步流程](esp-home.md#已實作的同步流程)。
 
 ### 狀態與同步確認
 
@@ -403,7 +403,7 @@ curl -i -H 'Content-Type: application/json' \
 
 先檢查 HTTP 狀態碼，再依 Content-Type 解析；代理登入頁、未知路由或未預期例外不保證有 `error` JSON。逾時、斷線及 5xx 不 ACK 未完成同步。ACK 成功但回應遺失可重送；格式合法但不屬於該裝置的指令 ID 不會清除其他裝置命令。
 
-韌體的認證／同步失敗不得阻塞基本走時；主畫面不自動彈出系統錯誤，診斷由後台或使用者主動開啟的設定入口處理。這些客戶端行為尚待實作，無可信時間時也不能憑空得知正確日期；詳見 [ESPHome 裝置指南](esp-home.md#時間離線與使用者操作)。
+韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時不能憑空得知正確日期，詳見 [ESPHome 裝置指南](esp-home.md#時間斷網斷電與認證)。
 
 ### 後續擴充界線
 

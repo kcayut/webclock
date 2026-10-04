@@ -34,16 +34,12 @@ logger:
   baud_rate: 115200
   level: INFO
 
-# Provision Wi-Fi through ESPHome Web (Improv), or the fallback captive portal.
+# Provision Wi-Fi through ESPHome Web (Improv Serial).
 # No Wi-Fi credentials are embedded in the firmware.
 wifi:
   reboot_timeout: 0s
-  ap:
-    password: !secret fallback_ap_password
 
 improv_serial:
-
-captive_portal:
 
 time:
   - platform: sntp

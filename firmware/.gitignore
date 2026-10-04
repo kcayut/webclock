@@ -1,5 +1,7 @@
 # ESPHome local build state and generated firmware
 .esphome/
+.venv/
+.platformio/
 build/
 *.bin
 *.elf

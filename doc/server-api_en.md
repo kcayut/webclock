@@ -4,9 +4,9 @@
 
 This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. It also lets the self-hosted clock page run browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders.
 
-Firmware, speakers, hardware volume, snooze, RTC, buttons, and standalone offline execution are device responsibilities and are not implemented yet. [`firmware/`](../firmware/README.md) contains development preparation only: no compilable ESPHome configuration, flashable image, web installer, or OTA update service. Devices integrate through HTTP/JSON and do not import this project's Python modules.
+Device execution remains a firmware responsibility. [`firmware/`](../firmware/README.md) now contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
 
-See the [ESPHome device guide](esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the planned workflow and complete response examples.
+See the [ESPHome device guide](esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
 
 There is currently one shared management space: **all devices use the same schedules and calendars**. Per-device schedule assignment, multi-tenancy, and user accounts are not implemented.
 
@@ -29,7 +29,7 @@ static/                      web CSS and JavaScript
 scripts/                     installation and update logic
 tests/                       server, API, and web regression tests
 doc/                         guides and API contracts
-firmware/                    ESPHome development preparation; no buildable firmware yet
+firmware/                    ESP32-S3 ESPHome YAML, sync component, host tests; cross-compiled, hardware untested
 webclock_state/              private runtime data; never commit it
 ```
 
@@ -133,7 +133,7 @@ The visual alert pulses the red border every two seconds. Users may disable flas
 
 ## Device API
 
-Device paths remain under `/api/v1/device/*`; configuration responses use **`schema_version: 2`**. The device API does not expose old hardware playback fields. `browser_sound` and `browser_volume` describe browser playback, not hardware tone or volume commands. Schema 1 prototypes must be updated.
+Device paths remain under `/api/v1/device/*`; configuration responses use **`schema_version: 2`**. The device API does not expose old hardware playback fields. `browser_sound` and `browser_volume` describe browser playback, not portable hardware commands. The ESPHome prototype explicitly maps all non-silent tones to one beep and scales volume by a device limit; see its [hardware mapping](esp-home.md#顯示聲音與按鍵). Schema 1 prototypes must be updated.
 
 | Path | Method and purpose |
 | --- | --- |
@@ -191,7 +191,7 @@ The minimum status is `{"id":"bedroom"}`. Optional string fields preserve their 
 }
 ```
 
-`online` means a status report was received within 120 seconds. About one report per 60 seconds is recommended. **Request sync** queues only a `sync` command. It remains in status responses until acknowledged. Repeated requests keep one pending command. Devices should deduplicate by command ID and acknowledge only after success.
+`online` means a status report was received within 120 seconds. About one report per 60 seconds is a general recommendation; the ESPHome prototype checks and reports about every 30 seconds, backing off on failures. **Request sync** queues only a `sync` command. It remains in status responses until acknowledged. Repeated requests keep one pending command. Devices should deduplicate by command ID and acknowledge only after persistence and activation succeed.
 
 Reproducible request → poll → ACK sequence (example IDs):
 

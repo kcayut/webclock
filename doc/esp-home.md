@@ -1,142 +1,142 @@
-# ESP 鬧鐘：ESPHome 接入與韌體開發指南
+# ESP 鬧鐘：ESPHome 原型使用與同步契約
 
-[回到 README](../README.md) · [Server API 契約](server-api.md) · [韌體目錄](../firmware/README.md)
+[回到 README](../README.md) · [Server API 契約](server-api.md) · [硬體、接線與燒錄](../firmware/README.md)
 
-本文件說明 ESP 裝置如何接入 WebClock，以及預計提供的 ESPHome 安裝流程。**目前已具備 Server 裝置 API，但尚無可編譯的 ESPHome 韌體、預編譯下載、網頁安裝頁或 OTA 更新服務。** 下述安裝流程及韌體行為是開發目標，不能當成已完成的使用說明。
+已提供第一版 ESPHome YAML 與 WebClock 外部元件，選定 **ESP32-S3-DevKitC-1-N8R8 + SSD1306 128×64 I²C OLED + PS1240 無源壓電蜂鳴器 + 停止按鈕**。裝置使用現有 schema 2 API，同步固定規則鬧鐘，保存後在本機執行，不需要 Home Assistant 或 MQTT。
 
-現階段可先依 [Server API 文件](server-api.md#裝置-api) 用 HTTP 工具聯調；硬體板型、螢幕、播放器與接線確定後，再在 `firmware/` 實作並完成實機驗收。
+**驗證狀態：ESPHome 2026.9.1／ESP-IDF 5.5.5 交叉編譯與主機端排程／同步解析測試通過；尚未實機燒錄、接線、聲音或長時間運作驗收。** 主機測試使用本次建置的 ArduinoJson，並啟用 AddressSanitizer／UndefinedBehaviorSanitizer。本文區分已寫入原型的行為與後續提案；Server 測試、主機端核心測試或韌體編譯通過，都不能代替硬體驗收。
 
-## 安裝方式與使用流程
+## 安裝與操作
 
-預計採用 **ESPHome 韌體 + ESP Web Tools 網頁安裝**：
+依 [韌體 README](../firmware/README.md) 接線，使用 Python 3.12 安裝釘選的 ESPHome 2026.9.1，複製 `secrets.example.yaml`（保留已存在的 `secrets.yaml`），填入 Server 位址、共用 token 與裝置名稱，再執行 `esphome config`／`compile`。
 
-| 入口 | 適合對象 | 開發完成後的操作 |
-| --- | --- | --- |
-| 預編譯韌體與網頁安裝 | 使用支援硬體的一般使用者 | 插 USB、選硬體型號、燒錄、設定 Wi-Fi 與 WebClock |
-| ESPHome YAML 與元件原始碼 | 想修改接線或硬體的開發者 | 調整 YAML，使用 ESPHome 編譯、燒錄 |
+目前提供的是 **YAML + 元件原始碼 + USB 燒錄方法**，尚無通用的公開預編譯下載、專案專用一鍵安裝頁或 OTA 服務：
 
-一般使用者不需要 VS Code、ESPHome 編譯環境或 Home Assistant。ESPHome 負責韌體，ESP Web Tools 負責把已編譯的檔案寫入裝置；只有 YAML 而沒有預編譯韌體，仍然需要自行編譯。
+1. 使用資料 USB 線連接開發板的 **USB-to-UART** 埠。這份 YAML 指定 UART0，Improv Serial 與日誌都走這個埠。
+2. 用桌面 Chrome／Edge 開啟 [ESPHome Web](https://web.esphome.io/)，連接序列埠，選 Install 並上傳 `firmware/.esphome/build/webclock-alarm/build/firmware.factory.bin`（以專案根目錄為起點）。
+3. 燒錄後以 Improv Serial 設定 Wi-Fi；這版沒有 fallback 熱點、裝置 HTTP 設定頁或網路 OTA。
+4. 等待 NTP 校時及 Server 同步，在 WebClock `/schedules` 建立數分鐘後的鬧鐘，核對裝置版本，再觀察實際響鈴。
 
-預計的首次安裝步驟：
+裝置 ID 為 `wc-<MAC>`，同一板子重啟或更新仍使用相同 ID。名稱來自 `device_name`。ID 不是認證憑證，註冊成功也不代表建立每台裝置的安全配對。
 
-1. 準備受支援的 ESP32 硬體、正確供電與可傳輸資料的 USB 線。首版先支援一套明確的板型與接線，不宣稱所有 ESP 裝置通用。
-2. 用桌面 Chrome 或 Edge 開啟 HTTPS 安裝網頁，選擇實際硬體款式及序列埠，安裝對應韌體。晶片辨識不能取代螢幕、播放器及 GPIO 接線的選擇。
-3. 使用 Improv Serial 設定 Wi-Fi。網頁安裝支援環境以 ESP Web Tools 官方說明及實測為準，不以手機或舊 iPad 作為首版 USB 燒錄入口。
-4. 在裝置設定入口填入 WebClock 位址，例如 `http://192.168.1.20:5000`。裝置上的 `localhost` 指 ESP 自己，不能用來連家中的伺服器。此設定入口尚待實作。
-5. 現有 API 聯調使用固定裝置 ID、名稱及伺服器共用的 `DEVICE_API_TOKEN`；正式獨立配對機制完成後，再改成每台裝置的憑證。不能把目前的 `register` 成功描述成完成安全配對。
-6. 在 WebClock `/schedules` 建立鬧鐘，確認後台收到裝置回報及正確版本，再用一個近期鬧鐘實際驗收。
+Improv 只負責 Wi-Fi；**WebClock URL／token／名稱目前編入個人韌體**，修改時需重新編譯與 USB 燒錄。Wi-Fi 帳密不編入映像，會由裝置保存。已填妥設定的 YAML、`secrets.yaml`、編譯產物都不應公開；忽略規則不能讓已外流的韌體恢復保密。範例 `192.0.2.10` 為文件示意位址，不能當作可連線的 Server。
 
-Improv 配置的是 Wi-Fi，**不會自動填好 WebClock URL 或裝置憑證**；這部分要由韌體的設定流程完成。HTTPS 安裝頁可以獨立發布，不要求家中 WebClock 先使用同一網域或 HTTPS；它也不等於能跨來源直接管理家中伺服器。若 API 經不可信網路傳輸，仍要使用 HTTPS 並驗證憑證。
+目前首次安裝、保留資料升級及恢復出廠尚未完成硬體驗收。清除 flash 會失去 Wi-Fi、快取及去重紀錄，不能保證保留設定。網頁安裝能力與瀏覽器支援以 [ESP Web Tools 官方文件](https://esphome.github.io/esp-web-tools/) 為準。
 
-首次安裝、保留設定的升級、清除設定的恢復出廠，必須分開設計與驗證。目前沒有可操作的 OTA 流程，不能先承諾按一下就能保留資料升級。
+## 顯示、聲音與按鍵
 
-參考：[ESP Web Tools](https://esphome.github.io/esp-web-tools/)、[Improv Serial](https://esphome.io/components/improv_serial/)。
+OLED 主畫面顯示大時間、日期、星期數字（1＝星期一，7＝星期日）及秒數。未取得時間時顯示 `--:--`，不把開機預設日期當成真實時間。不會因同步失敗自動彈出錯誤面板；基本畫面不等待 Server 認證，診斷由序列日誌與後台的最後回報查看。
 
-## 現有 API 能做到哪裡
+時間與日期使用原創七段線條繪製，不依賴遠端字型下載，也沒有中文鬧鐘名稱顯示。
 
-| 能力 | 現況與限制 |
+| 項目 | 第一版行為 |
 | --- | --- |
-| 註冊、名稱、最後回報 | 已有；裝置 ID 是客戶端自報值，不是認證證明 |
-| 設定／排程／工作日日曆下載 | 已有 HTTP JSON API、revision 與 ETag／304 |
-| 後台要求同步 | 已有；指令等裝置下次回報時取得，不是伺服器即時推播 |
-| 同步確認 | 已有 ACK；應由韌體保存及啟用成功後回報 |
-| 排程範圍 | 所有裝置共用同一份資料，尚無個別指派、帳號隔離 |
-| 裝置 schema 2 | 提供固定規則排程，排除整筆 `calendar_link` 聯動鬧鐘 |
-| 聲音與音量 | `browser_sound`／`browser_volume` 是瀏覽器語意；硬體映射尚未定義 |
-| 實際響鈴與離線保存 | Server 不代替韌體執行，尚待開發與實機驗收 |
+| `type=alarm` | 本機響鈴 |
+| `reminder`／`announcement` | 可在快照中存在，但不播放；也計入 64 筆上限 |
+| `bell`／`beep`／`digital`／`chime`／`melody`／`pulse`／`sonar` | 全部映射成同一種 4 kHz 嗶聲，不模擬網頁音色 |
+| 聲音節奏 | 每秒輸出 350 ms，最多 60 秒 |
+| 每鬧鐘音量 | `browser_volume / 100 × volume_limit` 作為 PWM 輸出值；預設 `volume_limit=0.25`，可調範圍 0 至 0.5 |
+| `silent` 或音量 0 | 不發聲，仍顯示響鈴外框 |
+| 同一分鐘多筆 | 合併為一次，採非靜音事件的最高音量 |
+| GPIO5 停止鍵 | 停止本裝置當次聲音與外框，不永久停用 Server 排程、不通知其他裝置 |
+| 新快照套用 | 當次事件被取消或不再符合規則時停止；修改其他鬧鐘不無故中止當前響鈴 |
+| 貪睡、測試音按鍵 | 尚未提供 |
 
-`/api/v1/device/holidays` 是台灣工作日日曆，不是訂閱 ICS 的行程清單。`/api/v1/browser-alarms` 是網頁近期鬧鐘回應，**不是多日離線清單**，不能直接拿它取代完整裝置快取。
+PWM 百分比不是音壓百分比，不同蜂鳴器、頻率及外殼都影響實際音量。第一次接線先使用低 `volume_limit` 實測；聲音硬體以 PS1240 無源壓電蜂鳴器為準，不能直接換成有源蜂鳴器或低阻抗喇叭。[PS1240 規格](https://www.adafruit.com/product/160)
 
-`DEVICE_API_TOKEN` 為空時是可信任區網相容模式；非空時，所有裝置 API 都帶 `Authorization: Bearer <token>`。目前只有一個共用 token，不能只撤銷其中一台，也不保護管理頁及管理 API。不要把 token、Wi-Fi 密碼或私人伺服器設定寫入公開 YAML、下載韌體、Git 或日誌。
+## 現有 Server API 與範圍
 
-## 韌體同步流程
+完整 HTTP 格式、欄位限制與錯誤碼以 [Server API 契約](server-api.md#裝置-api) 為準。
 
-第一版採 ESP 主動 HTTP 輪詢，不需要 MQTT 或 Home Assistant。ESPHome 可使用 [HTTP Request](https://esphome.io/components/http_request/)；WebClock 的快取與排程執行可集中在一個 [External Component](https://esphome.io/components/external_components/) 中，避免把完整狀態機散落在 YAML。這個元件目前尚未建立。
-
-以下流程依現有 schema 2 設計；HTTP 欄位及錯誤碼以 [Server API 契約](server-api.md#裝置-api) 為準：
-
-1. 開機先啟動基本時鐘；載入上次成功保存的設定及排程，不等待認證或伺服器連線才顯示時間。只有取得可信時間後，才允許執行依時間觸發的鬧鐘。
-2. 以穩定裝置 ID 註冊；此 ID 必須能跨韌體更新保留，不能每次開機新增一台。
-3. 取得 `config`，確認支援 `schema_version=2`，記下設定、排程及日曆的三種 revision。
-4. 下載缺少或改變的資料到暫存區。只有對應的本機本文仍存在且通過檢查時，才能以 304 沿用它；304 沒有 JSON 本文，快取遺失時必須取消條件重新下載。
-5. 驗證下載本文的 revision，並再次取得 `config`，確認三種版本仍相同。不同就重新同步，不能把新排程與舊日曆混成一份有效設定。
-6. 檢查 JSON、必要欄位、支援的規則與容量上限。整組持久保存後才原子切換有效快取；斷電、解析失敗或容量不足都保留前一個完整版本，不能把截斷的清單當成功。
-7. POST `status` 回報實際已保存且啟用的三種 revision。若本次完成待處理的 `sync`，附上其指令 ID 的 ACK；失敗不 ACK。回應遺失時可重送相同 ACK，指令 ID 去重。
-
-可先以每 30 秒檢查設定、每 60 秒回報狀態作為**韌體起始設計值**，並非現有韌體的實際設定。無變更時只比對版本，不反覆寫 flash；失敗使用有上限的退避與少量隨機延遲。網路請求與解析不可阻塞本機走時、按鍵及響鈴。
-
-三個資源的條件請求有一個容易弄錯的地方：`config` 使用回應的 ETag，而不是 `config_revision`；排程及日曆則使用各自的 `revision`。`config_revision` 本身不會因排程變動而改變。
-
-成功同步採**完整替換**語意，因此新清單中消失的排程也要移除；只做新增／更新會讓已刪除的鬧鐘繼續響。空清單是有效結果；逾時、認證失敗或錯誤 JSON 不是空清單。
-
-目前 `status` 不接受新的 RTC、電池、時間可信度或錯誤狀態欄位作為正式契約。這些診斷要先擴充伺服器契約，不能單靠韌體多送欄位就宣稱後台已支援。`online`、版本相同及 ACK 也不能證明喇叭確實響過。
-
-## 規則計算與完整行事曆支援
-
-有兩條開發路線，應先選定再做韌體，不同時養兩套預設執行器。
-
-### 先用現有 schema 2 聯調
-
-ESP 下載規則與工作日日曆，自行計算下一次。必須遵守台灣排程時區、ISO 星期一 `1` 至星期日 `7`、`enabled`、`skipped_occurrences` 及假日未知狀態。首版若只執行 `type=alarm`，對 `reminder`／`announcement` 要明確列為未支援，不擅自當成鬧鐘。
-
-這條路能驗證現有 API，但沒有行事曆聯動。全部五年工作日快照約 122 KB，還不包含 JSON 解析的 RAM 開銷；ESPHome HTTP Request 的回應捕捉緩衝區預設只有 1 KB。實作時必須依板型及最大回應量驗證容量與完整下載，不能直接套用預設或無條件把緩衝區放大。[HTTP Request 回應與緩衝區文件](https://esphome.io/components/http_request/)
-
-### 建議的正式方向：伺服器產生多日響鈴清單
-
-**以下是待開發提案，沒有現成 endpoint、JSON schema 或可呼叫範例。** 由 Server 沿用目前的規則計算，產生例如未來七天的實際響鈴事件；ESP 保存事件並依時間執行。這樣固定鬧鐘、工作日及行事曆聯動能使用同一套伺服器判斷，裝置不用理解私人 ICS 或載入整份五年日曆。
-
-定義新契約時至少需要：
-
-- 清單版本、資料／授權範圍、產生時間、涵蓋範圍及有效期限；不能直接改變舊 schema 2 語意。
-- 每次觸發的穩定事件 ID、排程 ID、明確單位的 UTC 時間戳，以及裝置支援的聲音設定。
-- 排程變動、行程改期／取消、來源更新或讀取失敗，都要使清單重算；只比對排程設定版本不夠。
-- 即使設定沒改，也定期補足未來範圍。超過筆數或容量上限時明確失敗，不靜默截斷後取代完整清單。
-- 清單到期或已知權限失效時停止相應排程，基本時鐘繼續；真正離線的裝置無法立即收到取消或撤銷。
-
-七天是初始評估值，需要依實際事件量、儲存空間及預期離線時間選定，並在後台呈現有效期。
-
-## 時間、離線與使用者操作
-
-| 情境 | 韌體目標行為／限制 |
+| 能力 | 目前原型使用方式 |
 | --- | --- |
-| 未設定伺服器、未配對或認證失敗 | 基本時鐘獨立運作；不能放行未授權的私人行程與排程 |
-| 沒有可信時間 | 不把開機預設日期當成真實時間，也不執行鬧鐘；透過獨立校時或 RTC 取得時間，不向主畫面彈出系統錯誤 |
-| 暫時斷網 | 在快取及原授權仍有效的條件下繼續本機排程；背景重連 |
-| 離線時在 Server 取消鬧鐘 | ESP 收到新清單前仍可能響；後台顯示未同步，不能承諾即時取消 |
-| 已知憑證撤銷、資料範圍改變或授權到期 | 停止相應私人內容與排程，不能無限沿用舊快取；基本時鐘不停止 |
-| 校時前進／後退、重新開機 | 依事件 ID 與觸發時間去重，定義過期不補響及必要容許延遲；斷電邊界不宣稱絕對恰好執行一次 |
-| 按下停止 | 停止本裝置的當次鬧鐘，不永久停用 Server 排程，也不假定其他裝置同步停止 |
-| 貪睡 | 後續定義本機臨時事件及重開行為；目前 Server 沒有硬體貪睡指令 |
+| `POST /api/v1/device/register` | 以 MAC 衍生 ID 與設定名稱註冊 |
+| `GET /api/v1/device/config` | 驗證 schema 2／Asia-Taipei 設定，讀取三種 revision 與 HTTP ETag |
+| `GET /api/v1/device/schedules` | 下載全域固定規則快照，完整替換 |
+| `GET /api/v1/device/holidays` | 下載台灣工作日快照；不是私人 ICS 行程 |
+| `POST /api/v1/device/status` | 回報已啟用版本，取得待處理 `sync` 指令並確認完成 |
+| 每台裝置／帳號資料隔離 | 尚無，所有裝置取得同一份全域資料 |
+| 行事曆聯動 | schema 2 排除整筆 `calendar_link`；原型不支援 |
 
-校時不應依賴管理登入；目前裝置 `config` 沒有伺服器時間，需另外使用可信校時來源。若要求斷電後、網路仍中斷時也能準時響鈴，就需要電池備援 RTC；ESP 的內建時間不能當作斷電保時保證。RTC 備援只維持時間，斷電期間也要響鈴則需要整機備援電源。[ESP-IDF System Time](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/system_time.html)
+`/api/v1/browser-alarms` 是網頁近期鬧鐘回應，並非完整離線清單；原型不使用這個 endpoint。
 
-主畫面以大時間為主，不自動彈出離線、未配對或認證錯誤，不自動展開面板。問題、同步有效期及重試集中後台；離線時 Server 只能呈現最後回報與未知狀態。保留使用者主動開啟的本機設定入口。未認證不應讓時鐘程式停止，但無 RTC／無校時來源時仍無法憑空得知正確時間。
+`DEVICE_API_TOKEN` 非空時，裝置 API 帶 `Authorization: Bearer <token>`；空值只適用於 Server 本身採可信任區網模式。這是所有裝置共用的 token，不能單獨撤銷一台，也不保護管理頁或管理 API。經不可信網路傳輸時使用 HTTPS；原型啟用憑證驗證，不接受失效／不受信任憑證，也不自動跟隨重新導向。反向代理的登入 HTML 不是合法 API 回應；必須讓裝置能直接取得 JSON。
 
-ESPHome 要特別處理兩個預設行為：Wi-Fi 的 `reboot_timeout` 預設 15 分鐘；如果啟用 Native API，沒有 API 客戶端連線也有預設 15 分鐘重啟。獨立 HTTP 鬧鐘不需要啟用 Native API；若要保留它，應評估設為 `0s`。Wi-Fi 離線也應評估停用此重啟計時，並實測重新連線，避免斷網時反覆重開打斷鬧鐘。這不是停用 watchdog 或放棄故障恢復。[Wi-Fi](https://esphome.io/components/wifi/)、[Native API](https://esphome.io/components/api/)
+## 已實作的同步流程
 
-## 聲音與硬體
+元件位於 [firmware/components/webclock](../firmware/components/webclock/)，使用獨立網路 worker 執行 HTTP 與解析，主迴圈負責顯示、按鍵及響鈴。第一版直接使用 ESP-IDF HTTP client，不依賴 ESPHome `http_request` 的預設 1 KB 捕捉緩衝區。
 
-第一個硬體設定檔應先確定 ESP32 型號、flash／RAM、螢幕、按鍵、RTC 與播放器接線，再建立可編譯 YAML。未確認腳位前不放可被誤認為可直接燒錄的範本。
+1. 啟動主畫面及獨立 NTP 校時，讀取本機快取作為同步候選。快取的網址／token 範圍必須與目前設定相同，且沒有已知撤銷標記。**每次重啟仍須至少向 Server 成功驗證一次完整 config 才啟用鬧鐘；不會僅靠磁碟快取離線啟用。**
+2. 向 Server 註冊，取得並驗證 `config`。運轉中已有有效快取時以 **config 的 HTTP ETag** 條件檢查；收到 304 才沿用已持有本文。`config_revision` 不是 config 的 HTTP ETag，不能互換。
+3. 發現需更新時下載完整排程與工作日日曆，檢查 JSON、必要欄位、支援規則、容量及本文 revision。HTTP 不完整、非 JSON／HTML、超限都拒絕整份候選資料。
+4. 再次取得 `config`，核對設定、排程、日曆三種 revision 沒有在下載中改變；不混用不同版本的資源。
+5. 將完整快照保存到專用 `webclock` NVS，成功後交由主迴圈啟用。只有這兩步完成，worker 才回報新 revision 並 ACK 待處理同步指令。
+6. 正常約每 **30 秒**進行一輪檢查與 `status` 回報；新收到同步要求會提早再跑一輪。同步是裝置輪詢，不是伺服器即時推播。
 
-網頁的七種音色由 Web Audio 合成；蜂鳴器、I²S 擴大機與不同喇叭不會自動有相同聲音。需要定義支援音色、`silent` 的呈現、每個鬧鐘音量映射與裝置音量校準；不能把 `browser_volume=50` 宣稱為硬體音壓的一半。不支援的設定必須有明確策略與後台能力資訊。
+無變更時不反覆寫整份快取。錯誤重試從約 10 秒逐步退避，最長約 5 分鐘，另有少量隨機延遲；因此故障期間後台可能把仍在本機運作的時鐘標成離線。API 文件的一般「每 60 秒 status」建議不是此原型的實際間隔。
 
-## 開發順序與驗收
+完整替換包含刪除及空清單：Server 已刪除的鬧鐘不能留在 ESP。逾時、404／5xx、解析失敗與容量超限不等於空清單；保留本次運轉中之前可用且未被撤銷的完整快照。持久寫入失敗時不啟用新資料、不 ACK；重新開機可能讀到完整舊或新快照，仍須重新向 Server 驗證，不能宣稱 flash 一定停留在舊版本。待處理指令失敗不 ACK，重送 ACK 不等於多次播放。
 
-1. **API 聯調：**沿用現有 register／config／schedules／holidays／status，驗證 token、ETag、版本一致性、完整替換及 ACK；不修改 schema 2 承諾的行為。
-2. **硬體最小閉環：**選一套硬體，完成基本時鐘、校時、按鍵與實際聲音。確認使用 schema 2 原型或先完成多日清單契約，再接本機快取與執行器。
-3. **可靠同步：**補上斷網、斷電保存、容量限制、去重、清單到期與授權變更；診斷能力與 Server 一起擴充。
-4. **一般使用者安裝：**提供該硬體的預編譯檔、ESP Web Tools manifest、Wi-Fi 與 WebClock 設定流程；最後加入經驗證的 OTA 升級與恢復出廠流程。
+`online`、三種 revision 一致與 ACK 只能說明裝置回報及同步狀態，**不能證明蜂鳴器已實際出聲**。目前 Server 不提供正式 RTC、時間可信度、剩餘快取容量或硬體播放紀錄欄位，裝置不會僅靠多送欄位假定後台已支援。
 
-完成每一階段時保留板型、接線、ESPHome 版本、Server 版本及結果，不用「編譯成功」替代實機驗收：
+## 容量、規則與保存
 
-- [ ] 第一次連線、固定 ID 重開、錯誤 token、Server 404／5xx、下載逾時都不讓主時鐘停止或彈出系統錯誤。
-- [ ] 304 有快取／無快取、下載中途版本改變、JSON 損壞、超出容量、保存中斷電均不啟用半份資料。
-- [ ] 新增、修改、刪除、清空、停用、略過一次、ISO 星期、假日未知符合選定契約；聯動功能只在新契約完成後驗收。
-- [ ] ACK 回應遺失後重送、同步要求重複、Server 重啟都不造成指令重複執行或錯誤確認。
-- [ ] 路由器斷線超過 15 分鐘仍走時並按有效快取響鈴；恢復網路會自行同步。
-- [ ] 校時前進／後退、鬧鐘當下重開、清單過期、取消尚未同步的行為符合明訂策略。
-- [ ] 聲音、每鬧鐘音量、停止按鍵與長時間運轉實測完成；RTC 與備援電源能力分開驗證。
-- [ ] 首次網頁燒錄、錯選硬體的防護、Wi-Fi 設定、WebClock 設定、保留資料升級及明確恢復出廠均實測完成。
-- [ ] 公開 YAML、編譯產物、manifest、日誌及版本資訊不含使用者密碼或 token。
+| 限制 | 原型上限／策略 |
+| --- | --- |
+| 硬體記憶體 | 8 MB Flash／8 MB Octal PSRAM；缺少 PSRAM 不視為相容板型 |
+| 專用快取分割區 | `webclock` NVS 512 KiB，與 Wi-Fi／ESPHome 設定的 NVS 分開 |
+| 單次 HTTP 回應 | 192 KiB |
+| 序列化整份快取 | 224 KiB；保留 NVS 更新與記錄空間 |
+| 排程總數 | 64 筆，包含非 alarm 與停用項目；不靜默截斷 |
+| 不支援或損壞規則 | 拒絕整份候選快照，避免一部分成功後誤報同步完成 |
 
-以上清單目前未完成；Server 自動測試通過不代表 ESP 韌體或硬體已可用。
+原型支援每日（空規則）、指定 ISO 星期（一＝1 至日＝7）、指定日期、工作日、假日、`enabled`、`skip_holidays` 與 `skipped_occurrences`。內部以 UTC 時間戳執行，規則日期固定轉成台灣 UTC+8；不支援自行切換排程時區。
+
+日曆查不到的日期保持未知。工作日、假日或需要 `skip_holidays` 判定的鬧鐘，不把未知日期猜成工作日；不依賴工作日日曆的每日／星期／指定日期規則可繼續執行。這是規則快照，**沒有「未來七天清單」或清單到期契約**。
+
+現有五年工作日 JSON 約 122 KB，只是目前資料量，不能代替最大容量驗證。總資料超限時需減少 Server 排程或另行設計裝置 API；不要只把常數調大就宣稱可靠。Flash 損壞或持久保存失敗不回報新的同步成功。
+
+## 時間、斷網、斷電與認證
+
+| 情境 | 原型行為／限制 |
+| --- | --- |
+| Server 無法連線，但 NTP 可用 | 基本時鐘照常；若本次開機從未向 Server 驗證成功，則不啟用鬧鐘 |
+| 本次開機已完成驗證及校時，後來 Wi-Fi 中斷 | 繼續走時及執行快取，背景重連；Wi-Fi `reboot_timeout=0s`，沒有 Native API 的無客戶端重啟 |
+| 斷電重開且無 NTP | 無電池 RTC，顯示 `--:--` 並不響鈴；保存排程不等於保存正確現在時間 |
+| 重開後有 NTP，但 Server 仍離線 | 顯示時間，等待 Server 驗證後才啟用鬧鐘；不自動復活舊快取 |
+| Server 在裝置離線時取消鬧鐘或撤銷 token | 持續運轉的 ESP 收到更新前可能執行舊快取，不能立即遠端撤回 |
+| 收到 HTTP 401／403 | 停止排程與當前響鈴，嘗試保存撤銷標記；即使保存失敗，重開也要重新驗證才啟用。基本時鐘繼續 |
+| 改變 Server URL 或 token | 快取範圍雜湊改變，不載入舊範圍資料，需成功同步新資料 |
+| 觸發時間已過超過 5 秒 | 不補響舊事件，避免恢復網路／校時後突然響過期鬧鐘 |
+| 時間往回調或重新啟動 | 持久化全域 `last_fired` 分鐘；相同或更早分鐘不再執行。若時鐘曾錯跳到未來，回調後在超過該紀錄前可能不響 |
+
+每次響鈴先保存該分鐘的去重紀錄，再開始發聲。因此保存後、發聲前突然斷電，該次可能漏響；不能承諾斷電情況下恰好一次。去重紀錄無法保存時也不發聲，避免不停重試 flash 與重複執行。它是同分鐘合併的原型策略，不是每個事件的完整播放紀錄。
+
+校時獨立於 WebClock 的登入與認證；現有 config 沒有 Server 時間。原型使用 ESPHome SNTP。需要斷電後、網路仍中斷時也能知道時間，下一版應加入備援 RTC；斷電期間要響，還必須有整機備援電源。RTC 電池本身不供應蜂鳴器；加入 RTC 也不會自動取消本版每次開機的 Server 驗證要求。[ESP-IDF System Time](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/system_time.html)
+
+## 後續方向：完整行事曆清單與一般使用者安裝
+
+以下尚未實作，沒有可呼叫的新 endpoint：
+
+1. **伺服器產生多日觸發清單。** 沿用 Server 的規則及行事曆聯動計算，例如未來七天。新契約需含清單版本、資料範圍、產生／到期時間、穩定事件 ID、明確單位的 UTC 觸發時間與硬體音色能力；不直接改變 schema 2 語意。
+2. **持續補足及來源失敗策略。** 即使設定沒改，也補足未來時間範圍；行程改期／取消、來源更新或讀取失敗都要重新判定，不能只比對排程設定版本。超限或過期須明確呈現。
+3. **個別裝置憑證與資料歸屬。** 配合將來的部署／帳號模式，定義重新綁定、主要使用者、其他帳號資料保存及離線撤銷的限制；目前全域 token 不提供這些保證。
+4. **通用預編譯安裝。** 增加裝置端 WebClock URL／配對流程，才能發布不含私人 token 的公用韌體及 ESP Web Tools manifest；再加入經驗證的 OTA、保留資料升級及恢復出廠。
+5. **硬體擴充。** 完成首套硬體驗收後，再考慮備援 RTC、電源、不同螢幕／播放器、音色與貪睡，不將未測板型標為支援。
+
+## 實機驗收清單
+
+記錄板型、接線、ESPHome 版本、Server 版本及結果。以下尚未完成：
+
+- [ ] ESPHome Web 經 USB-to-UART 燒錄，Improv 設定 Wi-Fi，重開後 Wi-Fi 與 `wc-<MAC>` ID 保留。
+- [ ] OLED 位址、日期、星期、秒數、低亮度長時間運作及未校時 `--:--` 正確。
+- [ ] 新增／修改／刪除／清空／停用／略過一次，及各種固定規則符合 Server，行事曆未知不誤響。
+- [ ] 304、有損 JSON、下載中版本變動、HTML 反代登入頁、超容量與保存中斷電，不啟用半份資料。
+- [ ] 同步確認只在保存及主迴圈啟用後送出，ACK 遺失重試與 Server 重啟可恢復。
+- [ ] 完成驗證後路由器斷線超過 15 分鐘仍走時並按快取響鈴；恢復網路會自行同步。
+- [ ] 每次重啟需驗證 Server；token 錯誤／撤銷、401／403 後離線重開、Server URL／token 變更，不重新啟用舊範圍快取。
+- [ ] 每鬧鐘音量、silent／0 的外框、同分鐘合併、停止鍵、60 秒停止，以及更新取消當次事件會停止、修改其他事件不中止。
+- [ ] 校時前進／回退、超過 5 秒不補響、響鈴前後斷電的去重限制符合本文。
+- [ ] 所有公開檔案不含私人設定；個人編譯 `.bin` 不對外發布。未測的 OTA／保留資料升級不標為完成。
+
+參考：[開發板官方指南](https://documentation.espressif.com/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html)、[SSD1306](https://esphome.io/components/display/ssd1306/)、[Improv Serial](https://esphome.io/components/improv_serial/)、[ESPHome External Components](https://esphome.io/components/external_components/)、[Wi-Fi 重啟設定](https://esphome.io/components/wifi/)。
