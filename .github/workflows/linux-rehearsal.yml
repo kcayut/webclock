@@ -2,7 +2,7 @@ name: Linux upgrade and restore rehearsal
 
 on:
   push:
-    branches: [codex/linux-upgrade-rehearsal]
+    branches: [main]
     paths:
       - .github/workflows/linux-rehearsal.yml
       - tests/**
