@@ -281,6 +281,10 @@ class ServerApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         command = response.json['command']
         self.assertEqual(self.client.post('/api/v1/devices/bedroom/commands', json={'action': 'sync'}).json['command'], command)
+        pending = next(device for device in self.client.get('/api/v1/devices').json['devices']
+                       if device['id'] == 'bedroom')['sync_status']
+        self.assertEqual(pending['state'], 'pending')
+        self.assertEqual(pending['command_id'], command['id'])
         self.assertEqual(self.client.post('/api/v1/device/status', json={'id': 'office'}).json['commands'], [])
         report = self.client.post('/api/v1/device/status', json={'id': 'bedroom'}).json
         self.assertEqual(report['commands'], [command])
@@ -290,12 +294,41 @@ class ServerApiTest(unittest.TestCase):
         report = self.client.post('/api/v1/device/status', json={
             'id': 'bedroom', **revisions, 'acknowledged_commands': [command['id']]}).json
         self.assertEqual(report['commands'], [])
+        self.assertEqual(report['device']['sync_status']['state'], 'confirmed')
+        self.assertEqual(report['device']['sync_status']['command_id'], command['id'])
+        self.assertEqual(report['device']['sync_status']['requested_at'], command['created_at'])
+        self.assertTrue(report['device']['sync_status']['acknowledged_at'])
         self.assertEqual(report['device']['schedule_revision'], config['schedule_revision'])
         devices = self.client.get('/api/v1/devices').json['devices']
         self.assertEqual(len(devices), 2)
         self.assertEqual(self.client.post('/api/v1/device/status', json={'id': 'unregistered'}).status_code, 404)
         for action in ('test_sound', 'restart', 'unknown'):
             self.assertEqual(self.client.post('/api/v1/devices/bedroom/commands', json={'action': action}).status_code, 400)
+
+    def test_device_admin_name_and_capability_contract(self):
+        registered = self.client.post('/api/v1/device/register', json={
+            'id': 'bedroom', 'name': 'Bedroom', 'device_type': 'esp32-s3',
+            'capabilities': {'display': True, 'audio': True}}).json['device']
+        self.assertEqual(registered['reported_name'], 'Bedroom')
+        self.assertIsNone(registered['admin_name'])
+        self.assertEqual(registered['capabilities'], {'display': True, 'audio': True})
+        renamed = self.client.patch('/api/v1/devices/bedroom', json={'name': 'Hall clock'}).json['device']
+        self.assertEqual(renamed['name'], 'Hall clock')
+        self.assertEqual(renamed['reported_name'], 'Bedroom')
+        reregistered = self.client.post('/api/v1/device/register', json={
+            'id': 'bedroom', 'name': 'Firmware name'}).json['device']
+        self.assertEqual(reregistered['name'], 'Hall clock')
+        self.assertEqual(reregistered['reported_name'], 'Firmware name')
+        reported = self.client.post('/api/v1/device/status', json={
+            'id': 'bedroom', 'capabilities': {'background': False}}).json['device']
+        self.assertEqual(reported['name'], 'Hall clock')
+        self.assertEqual(reported['capabilities'], {'background': False})
+        self.assertTrue(reported['capabilities_reported_at'])
+        listed = self.client.get('/api/v1/devices').json['devices'][0]
+        self.assertEqual(listed, reported)
+        for payload in ({'name': ''}, {'name': 'x' * 101}, {'name': 'Name', 'extra': True}):
+            self.assertEqual(self.client.patch('/api/v1/devices/bedroom', json=payload).status_code, 400)
+        self.assertEqual(self.client.patch('/api/v1/devices/missing', json={'name': 'Name'}).status_code, 404)
 
     def test_legacy_records_survive_edits_without_exposing_device_settings(self):
         legacy = dict({key: value for key, value in self.schedule.items()

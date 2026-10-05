@@ -96,6 +96,7 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 | `/api/v1/browser-alarms` | GET 次のブラウザーアラームと休日データ状態 |
 | `/api/v1/holidays?date=2026-09-30` | GET 日付分類。省略時は台湾の今日 |
 | `/api/v1/devices` | GET 登録端末と未確認指令 |
+| `/api/v1/devices/<id>` | PATCH `{"name":"リビングの時計"}`、200 と `device` を返す |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`、202 を返す |
 
 管理 API は信頼できる LAN を前提とし、ログイン機能はありません。異なる Origin のブラウザー要求を拒否しますが、完全な認証ではありません。外部公開時はリバースプロキシでアクセスを制限し、HTTPS を有効にしてください。
@@ -153,12 +154,18 @@ GET は事前登録を必要とせず、端末 ID、日付範囲、ページで�
 
 | 要求 | 受け付ける入力 |
 | --- | --- |
-| register | 必須の `id` と `name` のみ。ID は英数字・下線・ハイフンの 1–64 文字。name は空白のみ不可、入力長 100 文字以下で、保存時に前後の空白を除去 |
-| status | 必須の `id` と、任意の `firmware`、`config_revision`、`schedule_revision`、`holiday_revision`、`acknowledged_commands` のみ |
+| register | 必須の `id` と `name`、任意の `device_type` と `capabilities`。ID は英数字・下線・ハイフンの 1–64 文字。name は空白のみ不可、入力長 100 文字以下で、保存時に前後の空白を除去 |
+| status | 必須の `id` と、任意の `firmware`、`config_revision`、`schedule_revision`、`holiday_revision`、`acknowledged_commands`、`device_type`、`capabilities` のみ |
 | 状態の文字列 | 各入力長 128 文字以下、空白のみ不可。保存時に前後の空白を除去。省略すると以前の値を維持し、null や空文字で消去不可 |
+| `device_type` | 任意の自報文字列。空白のみ不可、入力長 50 文字以下、保存時に前後の空白を除去。特定の機種一覧には制限せず、省略時は以前の値を維持 |
+| `capabilities` | 空でないオブジェクト。キーは `display`、`audio`、`notifications`、`background`、`calendar` のみ、値は JSON の真偽値。空オブジェクト、null、不明なキー、`0`／`1` は拒否 |
 | ACK 配列 | 最大 100 個。各 ID は端末 ID と同じ形式 |
 
-再登録も 201 を返し、名前だけを更新して以前の状態と指令を維持します。登録だけでは heartbeat を更新せず、新規端末は `online: false` で `last_seen` がありません。status は 200 と `device`、`commands` を返し、同じ待機指令が `device.commands` にも入ります。登録・状態報告・指令時刻は Server 生成の UTC ISO 文字列で、Unix ミリ秒とは異なります。RTC、Wi-Fi、電池、エラー、発音記録の項目は未対応です。revision は自報文字列として保存するだけで、端末の保存や実行を証明しません。
+`capabilities` を指定すると以前の能力オブジェクト全体を置き換え、Server が `capabilities_reported_at` を更新します。省略時はデータと時刻を維持します。未報告の能力は不明で、`false` ではありません。未報告の `device_type`、`capabilities`、`capabilities_reported_at` は `null` です。端末の自報情報であり、実機検証結果やアクセス権限を表しません。
+
+管理 PATCH `/api/v1/devices/<id>` は `{"name":"リビングの時計"}` のみを受け付け、管理 CSRF token が必要です。入力は 100 文字以下の空白のみでない文字列で、保存時に前後の空白を除去します。空文字、空白のみ、null、追加項目は 400 です。成功時は `{"device":{...}}` を返します。表示用 `name` は `admin_name` を優先し、未設定時は `reported_name` を使います。初期の `admin_name` は `null` です。再登録では自報名だけを更新し、管理名を上書きしません。`name` のみを持つ旧記録も読み取れます。名前と能力情報は `devices.json` に保存され、再起動後も残ります。管理名の消去 API は未対応です。
+
+再登録も 201 を返し、自報名を更新して以前の状態と指令を維持します。登録だけでは heartbeat を更新せず、新規端末は `online: false`、`sync_status: {"state":"idle"}` で `last_seen` がありません。status は 200 と `device`、`commands` を返し、同じ待機指令が `device.commands` にも入ります。登録・状態報告・指令時刻は Server 生成の UTC ISO 文字列で、Unix ミリ秒とは異なります。RTC、Wi-Fi、電池、エラー、発音記録の項目は未対応です。revision は自報文字列として保存するだけで、端末の保存や実行を証明しません。
 
 入力検証は 400、token 不一致は 401、Origin 不一致は 403、未登録端末は 404、未対応メソッドは 405、本文超過は 413、JSON Content-Type 不足は 415、保存 I/O 失敗は 500 です。解析前に HTTP 状態と Content-Type を確認してください。ルートエラーや代理サーバーのページは HTML の場合があります。一時的な失敗は間隔を延ばして再試行し、同期失敗を ACK したり、認証失敗後に空 token へ切り替えたりしないでください。完全な応答例と管理 API の入力制限は[繁体字中国語の詳細](server-api.md#裝置-api)を参照してください。
 
@@ -192,6 +199,17 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 ```
 
 `online` は 120 秒以内に状態報告を受けたことを示します。約 60 秒ごとの報告は一般的な推奨値です。ESPHome 試作版は約 30 秒ごとに確認・報告し、失敗時は再試行間隔を延ばします。「同期を要求」は `sync` 指令だけを追加し、確認されるまで応答に残ります。繰り返し要求しても未確認指令は 1 件です。端末は指令 ID で重複を除き、永続保存と適用が成功した後だけ確認してください。
+
+各 `device` は `sync_status` も返します。指令取得と ACK の入力契約は変わりません。
+
+| `state` | 意味と追加項目 |
+| --- | --- |
+| `idle` | 未確認指令も保存済み ACK もない |
+| `pending` | ACK 待ち。`command_id`、`requested_at`、`timeout_at` |
+| `timed_out` | 要求から 300 秒以上経過しても ACK がない。項目は `pending` と同じ |
+| `confirmed` | 最新の一致する ACK を保存済み。`command_id`、`requested_at`、`acknowledged_at` |
+
+時刻は Server 生成の UTC ISO 文字列です。タイムアウトで指令を取り消すことはなく、再要求でも元の ID と要求時刻を維持し、遅れて到着した一致する ACK でも確認できます。不明な ID、他端末の指令 ID、重複 ACK は別の指令を確認せず、保存済み確認時刻も変更しません。未確認指令と最新 ACK は Server 再起動後も残ります。新たな同期要求があれば、その `pending` が優先されます。報告 revision の一致は ACK を生成しません。`confirmed` は端末の確認であり、実際の音声・画面出力の成功を証明しません。
 
 要求 → ポーリング → ACK の再現手順（ID は例）：
 

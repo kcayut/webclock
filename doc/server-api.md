@@ -108,6 +108,7 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 | `/api/v1/browser-alarms` | GET 時鐘頁的下次鬧鐘、Server 時間及假日資料狀態 |
 | `/api/v1/holidays?date=2026-09-30` | GET 日期類型；省略日期時查台灣今天 |
 | `/api/v1/devices` | GET 裝置列表、最後回報與待確認同步指令 |
+| `/api/v1/devices/<id>` | PATCH `{"name":"客廳時鐘"}` 修改管理名稱，回 200 與 `device` |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`，回 202 與 `command` |
 
 管理 API 沿用可信任區網模式，不具備登入功能。Server 拒絕不同 Origin 的瀏覽器存取；這不是完整身份驗證。遠端部署須在反向代理限制存取並啟用 HTTPS。
@@ -303,7 +304,7 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 
 ### 狀態與同步確認
 
-註冊後，最低回報為 `{"id":"bedroom"}`。下列字串欄位可選；省略時保留之前回報的值，尚未回報的欄位不提供：
+註冊後，最低回報為 `{"id":"bedroom"}`。四個版本／韌體字串欄位可選；省略時保留之前回報的值，尚未回報的欄位不提供：
 
 ```json
 {
@@ -318,10 +319,16 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 
 | 請求 | 欄位限制 |
 | --- | --- |
-| register | 只接受 `id`、`name`，兩者必填；ID 為 1–64 個英數字、底線或連字號；name 必須非空白且原始長度不超過 100 字元，保存時去除前後空白 |
-| status | 必填 `id`；可選 `firmware`、三種 revision、`acknowledged_commands`；不接受其他欄位 |
+| register | 必填 `id`、`name`；可選 `device_type`、`capabilities`。ID 為 1–64 個英數字、底線或連字號；name 必須非空白且原始長度不超過 100 字元，保存時去除前後空白 |
+| status | 必填 `id`；可選 `firmware`、三種 revision、`acknowledged_commands`、`device_type`、`capabilities`；不接受其他欄位 |
 | status 的四個字串 | 必須非空白且原始長度不超過 128 字元，保存時去除前後空白；不可用 `null` 或空字串清除 |
+| `device_type` | 可選的自報類型字串，非空白且原始長度不超過 50 字元；不限制為特定硬體，省略保留舊值 |
+| `capabilities` | 非空物件，只接受 `display`、`audio`、`notifications`、`background`、`calendar`，值必須是 JSON 布林值；不接受空物件、`null`、未知 key 或 `0`／`1` |
 | `acknowledged_commands` | 最多 100 個 ID，每個使用與裝置 ID 相同的字元／長度限制；省略等同 `[]` |
+
+提供 `capabilities` 會整包取代先前能力，並由 Server 更新 `capabilities_reported_at`；省略則保留先前資料和時間。未提供的能力為未知，不等於 `false`。未曾回報的 `device_type`、`capabilities`、`capabilities_reported_at` 回 `null`。這些都是裝置自報觀察，不代表 Server 已完成硬體測試，也不會授予或撤銷存取權限。
+
+管理端 PATCH `/api/v1/devices/<id>` 只接受 `{"name":"客廳時鐘"}`：名稱去除前後空白，原始長度不超過 100 字元，空白、空字串、`null` 與其他欄位均回 400；需要上述管理 CSRF token。成功回 `{"device":{...}}`。回應的 `name` 是有效顯示名稱，優先使用 `admin_name`，否則使用 `reported_name`；尚未改名時 `admin_name` 為 `null`。同 ID 再註冊只更新自報名稱，回報與再註冊都不覆寫管理名稱。舊版只存 `name` 的記錄仍可讀取，名稱與能力資料保存在 `devices.json`，重啟後保留。現階段未提供清空管理名稱的 API。
 
 目前沒有 `wifi_rssi`、`rtc_ok`、`last_alarm`、同步錯誤或實際響鈴紀錄欄位；直接加入 status 會回 400。Server 只保存自報的 revision 字串，不檢查它是否等於目前版本，也不驗證 Flash 或播放結果。
 
@@ -332,14 +339,20 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
   "device": {
     "id": "bedroom",
     "name": "臥室裝置",
+    "reported_name": "臥室裝置",
+    "admin_name": null,
+    "device_type": null,
+    "capabilities": null,
+    "capabilities_reported_at": null,
     "registered_at": "2026-10-03T00:00:00+00:00",
     "commands": [],
+    "sync_status": {"state": "idle"},
     "online": false
   }
 }
 ```
 
-即使同 ID 已存在，重新註冊仍回 201，保留 `registered_at`、舊回報與指令並更新名稱；不是領取獨立憑證。新裝置還沒有 `last_seen`；註冊不會當作狀態心跳。兩台裝置使用同一 ID 會共用狀態與命令，韌體應產生並保存穩定且不衝突的 ID。
+即使同 ID 已存在，重新註冊仍回 201，保留 `registered_at`、舊回報與指令並更新自報名稱；不是領取獨立憑證。新裝置還沒有 `last_seen`；註冊不會當作狀態心跳。兩台裝置使用同一 ID 會共用狀態與命令，韌體應產生並保存穩定且不衝突的 ID。
 
 管理端 POST `{"action":"sync"}` 到 `/api/v1/devices/bedroom/commands` 後，202 回應形如：
 
@@ -359,7 +372,18 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 
 管理頁的「要求同步」只加入 `sync` 指令。裝置下次 POST `status` 時取得 `commands`，完成同步後再用 `acknowledged_commands` 回報。指令在確認前持續回傳；重複按同步只保留同一筆待確認指令。裝置應依指令 ID 去重，失敗時不要確認。確認只影響該 `id` 的同步指令。
 
-本專案提供上述 Server 契約、API 測試及網頁鬧鐘。獨立硬體的本機快取、準時觸發、斷線行為及指令執行由未來裝置專案實作與驗證。
+每個 `device` 另提供 `sync_status`，不改變既有 `commands` 的領取與 ACK 契約：
+
+| `state` | 意義與附加欄位 |
+| --- | --- |
+| `idle` | 尚無待確認指令或已保存的 ACK |
+| `pending` | 等待裝置 ACK；含 `command_id`、`requested_at`、`timeout_at` |
+| `timed_out` | 自要求起已滿 300 秒仍未 ACK；欄位同 `pending` |
+| `confirmed` | 最近一筆相符 ACK 已保存；含 `command_id`、`requested_at`、`acknowledged_at` |
+
+時間均為 Server 產生的 UTC ISO 字串。逾時只表示未確認，不取消指令或假定失敗；重複要求仍沿用原指令及要求時間，遲到的相符 ACK 可改為 `confirmed`。未知 ID、其他裝置的指令 ID 或重複 ACK 不會確認另一筆指令，也不改寫已保存的確認時間。待確認指令與最近 ACK 會跨 Server 重啟保留；再要求新同步後以新指令的 `pending` 為準。`confirmed` 只表示收到裝置的確認，Server 不以 revision 相同推定同步完成，也不能據此證明發聲或畫面成功。
+
+本專案提供上述 Server 契約、API 測試及網頁鬧鐘。ESPHome 原型已有本機快取、斷線執行與 ACK 實作；準時觸發、斷線行為及實際硬體輸出仍須實機驗收。
 
 可重現的要求 → 輪詢 → ACK 順序（以下 ID 皆為範例）：
 

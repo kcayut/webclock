@@ -96,6 +96,7 @@ APIs accept JSON. Matched API routes return errors as `{"error":"..."}`: data va
 | `/api/v1/browser-alarms` | GET upcoming browser alarms and holiday-data state |
 | `/api/v1/holidays?date=2026-09-30` | GET the date classification; defaults to today in Taiwan |
 | `/api/v1/devices` | GET registered devices and pending commands |
+| `/api/v1/devices/<id>` | PATCH `{"name":"Living-room clock"}`; returns 200 with `device` |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`; returns 202 |
 
 Management APIs assume a trusted LAN and have no login. The server rejects browser requests from a different Origin, but this is not full authentication. Restrict remote deployments at a reverse proxy and enable HTTPS.
@@ -153,12 +154,18 @@ GET does not require registration and does not filter by device ID, date range, 
 
 | Request | Accepted input |
 | --- | --- |
-| register | Required `id` and `name` only. ID: 1–64 ASCII letters, digits, underscores or hyphens. Name: nonblank string, input length at most 100; surrounding whitespace is trimmed |
-| status | Required `id`; optional `firmware`, `config_revision`, `schedule_revision`, `holiday_revision`, `acknowledged_commands` only |
+| register | Required `id` and `name`; optional `device_type` and `capabilities`. ID: 1–64 ASCII letters, digits, underscores or hyphens. Name: nonblank string, input length at most 100; surrounding whitespace is trimmed |
+| status | Required `id`; optional `firmware`, `config_revision`, `schedule_revision`, `holiday_revision`, `acknowledged_commands`, `device_type`, and `capabilities` only |
 | Status strings | Nonblank strings, input length at most 128 each; trimmed on save. Omission preserves old values; null or empty strings cannot clear them |
+| `device_type` | Optional self-reported nonblank string, input length at most 50; trimmed on save, with no fixed hardware enumeration. Omission preserves the previous value |
+| `capabilities` | Nonempty object with only `display`, `audio`, `notifications`, `background`, and `calendar` keys. Values must be JSON booleans; empty objects, null, unknown keys, and `0`/`1` are rejected |
 | ACK list | At most 100 IDs, each using the device ID format |
 
-Repeated registration still returns 201, updates the name, and preserves previous status and commands. Registration itself does not update the heartbeat; new devices have `online: false` and no `last_seen`. Status returns 200 with `device` and `commands`; the same pending list also appears under `device.commands`. Server-generated registration, heartbeat, and command timestamps are UTC ISO strings, not Unix milliseconds. RTC, Wi-Fi, battery, error, and actual ringing fields are not accepted yet. Reported revision strings are stored without proving that the device persisted or executed anything.
+Supplying `capabilities` replaces the whole previous capability object and updates server-generated `capabilities_reported_at`; omission preserves both. A missing capability is unknown, not `false`. Until reported, `device_type`, `capabilities`, and `capabilities_reported_at` are `null`. These are self-reported observations, not verified hardware results or authorization decisions.
+
+Management PATCH `/api/v1/devices/<id>` accepts only `{"name":"Living-room clock"}` and requires the management CSRF token. The input must be a nonblank string of at most 100 characters, trimmed on save; blank/empty strings, null, and extra fields return 400. Success returns `{"device":{...}}`. Effective `name` prefers `admin_name`, otherwise `reported_name`; `admin_name` is initially `null`. Re-registration updates the reported name without overwriting the administrator name. Existing records containing only `name` remain readable. Names and capability data persist in `devices.json`; clearing the administrator name is not currently supported.
+
+Repeated registration still returns 201, updates the reported name, and preserves previous status and commands. Registration itself does not update the heartbeat; new devices have `online: false`, `sync_status: {"state":"idle"}`, and no `last_seen`. Status returns 200 with `device` and `commands`; the same pending list also appears under `device.commands`. Server-generated registration, heartbeat, and command timestamps are UTC ISO strings, not Unix milliseconds. RTC, Wi-Fi, battery, error, and actual ringing fields are not accepted yet. Reported revision strings are stored without proving that the device persisted or executed anything.
 
 Validation errors use 400; token failures 401; Origin failures 403; missing registered devices 404; unsupported methods 405; oversized bodies 413; missing JSON Content-Type 415; storage I/O failures 500. Check HTTP status and Content-Type before parsing: routing errors or proxy pages may be HTML. Retry transient failures with backoff; do not ACK failed synchronization or downgrade to an empty token after authentication failure. Complete response examples and management input limits are in the [Traditional Chinese reference](server-api.md#裝置-api).
 
@@ -192,6 +199,17 @@ The minimum status is `{"id":"bedroom"}`. Optional string fields preserve their 
 ```
 
 `online` means a status report was received within 120 seconds. About one report per 60 seconds is a general recommendation; the ESPHome prototype checks and reports about every 30 seconds, backing off on failures. **Request sync** queues only a `sync` command. It remains in status responses until acknowledged. Repeated requests keep one pending command. Devices should deduplicate by command ID and acknowledge only after persistence and activation succeed.
+
+Every `device` also includes `sync_status`, without changing command polling or ACK input:
+
+| `state` | Meaning and additional fields |
+| --- | --- |
+| `idle` | No pending command or saved ACK |
+| `pending` | Waiting for ACK; `command_id`, `requested_at`, `timeout_at` |
+| `timed_out` | At least 300 seconds since the request without ACK; same fields as `pending` |
+| `confirmed` | Latest matching ACK saved; `command_id`, `requested_at`, `acknowledged_at` |
+
+Times are server-generated UTC ISO strings. Timeout does not cancel the command; repeat requests retain its ID and original request time, and a late matching ACK can confirm it. Unknown IDs, another device's command IDs, and duplicate ACKs do not confirm another command or change the saved acknowledgement time. Pending commands and the last ACK survive server restarts; a new sync request takes precedence as `pending`. Matching reported revisions do not create an ACK, and `confirmed` is a device acknowledgement, not proof of successful sound or display output.
 
 Reproducible request → poll → ACK sequence (example IDs):
 

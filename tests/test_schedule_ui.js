@@ -20,6 +20,7 @@ const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "
 const nextDate = "2026-10-02T07:30:00+08:00";
 const plain = value => JSON.parse(JSON.stringify(value));
 const flush = () => new Promise(resolve => setImmediate(resolve));
+let activeElement = null;
 
 function element(tag = "div") {
     const classes = new Set();
@@ -42,7 +43,7 @@ function element(tag = "div") {
         getAttribute(key) { return this.attributes[key]; },
         addEventListener(type, listener) { this.listeners[type] = listener; },
         trigger(type) { return this.listeners[type].call(this, {preventDefault() {}}); },
-        scrollIntoView() {}, focus() { this.focused = true; },
+        scrollIntoView() {}, focus() { this.focused = true; activeElement = this; },
         showModal() { assert.equal(this.open, false); this.open = true; },
         close(value = "") { this.returnValue = value; this.open = false; if (this.onclose) this.onclose(); }
     };
@@ -63,9 +64,19 @@ const englishLabels = {
     current_datetime: "Now: {datetime}", ring_in: "In {duration}", saved_next: "Saved · in {duration}",
     duration_days: "{count} d", duration_hours: "{count} hr", duration_minutes: "{count} min", under_minute: "Under 1 min",
     weekly_summary: "Weekly {days}", pause_title: "Disable {name}?", pause_skip: "Skip {datetime}",
-    resume_at: "Resumes {datetime} (in {duration})", resume_saved: "Skipped once · Resumes {datetime} (in {duration})"
+    resume_at: "Resumes {datetime} (in {duration})", resume_saved: "Skipped once · Resumes {datetime} (in {duration})",
+    admin_name: "Administrator name", save_name: "Save name", reported_name: "Device-reported name", device_type: "Device type",
+    registered_at: "Registered", capabilities: "Capabilities", capabilities_reported_at: "Capabilities reported",
+    capability_display: "Display", capability_audio: "Audio", capability_notifications: "Notifications", capability_background: "Background", capability_calendar: "Calendar",
+    yes: "Supported", no: "Not supported", sync_status: "Sync confirmation", sync_idle: "Not requested", sync_pending: "Awaiting confirmation",
+    sync_confirmed: "Confirmed", sync_timed_out: "Timed out", sync_requested_at: "Requested", sync_acknowledged_at: "Confirmed at",
+    device_data_stale: "Device data stale"
 };
-$("schedule-i18n").textContent = JSON.stringify({en: englishLabels, 'zh-TW': {...englishLabels, alarm: "鬧鐘", edit_alarm: "編輯鬧鐘", weekdays: ["一", "二", "三", "四", "五", "六", "日"]}});
+$("schedule-i18n").textContent = JSON.stringify({
+    en: englishLabels,
+    'zh-TW': {...englishLabels, alarm: "鬧鐘", edit_alarm: "編輯鬧鐘", admin_name: "管理者名稱", device_data_stale: "裝置資料未更新", weekdays: ["一", "二", "三", "四", "五", "六", "日"]},
+    ja: {...englishLabels, alarm: "アラーム", edit_alarm: "アラームを編集", admin_name: "管理者名", device_data_stale: "端末データを更新できませんでした", weekdays: ["月", "火", "水", "木", "金", "土", "日"]}
+});
 $("editor").hidden = true;
 const weekdays = Array.from({length: 7}, (_, i) => Object.assign(element("input"), {value: String(i + 1)}));
 $("alarms-panel").setAttribute("data-management-panel", "alarms");
@@ -100,6 +111,7 @@ const context = vm.createContext({
     performance: {now: () => monotonicTime},
     document: {
         documentElement: {lang: "en"}, body,
+        get activeElement() { return activeElement; },
         getElementById: id => elements.get(id) || null, createElement: element, addEventListener() {},
         querySelectorAll(selector) {
             if (selector === '[data-management-panel]') return [$("alarms-panel"), $("devices-panel")];
@@ -166,6 +178,7 @@ function pauseReply(request, skipped = row.next_occurrence, next = nextDate) {
 }
 function descendants(root) { return root.children.flatMap(child => [child, ...descendants(child)]); }
 function calendarInput(id) { return descendants($("schedule-calendar-sources")).find(input => input.name === 'calendar-source' && input.value === id); }
+function deviceNameInput(id) { return descendants($("device-list")).find(input => input.tag === "input" && input.getAttribute("data-device-name") === id); }
 function button(list, label) {
     const result = descendants($(list)).find(child => child.tag === "button" && child.textContent === label);
     assert.ok(result, "Expected button " + label);
@@ -188,7 +201,7 @@ const completionTimeout = setTimeout(() => {
     assert.match(content($("other-schedule-list")), /Device reminder/);
     assert.doesNotMatch(content($("other-schedule-list")), /Morning/);
     assert.match(content($("device-list")), /config_revision.*unknown.*schedule_revision.*unknown.*holiday_revision.*unknown/);
-    assert.equal(descendants($("device-list")).filter(item => item.tag === "button").length, 1);
+    assert.equal(descendants($("device-list")).filter(item => item.tag === "button").length, 2);
     assert.equal(button("schedule-list", "disable").attributes.role, "switch");
     assert.equal(button("schedule-list", "disable").attributes["aria-checked"], "true");
     assert.equal($("next-event").textContent, "Tomorrow 07:30 · Morning");
@@ -971,6 +984,121 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("calendar-target-field").hidden, true);
     await $("cancel-edit").trigger("click");
 
+    const refreshedDevice = {
+        id: "desk", name: "Desk", reported_name: "Firmware desk", admin_name: null,
+        device_type: "browser", registered_at: "2026-09-29T09:00:00+08:00",
+        last_seen: "2026-09-30T10:00:00+08:00", online: true, firmware: "1.0",
+        capabilities: {display: true, audio: false}, capabilities_reported_at: "2026-09-30T09:59:00+08:00",
+        sync_status: {state: "confirmed", command_id: "old-command", requested_at: "2026-09-30T09:55:00+08:00", acknowledged_at: "2026-09-30T09:56:00+08:00"},
+        commands: []
+    };
+    let nameInput = deviceNameInput("desk");
+    nameInput.value = "Unsaved device name";
+    nameInput.focus();
+    await nameInput.trigger("input");
+    const polling = intervals.find(item => item.delay === 15000).callback();
+    scheduleReply(take("/schedules"), []);
+    reply(take("/devices"), {devices: [refreshedDevice]});
+    await polling;
+    nameInput = deviceNameInput("desk");
+    assert.equal(nameInput.value, "Unsaved device name", "15-second refresh preserves the rename draft");
+    assert.equal(activeElement, nameInput, "15-second refresh restores focus to the rename field");
+    assert.match(content($("device-list")), /Firmware desk.*browser.*Display: Supported.*Audio: Not supported.*Notifications: unknown/);
+    assert.match(content($("device-list")), /Sync confirmation: Confirmed.*Requested.*Confirmed at/);
+
+    const failedRefresh = qa.loadDevices(), failedRefreshRequest = take("/devices");
+    reply(failedRefreshRequest, {error: "offline"}, false);
+    await assert.rejects(failedRefresh, /offline/);
+    assert.match(content($("device-list")), /Firmware desk/, "A failed refresh retains the last successful list");
+    assert.equal($("device-refresh-status").textContent, "Device data stale");
+    assert.equal(deviceNameInput("desk").value, "Unsaved device name");
+
+    const failedRename = button("device-list", "Save name").trigger("click");
+    const failedRenameRequest = take("/devices/desk", "PATCH");
+    assert.deepEqual(JSON.parse(failedRenameRequest.options.body), {name: "Unsaved device name"});
+    reply(failedRenameRequest, {error: "disk full"}, false);
+    await failedRename;
+    assert.equal(deviceNameInput("desk").value, "Unsaved device name", "A failed save retains the rename draft");
+    assert.equal(button("device-list", "Save name").disabled, false, "A failed save enables the current retry button");
+    const savedDevice = {...refreshedDevice, name: "Managed desk", admin_name: "Managed desk"};
+    const savingName = button("device-list", "Save name").trigger("click");
+    reply(take("/devices/desk", "PATCH"), {device: savedDevice});
+    await savingName;
+    assert.match(content($("device-list")), /Managed desk/);
+    assert.equal(deviceNameInput("desk").value, "Managed desk", "The rendered result matches the saved server value");
+
+    nameInput = deviceNameInput("desk");
+    nameInput.value = "Language-safe draft";
+    nameInput.focus();
+    await nameInput.trigger("input");
+    const staleTranslations = {"zh-TW": "裝置資料未更新", en: "Device data stale", ja: "端末データを更新できませんでした"};
+    for (const language of ["zh-TW", "en", "ja"]) {
+        context.document.documentElement.lang = language;
+        context.window.applyManagementLanguage(language);
+        nameInput = deviceNameInput("desk");
+        assert.equal(nameInput.value, "Language-safe draft", "Language changes preserve device rename drafts");
+        assert.equal(activeElement, nameInput, "Language changes preserve device rename focus");
+        assert.equal($("device-refresh-status").textContent, staleTranslations[language], "Language changes translate the stale-data notice");
+    }
+    context.document.documentElement.lang = "en";
+    context.window.applyManagementLanguage("en");
+
+    const beforeRename = qa.loadDevices(), beforeRenameRequest = take("/devices");
+    nameInput = deviceNameInput("desk");
+    nameInput.value = "First submitted name";
+    await nameInput.trigger("input");
+    const concurrentSave = button("device-list", "Save name").trigger("click");
+    const concurrentSaveRequest = take("/devices/desk", "PATCH");
+    assert.deepEqual(JSON.parse(concurrentSaveRequest.options.body), {name: "First submitted name"});
+    reply(beforeRenameRequest, {devices: [{...refreshedDevice, name: "Before-save stale name"}]});
+    await beforeRename;
+    assert.doesNotMatch(content($("device-list")), /Before-save stale name/, "Starting a rename invalidates earlier list requests");
+    nameInput.value = "Newer unsaved name";
+    await nameInput.trigger("input");
+
+    const refreshDuringSave = qa.loadDevices(), refreshDuringSaveRequest = take("/devices");
+    const latestReportedDevice = {...savedDevice, firmware: "2.0", reported_name: "New firmware self-name",
+        capabilities: {background: true}, capabilities_reported_at: "2026-09-30T10:01:00+08:00"};
+    reply(refreshDuringSaveRequest, {devices: [latestReportedDevice]});
+    await refreshDuringSave;
+    assert.equal(deviceNameInput("desk").value, "Newer unsaved name");
+    assert.equal($("device-refresh-status").textContent, "", "A successful refresh clears the stale-data notice");
+    assert.equal(button("device-list", "Save name").disabled, true, "Polling cannot enable a pending rename button");
+    context.document.documentElement.lang = "ja";
+    context.window.applyManagementLanguage("ja");
+    assert.equal(button("device-list", "Save name").disabled, true, "Language changes cannot enable a pending rename button");
+    const requestsBeforeDuplicate = requests.length;
+    await button("device-list", "Save name").trigger("click");
+    assert.equal(requests.length, requestsBeforeDuplicate, "The handler also rejects a duplicate rename while saving");
+    context.document.documentElement.lang = "en";
+    context.window.applyManagementLanguage("en");
+
+    const delayedRefresh = qa.loadDevices(), delayedRefreshRequest = take("/devices");
+    const firstSavedDevice = {...savedDevice, name: "First submitted name", admin_name: "First submitted name", sync_status: {state: "pending"}};
+    reply(concurrentSaveRequest, {device: firstSavedDevice});
+    await concurrentSave;
+    assert.match(content($("device-list")), /First submitted name/);
+    assert.equal(deviceNameInput("desk").value, "Newer unsaved name", "A successful save preserves edits made after submission");
+    assert.equal(button("device-list", "Save name").disabled, false, "Success enables the currently rendered save button");
+    assert.match(content($("device-list")), /New firmware self-name.*firmware 2\.0.*Background: Supported/,
+        "A delayed rename response preserves newer device reports");
+    assert.match(content($("device-list")), /Sync confirmation: Confirmed/,
+        "A delayed rename response cannot roll back newer sync confirmation");
+    reply(delayedRefreshRequest, {devices: [refreshedDevice]});
+    await delayedRefresh;
+    assert.match(content($("device-list")), /First submitted name/, "A delayed list response cannot roll back a completed rename");
+    assert.equal(deviceNameInput("desk").value, "Newer unsaved name");
+
+    const saveNewerDraft = button("device-list", "Save name").trigger("click");
+    const saveNewerDraftRequest = take("/devices/desk", "PATCH");
+    assert.deepEqual(JSON.parse(saveNewerDraftRequest.options.body), {name: "Newer unsaved name"});
+    reply(saveNewerDraftRequest, {device: {...firstSavedDevice, name: "Newer unsaved name", admin_name: "Newer unsaved name"}});
+    await saveNewerDraft;
+    const externalRename = qa.loadDevices(), externalRenameRequest = take("/devices");
+    reply(externalRenameRequest, {devices: [savedDevice]});
+    await externalRename;
+    assert.equal(deviceNameInput("desk").value, "Managed desk", "A successfully submitted draft is cleared so later server updates appear");
+
     const syncing = button("device-list", "sync").trigger("click");
     const commandRequest = take("/devices/desk/commands", "POST");
     assert.deepEqual(JSON.parse(commandRequest.options.body), {action: "sync"});
@@ -978,7 +1106,7 @@ const completionTimeout = setTimeout(() => {
     await flush();
     reply(take("/devices"), {devices: [{id: "desk", online: false, status: {firmware: "1.0", config_revision: "config123", schedule_revision: "schedule123", holiday_revision: "holiday123"}, commands: [{action: "sync", status: "pending"}]}]});
     await syncing;
-    assert.match(content($("device-list")), /offline.*1.0.*config123.*schedule123.*holiday123.*sync.*pending/);
+    assert.match(content($("device-list")), /offline.*1.0.*config123.*schedule123.*holiday123.*Sync confirmation: Awaiting confirmation.*sync/);
 
     const oldDevices = qa.loadDevices(), oldDevicesRequest = take("/devices");
     const newDevices = qa.loadDevices(), newDevicesRequest = take("/devices");

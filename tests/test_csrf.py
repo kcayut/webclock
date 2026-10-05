@@ -55,6 +55,7 @@ class CsrfTest(unittest.TestCase):
             ('PUT', '/api/v1/schedules/wake', {'json': {'name': 'Changed'}}),
             ('DELETE', '/api/v1/schedules/wake', {}),
             ('POST', '/api/v1/schedules/wake/skip-next', {}),
+            ('PATCH', '/api/v1/devices/one', {'json': {'name': 'Changed'}}),
             ('POST', '/api/v1/devices/one/commands', {'json': {'action': 'sync'}}),
         ]
         before = self.snapshot()

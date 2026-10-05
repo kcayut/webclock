@@ -109,6 +109,7 @@
         </section>
         <section id="devices-panel" data-management-panel="devices" hidden aria-labelledby="devices-title">
             <div class="page-heading"><div><h1 id="devices-title" data-schedule-i18n="devices">{{ t.devices }}</h1><p class="page-description" data-schedule-i18n="device_hint">{{ t.device_hint }}</p></div></div>
+            <p id="device-refresh-status" class="help" role="status" aria-live="polite"></p>
             <ul id="device-list" class="device-list"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
             <section class="other-schedules" aria-labelledby="other-schedules-title">
                 <div class="section-heading"><h2 id="other-schedules-title" data-schedule-i18n="other_schedules">{{ t.other_schedules }}</h2><button id="add-other-schedule" type="button" data-schedule-i18n="add_other">{{ t.add_other }}</button></div>

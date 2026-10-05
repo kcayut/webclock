@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from webclock.services.device_service import DeviceService, REPORT_FIELDS
+from webclock.services.device_service import CAPABILITY_FIELDS, DeviceService, REPORT_FIELDS
 from webclock.services.storage import load_json, save_json
 
 
@@ -23,9 +23,17 @@ class DeviceServiceTest(unittest.TestCase):
         self.assertTrue(response["device"]["online"])
         self.assertEqual(response["commands"], [])
         self.assertEqual(set(response["device"]),
-                         {"id", "name", "registered_at", "last_seen", "online", "commands"})
+                         {"id", "name", "reported_name", "admin_name", "device_type", "capabilities",
+                          "capabilities_reported_at", "registered_at", "last_seen", "online", "commands",
+                          "sync_status"})
+        self.assertIsNone(response["device"]["admin_name"])
+        self.assertIsNone(response["device"]["device_type"])
+        self.assertIsNone(response["device"]["capabilities"])
+        self.assertIsNone(response["device"]["capabilities_reported_at"])
+        self.assertEqual(response["device"]["sync_status"], {"state": "idle"})
         renamed = self.service.register({"id": "bedroom", "name": " New name "})
         self.assertEqual(renamed["name"], "New name")
+        self.assertEqual(renamed["reported_name"], "New name")
         self.assertEqual(renamed["last_seen"], response["device"]["last_seen"])
         self.assertEqual(DeviceService(self.path).list(), [renamed])
 
@@ -50,6 +58,72 @@ class DeviceServiceTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.service.report({"id": "unknown"})
 
+    def test_administrator_name_survives_registration_reports_and_restart(self):
+        renamed = self.service.rename("bedroom", {"name": " Hall clock "})
+        self.assertEqual(renamed["name"], "Hall clock")
+        self.assertEqual(renamed["admin_name"], "Hall clock")
+        self.assertEqual(renamed["reported_name"], "Bedroom")
+        registered = self.service.register({"id": "bedroom", "name": "Self-reported"})
+        self.assertEqual(registered["name"], "Hall clock")
+        self.assertEqual(registered["reported_name"], "Self-reported")
+        reported = self.service.report({"id": "bedroom", "firmware": "1.0"})["device"]
+        self.assertEqual(reported["name"], "Hall clock")
+        self.assertEqual(DeviceService(self.path).list()[0], reported)
+
+    def test_legacy_name_only_record_is_read_and_upgraded_without_losing_the_reported_name(self):
+        legacy = {"bedroom": {"id": "bedroom", "name": "Legacy name",
+                              "registered_at": "2026-10-03T00:00:00+00:00", "commands": []}}
+        save_json(self.path, legacy)
+        before = self.path.read_bytes()
+        listed = DeviceService(self.path).list()[0]
+        self.assertEqual(listed["name"], "Legacy name")
+        self.assertEqual(listed["reported_name"], "Legacy name")
+        self.assertIsNone(listed["admin_name"])
+        self.assertIsNone(listed["capabilities"])
+        self.assertEqual(self.path.read_bytes(), before)
+        renamed = DeviceService(self.path).rename("bedroom", {"name": "Managed name"})
+        self.assertEqual(renamed["name"], "Managed name")
+        self.assertEqual(renamed["reported_name"], "Legacy name")
+        reregistered = DeviceService(self.path).register({"id": "bedroom", "name": "New report"})
+        self.assertEqual(reregistered["name"], "Managed name")
+        self.assertEqual(reregistered["reported_name"], "New report")
+
+    def test_optional_type_and_capabilities_are_partial_observations(self):
+        registered = self.service.register({
+            "id": "bedroom", "name": "Bedroom", "device_type": " esp32-s3 ",
+            "capabilities": {"display": True, "audio": False}})
+        self.assertEqual(registered["device_type"], "esp32-s3")
+        self.assertEqual(registered["capabilities"], {"display": True, "audio": False})
+        first_reported_at = registered["capabilities_reported_at"]
+        unchanged = self.service.report({"id": "bedroom"})["device"]
+        self.assertEqual(unchanged["capabilities_reported_at"], first_reported_at)
+        updated = self.service.report({
+            "id": "bedroom", "device_type": "browser",
+            "capabilities": {"calendar": True, "background": False}})["device"]
+        self.assertEqual(updated["device_type"], "browser")
+        self.assertEqual(updated["capabilities"], {"calendar": True, "background": False})
+        self.assertTrue(updated["capabilities_reported_at"])
+        self.assertEqual(DeviceService(self.path).list()[0], updated)
+
+    def test_new_device_fields_reject_empty_long_unknown_and_invalid_values(self):
+        previous = self.path.read_bytes()
+        invalid = [
+            lambda: self.service.rename("bedroom", {"name": ""}),
+            lambda: self.service.rename("bedroom", {"name": "x" * 101}),
+            lambda: self.service.rename("bedroom", {"name": "Name", "extra": True}),
+            lambda: self.service.register({"id": "bedroom", "name": "Name", "device_type": ""}),
+            lambda: self.service.register({"id": "bedroom", "name": "Name", "device_type": "x" * 51}),
+            lambda: self.service.register({"id": "bedroom", "name": "Name", "capabilities": {}}),
+            lambda: self.service.report({"id": "bedroom", "capabilities": {"unknown": True}}),
+            lambda: self.service.report({"id": "bedroom", "capabilities": {"audio": 1}}),
+        ]
+        self.assertEqual(CAPABILITY_FIELDS,
+                         {"display", "audio", "notifications", "background", "calendar"})
+        for operation in invalid:
+            with self.subTest(operation=operation), self.assertRaises(ValueError):
+                operation()
+            self.assertEqual(self.path.read_bytes(), previous)
+
     def test_sync_is_idempotent_and_acknowledgements_only_affect_own_device(self):
         self.service.register({"id": "office", "name": "Office"})
         command = self.service.command("bedroom", "sync")
@@ -67,6 +141,77 @@ class DeviceServiceTest(unittest.TestCase):
                 self.service.command("bedroom", action)
         with self.assertRaises(KeyError):
             self.service.command("unknown", "sync")
+
+    def test_sync_confirmation_timeout_late_ack_and_restart_persistence(self):
+        requested = "2026-10-05T00:00:00+00:00"
+        with patch("webclock.services.device_service._now", return_value=requested):
+            command = self.service.command("bedroom", "sync")
+            self.assertEqual(command["created_at"], requested)
+            pending = self.service.list()[0]["sync_status"]
+        self.assertEqual(pending["state"], "pending")
+        self.assertEqual(pending["command_id"], command["id"])
+        self.assertEqual(pending["timeout_at"], "2026-10-05T00:05:00+00:00")
+        with patch("webclock.services.device_service._now", return_value="2026-10-05T00:06:00+00:00"):
+            self.assertEqual(self.service.command("bedroom", "sync"), command)
+            timed_out = DeviceService(self.path).list()[0]
+        self.assertEqual(timed_out["sync_status"]["state"], "timed_out")
+        self.assertEqual(timed_out["commands"], [command], "Timeout must not delete the pending command")
+        with patch("webclock.services.device_service._now", return_value="2026-10-05T00:07:00+00:00"):
+            confirmed = self.service.report({
+                "id": "bedroom", "acknowledged_commands": [command["id"]]})["device"]
+        self.assertEqual(confirmed["commands"], [])
+        self.assertEqual(confirmed["sync_status"], {
+            "state": "confirmed", "command_id": command["id"], "requested_at": requested,
+            "acknowledged_at": "2026-10-05T00:07:00+00:00"})
+        self.assertEqual(DeviceService(self.path).list()[0]["sync_status"], confirmed["sync_status"])
+        duplicate = self.service.report({
+            "id": "bedroom", "acknowledged_commands": [command["id"], "unknown"]})["device"]
+        self.assertEqual(duplicate["sync_status"], confirmed["sync_status"],
+                         "Duplicate or unknown ACKs must not invent a newer confirmation")
+
+    def test_other_device_and_unknown_ack_never_confirm_a_pending_command(self):
+        self.service.register({"id": "office", "name": "Office"})
+        command = self.service.command("bedroom", "sync")
+        office = self.service.report({
+            "id": "office", "acknowledged_commands": [command["id"], "unknown"]})["device"]
+        self.assertEqual(office["sync_status"], {"state": "idle"})
+        bedroom = self.service.report({
+            "id": "bedroom", "acknowledged_commands": ["unknown"]})["device"]
+        self.assertEqual(bedroom["sync_status"]["state"], "pending")
+        self.assertEqual(bedroom["commands"], [command])
+
+    def test_previous_ack_cannot_confirm_next_sync_and_failed_ack_can_be_retried(self):
+        first = self.service.command("bedroom", "sync")
+        confirmed = self.service.report({
+            "id": "bedroom", "acknowledged_commands": [first["id"]]})["device"]
+        previous_ack = load_json(self.path, {})["bedroom"]["last_sync_ack"]
+        second = self.service.command("bedroom", "sync")
+        self.assertNotEqual(second["id"], first["id"])
+
+        repeated = DeviceService(self.path).report({
+            "id": "bedroom", "acknowledged_commands": [first["id"]]})["device"]
+        self.assertEqual(repeated["commands"], [second])
+        self.assertEqual(repeated["sync_status"]["command_id"], second["id"])
+        self.assertEqual(repeated["sync_status"]["state"], "pending")
+        self.assertEqual(load_json(self.path, {})["bedroom"]["last_sync_ack"], previous_ack)
+
+        before = self.path.read_bytes()
+        with patch("webclock.services.storage.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.service.report({
+                    "id": "bedroom", "acknowledged_commands": [second["id"]]})
+        self.assertEqual(self.path.read_bytes(), before)
+        restarted = DeviceService(self.path)
+        self.assertEqual(restarted.list()[0]["commands"], [second])
+        retried = restarted.report({
+            "id": "bedroom", "acknowledged_commands": [second["id"]]})["device"]
+        self.assertEqual(retried["commands"], [])
+        self.assertEqual(retried["sync_status"]["state"], "confirmed")
+        self.assertEqual(retried["sync_status"]["command_id"], second["id"])
+        self.assertNotEqual(retried["sync_status"], confirmed["sync_status"])
+        self.assertEqual(DeviceService(self.path).report({
+            "id": "bedroom", "acknowledged_commands": [first["id"]]})["device"]["sync_status"],
+            retried["sync_status"])
 
     def test_legacy_fields_and_commands_are_retained_but_not_exposed(self):
         stored = load_json(self.path, {})
@@ -103,7 +248,8 @@ class DeviceServiceTest(unittest.TestCase):
 
     def test_failed_atomic_write_preserves_reports_and_pending_commands(self):
         previous = self.path.read_bytes()
-        operations = [lambda: self.service.register({"id": "bedroom", "name": "Changed"}),
+        operations = [lambda: self.service.rename("bedroom", {"name": "Managed"}),
+                      lambda: self.service.register({"id": "bedroom", "name": "Changed"}),
                       lambda: self.service.report({"id": "bedroom", "firmware": "new"}),
                       lambda: self.service.command("bedroom", "sync")]
         for operation in operations:

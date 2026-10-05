@@ -90,13 +90,23 @@ Turning off a fixed-time recurring alarm offers a one-occurrence pause or perman
 
 ## Device sync status
 
-**Request sync** on the `/schedules` device page only queues a server command. The device polls by reporting its status, receives `sync`, downloads and validates its cache, then sends an ACK before the pending command disappears. Repeated requests reuse the pending command; an offline device cannot complete immediately. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing. See the [device contract](server-api_en.md#status-and-command-acknowledgement).
+Open `/schedules#devices` for devices registered through the device API. Each card shows the effective and reported names, type, registration/last-report times, firmware and revisions, and capabilities with their report time. Save a nonblank administrator name of at most 100 characters; later device registration and reports do not overwrite it. Clearing that name is not currently supported. Missing reports appear as **Unknown**; a capability is unsupported only when the device reports `false`. These observations do not establish hardware validation.
+
+**Request sync** only queues a server command. The device polls by reporting its status, receives `sync`, downloads, validates, and saves data, then sends an ACK. The page distinguishes no request, waiting for confirmation, device-confirmed, and confirmation timeout, with request and acknowledgement times. After 300 seconds without ACK it shows a timeout, but the command remains and a matching late ACK can still confirm it. Repeated requests reuse the same command and original request time; an offline device cannot complete immediately.
+
+If refresh fails, the page keeps the last successful list and marks it as not updated. Automatic list updates every 15 seconds and in-page language changes preserve unsaved name drafts, input focus, and text selection; reloading or reopening the page does not preserve drafts. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing or display updates. See the [device contract](server-api_en.md#status-and-command-acknowledgement).
+
+This is still a shared management space with self-reported device IDs. `DEVICE_API_TOKEN` is a shared access token, not an individual device identity. Display groups, six-character enrollment codes, login, and individual revocation are not implemented. Opening the clock page alone does not automatically register it in this list.
 
 ## Night mode and offline use
 
 Choose 24-hour or 12-hour (AM/PM) time under **Display settings → Time format**. The setting applies to clock, alarm, calendar reminder, and night-mode time displays and inputs. The default remains 24-hour time; switching formats does not change the actual scheduled times.
 
 Automatic night mode can set a daily start time, restore time, dim level, or black screen. It changes only the web page, not the hardware backlight or Auto-Lock setting. Manual black screen takes priority.
+
+The clock starts basic time, date, and weekday rendering before connection, alarm, and offline-cache features. An already loaded page running in the foreground continues ticking through connection failures, rejected API requests, or optional-feature errors; unavailable browser storage does not block the basic clock. Invalid browser/API display settings are rejected as a whole, retaining the last valid settings or defaults on first load. After changing the Server URL or reconnecting manually, delayed responses from the previous connection cannot replace the current state.
+
+Connection and offline-cache details stay inside the manually opened connection panel. Network or cache failures do not automatically show warnings or open the panel over the clock. Deliberate brightness 0, manual black screen, and night black screen remain effective while underlying time continues updating. This fallback does not imply execution when the OS suspends the browser, locks the screen, or the page has not loaded yet.
 
 Offline reopening of the self-hosted clock requires HTTPS or localhost and a compatible browser. Plain `http://LAN_IP` cannot prepare the offline cache, although an already loaded page can continue ticking. The cache contains only the clock shell and display assets, never admin pages, APIs, private calendars, or server reminders.
 

@@ -9,6 +9,10 @@
     const format = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
     let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
+    const deviceNameDrafts = new Map();
+    const deviceNamesSaving = new Set();
+    let deviceDataStale = false;
+    const capabilityFields = ["display", "audio", "notifications", "background", "calendar"];
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
     let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null;
@@ -686,13 +690,37 @@
     });
     async function loadDevices() {
         const request = ++deviceRequest;
-        const data = await api("/devices");
+        let data;
+        try { data = await api("/devices"); }
+        catch (error) {
+            if (request === deviceRequest) {
+                deviceDataStale = true;
+                renderDeviceRefreshStatus();
+            }
+            throw error;
+        }
         if (request !== deviceRequest) return;
         devices = data.devices;
+        deviceDataStale = false;
         renderDevices();
     }
+    function renderDeviceRefreshStatus() {
+        $("device-refresh-status").textContent = deviceDataStale ? t("device_data_stale") : "";
+        $("device-refresh-status").className = deviceDataStale ? "error" : "help";
+    }
+    function capabilityText(capabilities) {
+        if (!capabilities) return t("unknown");
+        return capabilityFields.map(key => t("capability_" + key) + ": " +
+            (Object.prototype.hasOwnProperty.call(capabilities, key) ? t(capabilities[key] ? "yes" : "no") : t("unknown"))).join(" · ");
+    }
     function renderDevices() {
+        renderDeviceRefreshStatus();
         const list = $("device-list");
+        const active = document.activeElement;
+        const activeDevice = active && active.getAttribute ? active.getAttribute("data-device-name") : null;
+        const selectionStart = activeDevice && typeof active.selectionStart === "number" ? active.selectionStart : null;
+        const selectionEnd = activeDevice && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
+        let refocus = null;
         list.replaceChildren();
         devices.forEach(device => {
             const card = node("li", undefined, "panel card"), heading = node("div", undefined, "card-heading");
@@ -702,7 +730,9 @@
             card.append(heading);
             const details = node("dl");
             const values = {
-                last_seen: device.last_seen ? eventTime(device.last_seen) : t("unknown"), firmware: status.firmware || device.firmware,
+                reported_name: device.reported_name, device_type: device.device_type,
+                registered_at: device.registered_at ? eventTime(device.registered_at) : null,
+                last_seen: device.last_seen ? eventTime(device.last_seen) : null, firmware: status.firmware || device.firmware,
                 config_revision: status.config_revision, schedule_revision: status.schedule_revision, holiday_revision: status.holiday_revision
             };
             Object.entries(values).forEach(([key, value]) => {
@@ -711,12 +741,46 @@
                 if (key.endsWith("_revision")) detail.title = text;
                 details.append(node("dt", t(key)), detail);
             });
+            details.append(node("dt", t("capabilities")), node("dd", capabilityText(device.capabilities)),
+                           node("dt", t("capabilities_reported_at")),
+                           node("dd", device.capabilities_reported_at ? eventTime(device.capabilities_reported_at) : t("unknown")));
             card.append(details);
-            const commands = (device.commands || []).filter(command => command.action === "sync");
-            if (commands.length) {
-                const command = commands[commands.length - 1];
-                card.append(node("p", t("command") + ": " + t(command.action) + " · " + t(command.status || "pending"), "meta"));
-            }
+            const sync = device.sync_status || {state: (device.commands || []).length ? "pending" : "idle"};
+            let syncText = t("sync_" + sync.state);
+            if (sync.requested_at) syncText += " · " + t("sync_requested_at") + ": " + eventTime(sync.requested_at);
+            if (sync.acknowledged_at) syncText += " · " + t("sync_acknowledged_at") + ": " + eventTime(sync.acknowledged_at);
+            card.append(node("p", t("sync_status") + ": " + syncText, "meta device-sync-status"));
+            const rename = node("div", undefined, "device-name-editor");
+            const label = node("label", t("admin_name"));
+            const input = node("input");
+            input.value = deviceNameDrafts.has(device.id) ? deviceNameDrafts.get(device.id) : (device.admin_name || device.name || device.id);
+            input.maxLength = 100;
+            input.setAttribute("data-device-name", device.id);
+            input.setAttribute("aria-label", t("admin_name"));
+            input.addEventListener("input", () => deviceNameDrafts.set(device.id, input.value));
+            label.append(input);
+            const saveName = action(t("save_name"), async () => {
+                if (deviceNamesSaving.has(device.id)) return;
+                const submittedName = input.value;
+                deviceNamesSaving.add(device.id);
+                ++deviceRequest;
+                try {
+                    const data = await api("/devices/" + encodeURIComponent(device.id), json("PATCH", {name: submittedName}));
+                    ++deviceRequest;
+                    devices = devices.map(item => item.id === device.id ? Object.assign({}, item, {
+                        name: data.device.name, admin_name: data.device.admin_name
+                    }) : item);
+                    if (deviceNameDrafts.get(device.id) === submittedName) deviceNameDrafts.delete(device.id);
+                    notice(t("saved"));
+                } finally {
+                    deviceNamesSaving.delete(device.id);
+                    renderDevices();
+                }
+            }, "primary");
+            saveName.disabled = deviceNamesSaving.has(device.id);
+            rename.append(label, saveName);
+            card.append(rename);
+            if (activeDevice === device.id) refocus = input;
             const actions = node("div", undefined, "actions");
             actions.append(action(t("sync"), async () => {
                 await api("/devices/" + encodeURIComponent(device.id) + "/commands", json("POST", {action: "sync"}));
@@ -727,6 +791,10 @@
             list.append(card);
         });
         if (!devices.length) list.append(node("li", t("no_devices"), "empty"));
+        if (refocus) {
+            refocus.focus({preventScroll: true});
+            if (selectionStart !== null && refocus.setSelectionRange) refocus.setSelectionRange(selectionStart, selectionEnd);
+        }
     }
     async function refresh() {
         if (refreshing || $("pause-dialog").open) return;
