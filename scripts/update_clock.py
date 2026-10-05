@@ -1,11 +1,14 @@
 """Update an existing Linux/systemd installation without replacing its data."""
 import fcntl
 import argparse
+import ast
 from http.cookiejar import CookieJar
 import json
+import math
 import os
 from pathlib import Path
 import pwd
+import re
 import shutil
 import signal
 import subprocess
@@ -89,7 +92,15 @@ def settings_match(saved, expected):
             and {'time_format': '24h', **saved} == {'time_format': '24h', **expected})
 
 
-def wait_healthy(url, expected):
+def check_public_health(url, deployment_mode='managed'):
+    health = http_json(url + '/api/health')
+    if (health.get('status') != 'ok' or type(health.get('auth_schema')) is not int or health['auth_schema'] != 1
+            or health.get('deployment_mode') != deployment_mode):
+        raise RuntimeError('Protected service health check failed.')
+    return health
+
+
+def wait_healthy(url, expected, deployment_mode='self'):
     deadline = time.monotonic() + 60
     last_pid, stable = None, 0
     while time.monotonic() < deadline:
@@ -97,9 +108,12 @@ def wait_healthy(url, expected):
             pid = service_property('MainPID')
             if service_property('ActiveState') != 'active' or int(pid) <= 0:
                 raise RuntimeError('Service not active')
-            status = http_json(url + '/api/status')
-            if not settings_match(status.get('settings'), expected) or not isinstance(status.get('events'), list):
-                raise RuntimeError('Unexpected status/settings')
+            if deployment_mode == 'managed':
+                check_public_health(url)
+            else:
+                status = http_json(url + '/api/status')
+                if not settings_match(status.get('settings'), expected) or not isinstance(status.get('events'), list):
+                    raise RuntimeError('Unexpected status/settings')
             stable = stable + 1 if pid == last_pid else 1
             last_pid = pid
             if stable >= 3:
@@ -154,6 +168,88 @@ def read_json(path, default):
     except FileNotFoundError:
         return default
     return json.loads(text) if text.strip() else default
+
+
+def authorization_state(state, required=False):
+    """Read the protection floor without importing or initializing the application."""
+    marker, path = state / 'auth-required', state / 'auth.json'
+    if marker.is_symlink() or path.is_symlink():
+        raise RuntimeError('Authorization files must not be symlinks. Keep the service stopped.')
+    try:
+        if marker.exists():
+            if read_json(marker, None) != {'version': 1, 'mode': 'managed'}:
+                raise ValueError()
+            required = True
+        auth = read_json(path, None)
+        if auth is None:
+            if required or path.exists():
+                raise ValueError()
+            return None
+        fields = {'version', 'mode', 'owner_id', 'username', 'password_hash', 'session_secret',
+                  'invite_secret', 'generation', 'sessions'}
+        if (not isinstance(auth, dict) or set(auth) != fields
+                or type(auth.get('version')) is not int or auth['version'] != 1
+                or auth.get('mode') not in ('self', 'managed')
+                or not isinstance(auth.get('owner_id'), str) or not 1 <= len(auth['owner_id']) <= 128
+                or type(auth.get('generation')) is not int or auth['generation'] < 1
+                or not isinstance(auth.get('sessions'), dict) or len(auth['sessions']) > 100
+                or any(not isinstance(auth.get(key), str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', auth[key])
+                       for key in ('session_secret', 'invite_secret'))
+                or auth['session_secret'] == auth['invite_secret']
+                or (required and auth['mode'] != 'managed')):
+            raise ValueError()
+        if auth['mode'] == 'managed':
+            if (not isinstance(auth.get('username'), str) or not 1 <= len(auth['username']) <= 128
+                    or not isinstance(auth.get('password_hash'), str)
+                    or not re.fullmatch(r'scrypt:32768:8:1\$[A-Za-z0-9]{16}\$[0-9a-f]{128}', auth['password_hash'])):
+                raise ValueError()
+        elif auth['username'] is not None or auth['password_hash'] is not None or auth['sessions']:
+            raise ValueError()
+        for digest, session in auth['sessions'].items():
+            if (not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
+                    or not isinstance(session, dict) or session.get('owner_id') != auth['owner_id']
+                    or type(session.get('generation')) is not int or session['generation'] != auth['generation']
+                    or type(session.get('expires_at')) not in (int, float)
+                    or not math.isfinite(session['expires_at'])):
+                raise ValueError()
+        return auth
+    except (ValueError, OSError, TypeError):
+        raise RuntimeError('Invalid or missing authorization state. Keep the service stopped and recover on the host.') from None
+
+
+def supports_authorization(project):
+    """Old code must never be restarted against protected installation data."""
+    path = project / 'webclock/services/auth_service.py'
+    try:
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        return any(isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == 'AUTH_SCHEMA_VERSION'
+                           for target in node.targets)
+                   and isinstance(node.value, ast.Constant) and type(node.value.value) is int
+                   and node.value.value == 1 for node in tree.body)
+    except (OSError, ValueError, SyntaxError):
+        return False
+
+
+def verify_protected_data(project, state):
+    """Use the installed validators while stopped; never import the migrating app."""
+    source = '''
+from pathlib import Path
+import sys
+from webclock.services.auth_service import AuthService
+from webclock.services.device_access_service import DeviceAccessService
+from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings
+state = Path(sys.argv[1])
+auth = AuthService(state / 'auth.json')
+if auth.mode() != 'managed':
+    raise RuntimeError('Protected state is required')
+DeviceAccessService(state / 'device-access.json', auth.invite_secret, validate_settings,
+    lambda: {'night': dict(DEFAULT_NIGHT)}, lambda: {})._load()
+'''
+    try:
+        run([str(project / 'venv/bin/python3'), '-c', source, str(state)], cwd=project)
+    except subprocess.CalledProcessError:
+        raise RuntimeError('Installed code cannot read protected state. Keep the service stopped and recover on the host.') from None
 
 
 def check_saved_data(current, target, snapshot):
@@ -222,14 +318,24 @@ def prepare_data(layout, snapshot, notes, uid, gid):
 def verify_server(project, url, layout, expected_notes, configuration):
     if read_json(layout[1], []) != expected_notes:
         raise RuntimeError('Reminder migration did not preserve the original data.')
+    auth = authorization_state(layout[0])
+    if auth and auth['mode'] == 'managed':
+        check_public_health(url)
+        return
     if (project / 'webclock/api/device.py').is_file():
+        device_schema = 2  # Releases predating public health only support schema 2.
+        if supports_authorization(project):
+            health = check_public_health(url, deployment_mode='self')
+            device_schema = health.get('device_schema')
+            if type(device_schema) is not int or device_schema < 2:
+                raise RuntimeError('Invalid advertised device schema.')
         schedules = http_json(url + '/api/v1/schedules')
         devices = http_json(url + '/api/v1/devices')
         token = configuration.get('DEVICE_API_TOKEN')
         headers = {'Authorization': 'Bearer ' + token} if token else {}
         config = http_json(url + '/api/v1/device/config', headers=headers)
         if (not isinstance(schedules.get('schedules'), list) or not isinstance(devices.get('devices'), list)
-                or config.get('schema_version') != 2 or config.get('timezone') != 'Asia/Taipei'):
+                or config.get('schema_version') != device_schema or config.get('timezone') != 'Asia/Taipei'):
             raise RuntimeError('Management/device API health check failed.')
 
 
@@ -267,13 +373,21 @@ def perform_update(project):
         print('No Git repository: using files already copied here; old source cannot be recovered.', flush=True)
 
     paths = protected_paths(project, current, target_layout)
+    auth = authorization_state(current[0])
+    target_auth = authorization_state(target_layout[0])
+    managed = bool(auth and auth['mode'] == 'managed')
+    if target_auth and target_auth['mode'] == 'managed' and not managed:
+        raise RuntimeError('Target data is protected but the running installation is not. Recover on the host.')
     for tracked in revisions:
         for name in tracked:
             path = project / name
             if (name.startswith(('.webclock-update', 'venv/')) or name == 'venv'
                     or any(path == data or data in path.parents or path in data.parents for data in paths)):
                 raise RuntimeError('Git version tracks installation data; refusing to overwrite it.')
-    snapshot = http_json(url + '/api/status')['settings']
+    if managed:
+        check_public_health(url)
+    snapshot = (read_json(current[0] / 'settings.json', None) if managed
+                else http_json(url + '/api/status')['settings'])
     check_saved_data(current, target_layout, snapshot)
     backup = Path(tempfile.mkdtemp(prefix='.webclock-update-', dir=project))
     print('Backup: ' + str(backup), flush=True)
@@ -281,10 +395,14 @@ def perform_update(project):
     entries = []
     try:
         run(['cp', '-a', str(venv), str(backup / 'venv')])
-        snapshot = http_json(url + '/api/status')['settings']
+        if not managed:
+            snapshot = http_json(url + '/api/status')['settings']
         print('Stopping service and preserving installation data...', flush=True)
         stopped = True
         run(['systemctl', 'stop', 'webclock'])
+        stopped_auth = authorization_state(current[0], required=managed)
+        managed = managed or bool(stopped_auth and stopped_auth['mode'] == 'managed')
+        authorization_state(target_layout[0], required=managed)
         # Read the final persisted settings after stop, so a last-minute edit is retained.
         snapshot = read_json(current[0] / 'settings.json', snapshot)
         notes = check_saved_data(current, target_layout, snapshot)
@@ -292,37 +410,58 @@ def perform_update(project):
         changed = True
         if git_prefix:
             run(git_prefix + ['merge', '--ff-only', target], cwd=project)
+        if managed and not supports_authorization(project):
+            raise RuntimeError('Updated code does not support protected authorization state.')
         prepare_data(target_layout, snapshot, notes, uid, gid)
         print('Installing and checking Python packages...', flush=True)
         packages_changed = True
         run([str(venv / 'bin/python3'), '-m', 'pip', 'install', '-r', 'requirements.txt'], cwd=project)
         run([str(venv / 'bin/python3'), '-m', 'pip', 'check'], cwd=project)
+        if managed:
+            verify_protected_data(project, target_layout[0])
         run(['systemctl', 'start', 'webclock'])
         print('Checking service health, reminders and management APIs...', flush=True)
-        wait_healthy(url, snapshot)
+        if managed:
+            authorization_state(target_layout[0], required=True)
+            check_saved_data(target_layout, target_layout, snapshot)
+            wait_healthy(url, snapshot, deployment_mode='managed')
+        else:
+            wait_healthy(url, snapshot)
         verify_server(project, url, target_layout, notes, configuration)
     except BaseException:
         if stopped:
             print('Update failed; restoring the previous source, environment and data.', flush=True)
             try:
                 run(['systemctl', 'stop', 'webclock'])
+                latest_auth = authorization_state(target_layout[0], required=managed)
+                protected = managed or bool(latest_auth and latest_auth['mode'] == 'managed')
                 if changed:
                     if git_prefix:
                         run(git_prefix + ['reset', '--keep', old_head], cwd=project)
                     if packages_changed:
                         shutil.move(str(venv), str(backup / 'failed-venv'))
                         run(['cp', '-a', str(backup / 'venv'), str(venv)])
-                    restore_data(entries, backup)
+                    # Immediate protected rollback preserves the latest authorization and
+                    # data, including revocations made before the health check failed.
+                    if not protected:
+                        restore_data(entries, backup)
+                if protected and not supports_authorization(project):
+                    raise RuntimeError('Previous code cannot enforce authorization. Service remains stopped; recover on the host.')
+                if protected:
+                    verify_protected_data(project, target_layout[0])
                 run(['systemctl', 'start', 'webclock'])
                 # Older releases kept settings only in memory. Avoid rewriting saved files otherwise.
-                for attempt in range(15):
-                    try:
-                        if not settings_match(http_json(url + '/api/status')['settings'], snapshot):
-                            http_json(url + '/api/control', snapshot)
-                        break
-                    except (OSError, ValueError):
-                        time.sleep(2)
-                wait_healthy(url, snapshot)
+                if protected:
+                    wait_healthy(url, snapshot, deployment_mode='managed')
+                else:
+                    for attempt in range(15):
+                        try:
+                            if not settings_match(http_json(url + '/api/status')['settings'], snapshot):
+                                http_json(url + '/api/control', snapshot)
+                            break
+                        except (OSError, ValueError):
+                            time.sleep(2)
+                    wait_healthy(url, snapshot)
                 print('Previous service and data restored.', flush=True)
             except Exception as rollback_error:
                 print('Automatic recovery failed: ' + str(rollback_error), file=sys.stderr)

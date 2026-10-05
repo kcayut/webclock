@@ -66,7 +66,9 @@ async function checkScope(scope) {
         'schedules', 'static/schedules.js', 'static/schedules.css', 'api/v1/schedules',
         'static/alarms.js', 'static/alarm-audio.js', 'api/v1/browser-alarms',
         'static/management.js', 'static/management.css', 'static/calendar-settings.js', 'api/calendar',
-        'api/v1/device/config', 'api/v1/device/schedules', 'api/v1/devices']) {
+        'api/v1/device/config', 'api/v1/device/schedules', 'api/v1/devices',
+        'login', 'logout', 'api/csrf', 'api/health', 'api/time', 'api/v1/groups',
+        'api/v1/groups/group/invite', 'api/v2/device/join', 'api/v2/device/display']) {
         assert.equal(await fetchPage(scope + path), undefined, path);
     }
     assert.equal(await fetchPage(scope, 'POST'), undefined);

@@ -1,14 +1,24 @@
 # WebClock Server：集中管理と端末 API
 
+## B0–B1 管理とグループ（2026-10-05）
+
+ホスト上で初期化する管理者ログイン/ログアウト、固定 owner、入口の権限制御、グループ CRUD、6 文字の招待コード、更新/復元の保護を実装しました。既存インストールは `self` を維持します。`managed` は B3/B4 検証前のため、明示的な隔離テストのみ使用します。端末の参加/表示（B2）とグループ管理画面（B3）は未実装です。
+
+保存 schema、旧 JSON fixture、API 項目と今後の契約は [B0–B1 契約](b0-b1-contract.md)を参照してください。公開 `GET /api/time` はミリ秒時刻だけを返します。managed の `/api/status` は管理者 cookie があっても時刻と空の予定のみ、旧 `/api/v1/device/*` は 403、browser-alarms は 401 です。非公開データを含まない `/api/health` は `managed_devices_ready: false` を返します。
+
+API は `/api/v1/groups`、`/api/v1/groups/:id`、明示的な移行 `/api/v1/groups/initialize`、`/api/v1/groups/:id/invite` です。managed は管理 session、両モードの書き込みは CSRF が必要です。招待は 600 秒有効、既定 5 台（1–100）、平文は生成 POST の応答に一度だけ含まれます。再生成しても参加済み端末は変更しません。招待検証サービスは送信元ごとに 60 秒 10 回、全体で 100 回に制限し、超過時は制限エラーと再試行までの秒数を返します。B1 では公開検証・参加 endpoint や枠消費の transaction はありません。今後の endpoint の 429 契約には `Retry-After` を含めます。
+
+今後の `/api/v2/device/*` と表示 schema 3 は確定した設計のみで、現在これらのルートは 404 を返します。schema 2 は self の互換動作を維持し、旧 ESP codec の schema 3 対応を意味しません。以下の旧端末 API は self モードを前提とします。
+
 [繁體中文](server-api.md) · [English](server-api_en.md) · **日本語** · [README](../README_jp.md)
 
-このプロジェクトは、予定、台湾の勤務日データ、端末登録、同期リビジョン、端末状態を管理し、セルフホスト時計でブラウザーアラームを実行します。`/schedules` でアラームを編集・プレビューし、`/` で内蔵音と赤い枠の通知を表示します。`/admin` は表示設定、購読カレンダー、文字リマインダーを別に管理します。
+このプロジェクトは、予定、台湾の勤務日データ、端末登録、同期リビジョン、端末状態を管理します。self モードのセルフホスト時計ではブラウザーアラームも実行します。`/schedules` でアラームを編集・プレビューし、`/` で内蔵音と赤い枠の通知を表示します。`/admin` は表示設定、購読カレンダー、文字リマインダーを別に管理します。managed の時計への非公開アラーム配信は B2 の端末認証・表示フローの実装待ちです。
 
 端末での実行はファームウェアが担当します。[`firmware/`](../firmware/README.md) にはクロスコンパイル済みの ESP32-S3／ESPHome 試作版があり、OLED、固定ルールのアラーム同期、永続キャッシュ、圧電ブザー、停止ボタンを実装しています。実機は未検証です。カレンダー連動、ブラウザー音色の忠実な再現／音声ファイル、スヌーズ、電池バックアップ RTC、OTA、汎用の公開ファームウェアは未提供です。端末は HTTP/JSON API を使用し、このプロジェクトの Python モジュールを読み込む必要はありません。
 
 現在の試作版の使用手順と制限は [ESPHome 端末ガイド](esp-home.md)、完全な応答例は [API 詳細](server-api.md#裝置-api)を参照してください。どちらも繁体字中国語です。起動のたびに時刻の取得と Server 設定の検証が成功してからアラームを有効にします。その後の通信断ではキャッシュで動作しますが、オフライン再起動時に自動で有効にはしません。
 
-現在は 1 つの共有管理領域で、**すべての端末が同じ予定とカレンダーを使用します**。端末ごとの割り当て、マルチテナント、ユーザーアカウントは未実装です。
+現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。B0–B1 でホスト初期化の管理者と owner に属するグループ定義を追加しました。認証済み端末へのグループ割り当ては B2、複数ユーザーアカウントとマルチテナントは今後の実装です。
 
 ## 起動と構成
 
@@ -99,11 +109,11 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 | `/api/v1/devices/<id>` | PATCH `{"name":"リビングの時計"}`、200 と `device` を返す |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`、202 を返す |
 
-管理 API は信頼できる LAN を前提とし、ログイン機能はありません。異なる Origin のブラウザー要求を拒否しますが、完全な認証ではありません。外部公開時はリバースプロキシでアクセスを制限し、HTTPS を有効にしてください。
+自用モードは信頼できる LAN の共通管理を維持し、帳密テストモードは管理 session を要求します。Origin/CSRF は認証ではありません。外部公開には HTTPS と適切なプロキシ設定が必要です。
 
-管理用 POST／PUT／PATCH／DELETE はすべて CSRF token と同じセッションの `webclock_csrf` cookie が必要です。設定、リマインダー、バックアップ読み込み、プレビュー、端末への同期要求も含みます。管理画面は自動で送信します。外部 client は GET `/api/csrf` の cookie を保持し、応答の `csrf_token` を `X-CSRF-Token` で送信してください。HTML フォームでは hidden の `csrf_token` を使います。Origin を省略しても token は必要です。token の不足・不一致・失効、異なる Origin／Referer、`Sec-Fetch-Site: cross-site` は 403 と `code: "csrf_failed"` を返します。[要求例](server-api.md#管理-api)を参照してください。
+管理用 POST／PUT／PATCH／DELETE はすべて CSRF token と同じセッションの `webclock_csrf` cookie が必要です。設定、リマインダー、バックアップ読み込み、プレビュー、端末への同期要求も含みます。管理画面は自動で送信します。外部 client は GET `/api/csrf` の cookie を保持し、応答の `csrf_token` を `X-CSRF-Token` で送信してください。HTML フォームでは hidden の `csrf_token` を使います。managed では HTTPS の `/login` でログインし、成功後に更新された CSRF token を使います。Origin を省略しても token は必要です。CSRF token の不足・不一致は 403 `csrf_failed`、管理 session の不足・失効は API/JSON 要求の管理書き込み前に 401 `authentication_required` です。クロスオリジン情報は 403 で拒否し、managed の権限チェックでは `cross_origin_forbidden`、CSRF チェックでは `csrf_failed` を返します。[要求例](server-api.md#管理-api)を参照してください。
 
-リマインダー削除 `/delete/<id>` は token 付き POST のみ受け付け、GET／HEAD は 405 です。管理 HTML、エラーページ、token 応答は `no-store` で、クロスオリジン読み取りを許可しません。現在の単一 Server プロセスを再起動すると古い token は無効になるため、管理画面を再読み込みするか token を再取得してください。公開時計に CSRF cookie は不要です。`/api/v1/device/*` は独立した `DEVICE_API_TOKEN` を継続し、CSRF token は不要です。CSRF 対策は Server に直接接続できる利用者の認証ではありません。
+リマインダー削除 `/delete/<id>` は token 付き POST のみ受け付け、GET／HEAD は 405 です。管理 HTML、エラーページ、token 応答は `no-store` で、クロスオリジン読み取りを許可しません。未初期化の自用モードは一時署名秘密を使うため、再起動で CSRF cookie が失効します。初期化後の署名秘密は通常の再起動で維持されます。ログイン/ログアウトで CSRF token を更新し、ホストのパスワード復元で全管理 session を失効させます。失効後は管理画面を再読み込みするか、新しい CSRF token を取得してください。公開時計に CSRF cookie は不要です。`/api/v1/device/*` の独立した `DEVICE_API_TOKEN` と CSRF 不要の契約は self モードのみで、managed はこれらの旧端末呼び出しを拒否します。CSRF 対策自体は利用者の認証ではありません。
 
 `/api/calendar` の各参照元は `id`、`name`、`provider`、`url`、`display_enabled` を持ち、`local_display_enabled` がローカルリマインダーを制御します。アラームが参照するため、更新時は ID を維持してください。POST は参照元全体を保存し、PATCH は ID と表示フラグだけを受け付けます。URL は専用管理応答にだけ現れ、時計、予定、端末、バックアップ、オフラインキャッシュには出力しません。
 
@@ -113,7 +123,7 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 
 ## ブラウザーアラーム
 
-`GET /api/v1/browser-alarms` の主な項目：
+self モードの `GET /api/v1/browser-alarms` の主な項目を以下に示します。managed では管理者 session があっても 401 `device_authorization_required` です。
 
 | 項目 | 内容 |
 | --- | --- |
@@ -144,7 +154,7 @@ API 遅延で直前のアラームを飛ばさないよう、現在の分から�
 | `/api/v1/device/register` | POST 端末 `id` と `name`、201 を返す |
 | `/api/v1/device/status` | POST 状態と確認、端末と未確認指令を返す |
 
-予定と休日 API は読み取り専用です。`.env` に `DEVICE_API_TOKEN` を設定し、すべての端末呼び出しで `Authorization: Bearer <token>` を送信できます。空の場合は信頼 LAN モードです。これは端末ごとの ID ではなく共通 token で、管理 API は保護しません。
+予定と休日 API は読み取り専用です。self モードでは `.env` に `DEVICE_API_TOKEN` を設定し、すべての端末呼び出しで `Authorization: Bearer <token>` を送信します。空の場合は信頼 LAN からの共通アクセスになります。これは端末ごとの ID ではなく共通 token で、管理 API は保護せず、managed の旧端末 endpoint を利用する権限にもなりません。
 
 ### 通信、取得範囲、入力制限
 
@@ -167,7 +177,7 @@ GET は事前登録を必要とせず、端末 ID、日付範囲、ページで�
 
 再登録も 201 を返し、自報名を更新して以前の状態と指令を維持します。登録だけでは heartbeat を更新せず、新規端末は `online: false`、`sync_status: {"state":"idle"}` で `last_seen` がありません。status は 200 と `device`、`commands` を返し、同じ待機指令が `device.commands` にも入ります。登録・状態報告・指令時刻は Server 生成の UTC ISO 文字列で、Unix ミリ秒とは異なります。RTC、Wi-Fi、電池、エラー、発音記録の項目は未対応です。revision は自報文字列として保存するだけで、端末の保存や実行を証明しません。
 
-入力検証は 400、token 不一致は 401、Origin 不一致は 403、未登録端末は 404、未対応メソッドは 405、本文超過は 413、JSON Content-Type 不足は 415、保存 I/O 失敗は 500 です。解析前に HTTP 状態と Content-Type を確認してください。ルートエラーや代理サーバーのページは HTML の場合があります。一時的な失敗は間隔を延ばして再試行し、同期失敗を ACK したり、認証失敗後に空 token へ切り替えたりしないでください。完全な応答例と管理 API の入力制限は[繁体字中国語の詳細](server-api.md#裝置-api)を参照してください。
+入力検証は 400、token 不一致は 401、Origin 不一致は 403、未登録端末は 404、未対応メソッドは 405、本文超過は 413、JSON Content-Type 不足は 415、保存 I/O 失敗は 500 です。アプリの API ルートエラーは JSON ですが、代理サーバーのエラーページは HTML の場合があるため、解析前に HTTP 状態と Content-Type を確認してください。一時的な失敗は間隔を延ばして再試行し、同期失敗を ACK したり、認証失敗後に空 token へ切り替えたりしないでください。完全な応答例と管理 API の入力制限は[繁体字中国語の詳細](server-api.md#裝置-api)を参照してください。
 
 ### 同期フロー
 
@@ -223,7 +233,7 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 
 ### 今後の拡張
 
-有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。端末別の認証情報、ペアリング、アカウント帰属、デプロイモードの切り替えも未実装です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
+有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B0–B1 で管理者/owner とグループ定義を提供しましたが、端末別の認証情報、参加処理、認証済み端末の帰属、本番用の完全なデプロイモード切り替えは未実装です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
 
 ## 旧データと保存
 

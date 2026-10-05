@@ -152,7 +152,42 @@ class MigrationTest(unittest.TestCase):
         if args[:3] == [str(self.project / 'venv/bin/python3'), '-m', 'pip']:
             (self.project / 'venv/package-marker').write_text('new packages')
             return ''
+        if args[:2] == [str(self.project / 'venv/bin/python3'), '-c']:
+            # Execute installed read-only validators with the test environment's
+            # real packages; the fixture does not install a separate virtualenv.
+            return self.real_run([sys.executable, *args[1:]], cwd=cwd)
         return self.real_run(args, cwd=cwd)
+
+    def test_real_managed_server_update_uses_public_health_and_preserves_identity(self):
+        with patch.object(updater.time, 'sleep'):
+            updater.update(self.project)
+        self.stop_service()
+        self.real_run([sys.executable, '-B', '-c', '''
+from webclock.services.auth_service import AuthService
+AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long', enable_managed_test=True)
+'''], cwd=self.project)
+        auth_path = self.project / 'webclock_state/auth.json'
+        original_auth = auth_path.read_bytes()
+        with (self.remote / 'app.py').open('a') as stream:
+            stream.write('\n# Next protected release\n')
+        self.commit('Next protected release')
+        expected_head = self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.remote)
+        self.start_service()
+        with self.assertRaises(HTTPError) as private:
+            updater.http_json(self.url + '/api/v1/devices')
+        self.assertEqual(private.exception.code, 401)
+        private.exception.close()
+        original_http = updater.http_json
+        def public_only(url, data=None, headers=None):
+            self.assertTrue(url.endswith('/api/health'), url)
+            self.assertIsNone(data)
+            return original_http(url, data, headers)
+        with patch.object(updater, 'http_json', side_effect=public_only), patch.object(updater.time, 'sleep'):
+            updater.update(self.project)
+        self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), expected_head)
+        self.assertEqual(auth_path.read_bytes(), original_auth)
+        self.assertEqual(original_http(self.url + '/api/health')['deployment_mode'], 'managed')
+        self.assertEqual(list(self.project.glob('.webclock-update-*')), [])
 
     def test_real_legacy_server_upgrades_with_settings_notes_and_management_api(self):
         with self.assertRaises(HTTPError) as missing:

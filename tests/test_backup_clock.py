@@ -280,6 +280,166 @@ class HostBackupTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('test-only-secret', result.stdout + result.stderr)
 
+    def protect(self, project, values):
+        from webclock.services.device_access_service import DeviceAccessService
+        module = project / 'webclock/services/auth_service.py'
+        module.parent.mkdir(exist_ok=True)
+        module.write_text('AUTH_SCHEMA_VERSION = 1\n')
+        state = backup.updater.data_layout(project, values, True)[0]
+        auth = dict(version=1, mode='managed', owner_id='owner', username='admin', password_hash='scrypt:32768:8:1$' + 's' * 16 + '$' + 'a' * 128,
+                    session_secret='s' * 43, invite_secret='i' * 43, generation=5,
+                    sessions={'d' * 64: {'owner_id': 'owner', 'expires_at': 9999999999, 'generation': 5}})
+        service = DeviceAccessService(state / 'device-access.json', lambda: auth['invite_secret'],
+            lambda value: value, lambda: {}, lambda: {'schedules': [{'id': 'private'}]})
+        group = service.create_group('owner', {'name': 'keep group', 'content': {'schedule_ids': ['private']}})
+        service.create_invite('owner', group['id'])
+        access = service._load()
+        access['attempts'] = {'pending': {'credential_digest': 'pending-secret-digest'}}
+        access['devices'] = {'device': dict(id='device', owner_id='owner', group_id=group['id'], enabled=True,
+            status='active', credential_digest='d' * 64, credential_generation=3,
+            created_at='2026-10-05T00:00:00+00:00', assignment_revision=1, rejoin_required=False)}
+        for name, value in (('auth.json', auth), ('auth-required', {'version': 1, 'mode': 'managed'}),
+                            ('device-access.json', access)):
+            (state / name).write_text(json.dumps(value))
+        return state, auth, access
+
+    def test_managed_historical_restore_rotates_all_credentials_in_custom_state(self):
+        project, values, roots = self.installation('protected-source', True)
+        source_state, auth, access = self.protect(project, values)
+        target, target_values, target_roots = self.installation('protected-target', True)
+        state, _, _ = self.protect(target, target_values)
+        directory, rollback = self.root / 'protected-backup', self.root / 'protected-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        # A newer target generation/revocation cannot be undone by historical bytes.
+        latest = dict(auth, generation=20, sessions={})
+        (state / 'auth.json').write_text(json.dumps(latest))
+        backup.restore_backup(directory, target_roots, rollback, target, target_values)
+        restored = json.loads((state / 'auth.json').read_text())
+        self.assertEqual(restored['mode'], 'managed')
+        self.assertEqual(restored['owner_id'], auth['owner_id'])
+        self.assertEqual(restored['generation'], 21)
+        self.assertEqual(restored['sessions'], {})
+        self.assertNotEqual(restored['session_secret'], auth['session_secret'])
+        self.assertNotEqual(restored['invite_secret'], auth['invite_secret'])
+        self.assertNotEqual(restored['session_secret'], restored['invite_secret'])
+        device_data = json.loads((state / 'device-access.json').read_text())
+        self.assertEqual(device_data['groups'], access['groups'])
+        self.assertTrue(device_data['invites'][next(iter(access['groups']))]['closed'])
+        self.assertEqual(device_data['attempts'], {})
+        device = device_data['devices']['device']
+        self.assertFalse(device['enabled'])
+        self.assertEqual(device['status'], 'revoked')
+        self.assertIsNone(device['credential_digest'])
+        self.assertEqual(device['credential_generation'], 4)
+        self.assertTrue(device['rejoin_required'])
+        self.assertEqual((state / 'devices.json').read_bytes(), (source_state / 'devices.json').read_bytes())
+        for name in ('auth.json', 'auth-required', 'device-access.json'):
+            self.assertEqual(stat.S_IMODE((state / name).stat().st_mode), 0o600)
+        self.assertEqual(json.loads((source_state / 'auth.json').read_text()), auth)
+        from webclock.services.auth_service import AuthService
+        self.assertEqual(AuthService(state / 'auth.json').mode(), 'managed')
+        restarted = backup.DeviceAccessService(state / 'device-access.json', lambda: restored['invite_secret'],
+            backup.validate_settings, lambda: {'night': dict(backup.DEFAULT_NIGHT)}, lambda: {})
+        self.assertEqual(restarted._load(), device_data)
+
+    def test_protected_target_rejects_legacy_backup_before_staging(self):
+        project, values, roots = self.installation('legacy-source')
+        target, target_values, target_roots = self.installation('managed-target')
+        self.protect(target, target_values)
+        directory, rollback = self.root / 'old-backup', self.root / 'old-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        previous = self.snapshot(target_roots)
+        with patch.object(backup, 'copy_data') as copy:
+            with self.assertRaisesRegex(RuntimeError, 'authorization state'):
+                backup.restore_backup(directory, target_roots, rollback, target, target_values)
+            copy.assert_not_called()
+        self.assertEqual(self.snapshot(target_roots), previous)
+        self.assertFalse(rollback.exists())
+
+    def test_invalid_protection_floor_cannot_be_overwritten_by_backup(self):
+        project, values, roots = self.installation('auth-invalid')
+        state, auth, _ = self.protect(project, values)
+        directory, rollback = self.root / 'auth-backup', self.root / 'auth-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        for contents in ('broken-private-secret', '', json.dumps(dict(auth, mode='self'))):
+            (state / 'auth.json').write_text(contents)
+            previous = self.snapshot(roots)
+            with self.assertRaisesRegex(RuntimeError, 'authorization state') as error:
+                backup.restore_backup(directory, roots, rollback, project, values)
+            self.assertNotIn('broken-private-secret', str(error.exception))
+            self.assertEqual(self.snapshot(roots), previous)
+        (state / 'auth.json').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'authorization state'):
+            backup.restore_backup(directory, roots, rollback, project, values)
+
+    def test_restore_rejects_unknown_device_credential_fields_without_replacing_data(self):
+        project, values, roots = self.installation('unknown-device')
+        state, _, access = self.protect(project, values)
+        access['devices']['device']['future_credential'] = 'must-never-resurrect'
+        (state / 'device-access.json').write_text(json.dumps(access))
+        directory, rollback = self.root / 'unknown-backup', self.root / 'unknown-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        previous = self.snapshot(roots)
+        with self.assertRaisesRegex(ValueError, 'device authorization'):
+            backup.restore_backup(directory, roots, rollback, project, values)
+        self.assertEqual(self.snapshot(roots), previous)
+        self.assertFalse(rollback.exists())
+        self.assertEqual(list(self.root.rglob('.webclock-restore-*')), [])
+
+    def test_backup_then_logout_then_restore_never_reactivates_real_session(self):
+        from webclock.services.auth_service import AuthService
+        project, values, roots = self.installation('real-session')
+        module = project / 'webclock/services/auth_service.py'
+        module.parent.mkdir(exist_ok=True)
+        module.write_text('AUTH_SCHEMA_VERSION = 1\n')
+        state = backup.updater.data_layout(project, values, True)[0]
+        service = AuthService(state / 'auth.json')
+        service.setup('admin', 'test-only-password-long', enable_managed_test=True)
+        token = service.login('admin', 'test-only-password-long')['token']
+        self.assertIsNotNone(service.authenticate(token))
+        previous_secret = service.session_secret()
+        directory, rollback = self.root / 'real-session-backup', self.root / 'real-session-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        service.logout(token)
+        backup.restore_backup(directory, roots, rollback, project, values)
+        restarted = AuthService(state / 'auth.json')
+        self.assertEqual(restarted.mode(), 'managed')
+        self.assertIsNone(restarted.authenticate(token))
+        self.assertNotEqual(restarted.session_secret(), previous_secret)
+
+    def test_custom_restore_also_invalidates_dormant_default_authorization(self):
+        project, values, roots = self.installation('dormant', True)
+        state, auth, _ = self.protect(project, values)
+        dormant = project / 'webclock_state'
+        (dormant / 'auth.json').write_text(json.dumps(auth))
+        (dormant / 'auth-required').write_text(json.dumps({'version': 1, 'mode': 'managed'}))
+        directory, rollback = self.root / 'dormant-backup', self.root / 'dormant-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        backup.restore_backup(directory, roots, rollback, project, values)
+        for directory in (state, dormant):
+            restored = json.loads((directory / 'auth.json').read_text())
+            self.assertEqual(restored['sessions'], {})
+            self.assertNotEqual(restored['session_secret'], auth['session_secret'])
+            self.assertNotEqual(restored['invite_secret'], auth['invite_secret'])
+
+    def test_restore_rejects_invalid_group_or_invite_schema_before_replacing_target(self):
+        for name in ('display', 'invite'):
+            project, values, roots = self.installation('invalid-' + name)
+            state, _, access = self.protect(project, values)
+            group_id = next(iter(access['groups']))
+            if name == 'display':
+                access['groups'][group_id]['display_overrides'] = {'brightness': 101}
+            else:
+                access['invites'][group_id]['code_digest'] = 'not-a-digest'
+            (state / 'device-access.json').write_text(json.dumps(access))
+            directory, rollback = self.root / (name + '-backup'), self.root / (name + '-rollback')
+            backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+            before = self.snapshot(roots)
+            with self.assertRaisesRegex(ValueError, 'device authorization'):
+                backup.restore_backup(directory, roots, rollback, project, values)
+            self.assertEqual(self.snapshot(roots), before)
+            self.assertFalse(rollback.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -9,6 +9,8 @@ services:
       - "80:5000"
     volumes:
       - ./manual_notes.json:/app/manual_notes.json:ro
+      # Persist the whole private state directory, including auth.json,
+      # auth-required and device-access.json. Match this mount if STATE_DIR changes.
       - ./webclock_state:/app/webclock_state
     environment:
       - PORT=5000

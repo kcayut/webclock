@@ -64,6 +64,7 @@ else
 fi
 
 chown "$SERVICE_USER":"$SERVICE_USER" .env
+chmod 600 .env
 if [ -f manual_notes.json ]; then
     chown "$SERVICE_USER":"$SERVICE_USER" manual_notes.json
 fi
@@ -97,4 +98,6 @@ systemctl restart webclock
 echo "==========================================="
 echo "  Installation Complete!  "
 echo "  Service running on Port: $user_port"
+echo "  Authorization mode is preserved in the private state directory."
+echo "  New installations use self mode; managed mode is for explicit isolated tests only."
 echo "==========================================="

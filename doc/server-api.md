@@ -1,5 +1,15 @@
 # WebClock Server：集中管理與裝置 API
 
+## B0–B1 管理與群組（2026-10-05）
+
+已提供主機初始化的管理員登入/登出、owner、入口授權、群組 CRUD、六碼邀請及安全更新/還原。既有安裝仍為自用模式；帳密模式只供明確啟用的隔離測試。B2 裝置加入/受管顯示與 B3 管理面板尚未交付。
+
+完整持久 schema、權限矩陣、遷移 fixture、API body/回應及後續凍結契約見 [B0–B1 契約](b0-b1-contract.md)。`GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403、browser-alarms 回 401，管理登入不能替代裝置憑證。`/api/health` 不含私人資料，`managed_devices_ready: false`。
+
+群組 API 為 `/api/v1/groups`、`/api/v1/groups/:id`、明確遷移 `/api/v1/groups/initialize` 與 `/api/v1/groups/:id/invite`。managed 要管理 session，所有模式的寫入要 CSRF。六碼期限 600 秒、預設 5 台（1–100），只在產碼 POST 回一次明文；每群一組，重產不改成員。驗碼服務限每來源 10/60 秒、全站 100/60 秒，429 附 `Retry-After`；B1 沒有公開加入端點或扣額交易。
+
+後續 `/api/v2/device/*` / schema 3 已凍結但尚未實作；現有 schema 2 只維持 self 相容，不默認舊 ESP codec 能使用新契約。以下舊裝置 API 說明均以 self 模式為前提。
+
 **繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../README.md)
 
 本專案負責管理排程、台灣工作日資料、裝置登錄、同步版本及最後回報，並讓自架時鐘頁執行網頁鬧鐘。
@@ -8,7 +18,7 @@
 獨立硬體由裝置端執行。[`firmware/`](../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
-目前是單一管理空間，**所有裝置共用同一組排程與日曆**。尚未提供個別裝置的排程指派、多租戶或使用者帳號。
+自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。B0 已有最小管理員帳號與 owner，B1 已保存群組內容指派；實際依裝置身份下發、一般成員帳號及多租戶仍待後續。
 
 ## 啟動與目錄
 
@@ -111,7 +121,7 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 | `/api/v1/devices/<id>` | PATCH `{"name":"客廳時鐘"}` 修改管理名稱，回 200 與 `device` |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`，回 202 與 `command` |
 
-管理 API 沿用可信任區網模式，不具備登入功能。Server 拒絕不同 Origin 的瀏覽器存取；這不是完整身份驗證。遠端部署須在反向代理限制存取並啟用 HTTPS。
+自用模式的管理 API 保留可信任區網共用規則；帳密測試模式則要求管理 session。Origin/CSRF 不等於身份驗證，遠端部署仍需 HTTPS 與正確代理設定。
 
 所有管理寫入（POST／PUT／PATCH／DELETE，包括設定、提醒、備份匯入、排程預覽及裝置同步要求）都需要 CSRF token 和同一工作階段的 `webclock_csrf` cookie。管理頁會自動處理；程式呼叫先 GET `/api/csrf`，保存回應 cookie，再以 `X-CSRF-Token` 傳入回應的 `csrf_token`；HTML 表單則使用隱藏欄位 `csrf_token`。省略 Origin 也不能省略 token。缺少、錯誤或失效時回 403 `{"error":"CSRF validation failed; reload the management page.","code":"csrf_failed"}`；跨來源 Origin／Referer／`Sec-Fetch-Site: cross-site` 也會被拒絕。
 
@@ -126,7 +136,7 @@ curl --fail --silent --show-error -b "$cookie_file" \
 rm -f "$cookie_file"
 ```
 
-提醒刪除 `/delete/<id>` 只接受帶 token 的 POST，GET／HEAD 回 405。管理 HTML、錯誤頁及 token 回應使用 `no-store`，不開放跨來源讀取。現有單一 Server 程序在重啟後會使舊 token 失效，請重新載入管理頁或重新取得 token。公開時鐘不需要 CSRF cookie；`/api/v1/device/*` 仍沿用獨立的 `DEVICE_API_TOKEN`，不要求 CSRF token。CSRF 不會限制可直接連線的區網用戶，也不等於登入保護。
+提醒刪除 `/delete/<id>` 只接受帶 token 的 POST，GET／HEAD 回 405。管理 HTML、錯誤頁及 token 回應使用 `no-store`，不開放跨來源讀取。未初始化授權檔的自用程序重啟會使舊 CSRF token 失效；初始化後使用持久簽章秘密，登入/登出與主機密碼復原會輪換或失效 token。公開時鐘不需要 CSRF cookie；self 的 `/api/v1/device/*` 沿用獨立 shared `DEVICE_API_TOKEN`，不要求 CSRF token；managed 則完全拒絕這組入口。CSRF 本身不等於登入保護。
 
 `/api/calendar` 的 `sources` 每筆包含 `id`、`name`、`provider`（`apple`／`google`／`ics`）、`url`、`display_enabled`；`local_display_enabled` 控制本地提醒顯示。新增來源可省略 ID，由伺服器產生；更新時保留 ID 以延續鬧鐘引用。POST 完整保存來源，PATCH 只接受來源 ID 與顯示旗標。舊 `{"url":"..."}` 與 `.env` 的 `ICAL_URL` 仍可讀取遷移。網址僅出現在專用管理回應，不進入時鐘 API、排程 API、裝置 API、備份匯出或離線快取。
 
@@ -212,7 +222,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 - `/device/schedules` 包含所有非聯動排程，含停用項目與非 `alarm` 類型，沒有 `next_occurrence`。裝置必須自行判斷 `enabled`、`type`、規則及略過時間。`calendar_link` 排程整筆排除，並非轉成每天響鈴。
 - `/device/holidays` 是政府工作日表，**不是 Apple／Google／ICS 行程清單**。目前一次下載全部涵蓋日期；沒有日期視窗或分頁。2023–2027 共 1826 天，JSON 約 122 KB 起，序列化方式及來源中繼資料會影響大小，解析所需 RAM 另外計算。
 - `config` 沒有 `server_time`。排程時區固定為 `Asia/Taipei`；裝置須另外校時，不能把收到 HTTP 回應當成時間已正確。
-- 尚無裝置配對、獨立 token、撤銷、使用者歸屬或每台排程指派；註冊的 `id` 為自報識別值，不是認證。共用 token 持有者能以其他已知 ID 回報，GET 也會取得共用資料。
+- 這組舊 API 尚無裝置配對、獨立 token、撤銷、裝置 owner 綁定或逐台下發；註冊的 `id` 為自報識別值，不是認證。self 的共用 token 持有者能以其他已知 ID 回報，GET 取得共用資料；managed 不允許使用這組 API。
 
 ### GET 回應形狀
 
@@ -425,7 +435,7 @@ curl -i -H 'Content-Type: application/json' \
 | 415 | 需要 JSON 的 POST／PUT 未使用 JSON Content-Type |
 | 500 | 儲存 I/O 失敗時為 `Storage failed; previous data has been retained`；保留快取、稍後重試，主機端檢查磁碟與權限 |
 
-先檢查 HTTP 狀態碼，再依 Content-Type 解析；代理登入頁、未知路由或未預期例外不保證有 `error` JSON。逾時、斷線及 5xx 不 ACK 未完成同步。ACK 成功但回應遺失可重送；格式合法但不屬於該裝置的指令 ID 不會清除其他裝置命令。
+先檢查 HTTP 狀態碼，再依 Content-Type 解析；代理登入頁、未預期例外不保證有 `error` JSON。逾時、斷線及 5xx 不 ACK 未完成同步。ACK 成功但回應遺失可重送；格式合法但不屬於該裝置的指令 ID 不會清除其他裝置命令。
 
 韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時不能憑空得知正確日期，詳見 [ESPHome 裝置指南](esp-home.md#時間斷網斷電與認證)。
 

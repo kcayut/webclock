@@ -8,6 +8,7 @@ SUPPORTED_LANGUAGES = {
 
 UI_TRANSLATIONS = {
     'zh-TW': {
+        'management_logout': '登出',
         'connection_settings': '連線設定',
         'connection_server_url': '伺服器網址',
         'connection_reconnect': '重新連線',
@@ -315,6 +316,7 @@ UI_TRANSLATIONS = {
         'calendar_event_limit': '来源事件数量超过处理上限，请缩小日历内容。',
     },
     'en': {
+        'management_logout': 'Sign out',
         'connection_settings': 'Connection settings',
         'connection_server_url': 'Server URL',
         'connection_reconnect': 'Reconnect',
@@ -477,6 +479,7 @@ UI_TRANSLATIONS = {
         'calendar_event_limit': 'This source exceeds the event limit. Reduce the calendar contents.',
     },
     'ja': {
+        'management_logout': 'ログアウト',
         'connection_settings': '接続設定',
         'connection_server_url': 'サーバー URL',
         'connection_reconnect': '再接続',

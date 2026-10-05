@@ -1,14 +1,24 @@
 # WebClock Server: Central Management and Device API
 
+## B0–B1 administration and groups (2026-10-05)
+
+Host-initialized administrator login/logout, a stable owner, access enforcement, group CRUD, six-character invitations, and protected update/restore are implemented. Existing installations stay in `self` mode; `managed` is an explicit isolated-test opt-in until B3/B4. Device enrollment/display (B2) and group UI (B3) are not implemented.
+
+See the [complete B0–B1 contract](b0-b1-contract.md) for persisted schemas, the legacy fixture, request/response fields and future contracts. Public `GET /api/time` returns only a millisecond timestamp. Managed `/api/status` returns time and empty events even with an admin cookie; `/api/v1/device/*` returns 403 and browser-alarms returns 401. The non-private `/api/health` reports `managed_devices_ready: false`.
+
+Group routes are `/api/v1/groups`, `/api/v1/groups/:id`, explicit migration `/api/v1/groups/initialize`, and `/api/v1/groups/:id/invite`. Managed requests require the admin session; writes in either mode require CSRF. Invitations expire in 600 seconds, default to 5 slots (1–100), and reveal plaintext only in the creation POST response. Regeneration leaves members unchanged. The invitation validation service limits attempts to 10 per source and 100 globally per 60 seconds, with a rate-limit error and retry interval. B1 has no public validation/enrollment endpoint or capacity-consumption transaction; the future endpoint's 429 contract includes `Retry-After`.
+
+Future `/api/v2/device/*` and display schema 3 are frozen contracts, not live endpoints; those routes currently return 404. Legacy schema 2 remains compatible only in self mode; an existing ESP codec is not automatically compatible with schema 3. The legacy device API descriptions below assume self mode.
+
 [繁體中文](server-api.md) · **English** · [日本語](server-api_jp.md) · [README](../README_en.md)
 
-This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. It also lets the self-hosted clock page run browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders.
+This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Managed clocks receive no private alarms until the B2 device authorization/display flow is delivered.
 
 Device execution remains a firmware responsibility. [`firmware/`](../firmware/README.md) now contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
 
 See the [ESPHome device guide](esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
 
-There is currently one shared management space: **all devices use the same schedules and calendars**. Per-device schedule assignment, multi-tenancy, and user accounts are not implemented.
+There is currently one owner's management space. **Legacy self-mode devices use the same schedules and calendars**. B0–B1 adds a host-initialized administrator and owner-scoped group definitions; applying group assignments to authenticated devices is still pending B2. Multiple user accounts and multi-tenancy are not implemented.
 
 ## Startup and layout
 
@@ -99,11 +109,11 @@ APIs accept JSON. Matched API routes return errors as `{"error":"..."}`: data va
 | `/api/v1/devices/<id>` | PATCH `{"name":"Living-room clock"}`; returns 200 with `device` |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`; returns 202 |
 
-Management APIs assume a trusted LAN and have no login. The server rejects browser requests from a different Origin, but this is not full authentication. Restrict remote deployments at a reverse proxy and enable HTTPS.
+Self-mode management keeps the trusted-LAN shared-access behavior; managed test mode requires an admin session. Origin and CSRF checks are not authentication. Remote deployments still need HTTPS and correct proxy configuration.
 
-All management POST/PUT/PATCH/DELETE requests require a CSRF token and the matching `webclock_csrf` session cookie, including settings, reminders, backup imports, previews, and device sync commands. Management pages supply them automatically. Other clients must GET `/api/csrf`, retain its cookie, and send the returned `csrf_token` as `X-CSRF-Token`; HTML forms use a hidden `csrf_token` field. Omitting Origin does not bypass this check. Missing, invalid, or expired tokens and cross-origin Origin/Referer or `Sec-Fetch-Site: cross-site` return 403 with `code: "csrf_failed"`. See the [request example](server-api.md#管理-api).
+All management POST/PUT/PATCH/DELETE requests require a CSRF token and the matching `webclock_csrf` session cookie, including settings, reminders, backup imports, previews, and device sync commands. Management pages supply them automatically. Other clients must GET `/api/csrf`, retain its cookie, and send the returned `csrf_token` as `X-CSRF-Token`; HTML forms use a hidden `csrf_token` field. Managed clients must also sign in through HTTPS `/login` and use the new CSRF token returned after login. Omitting Origin does not bypass CSRF validation. Missing or invalid CSRF tokens return 403 `csrf_failed`; a missing or expired managed session returns 401 `authentication_required` for API/JSON requests before management writes run. Cross-origin metadata is rejected with 403 (`cross_origin_forbidden` at the managed access guard, otherwise `csrf_failed` at the CSRF check). See the [request example](server-api.md#管理-api).
 
-Reminder deletion `/delete/<id>` accepts only token-protected POST; GET/HEAD return 405. Management HTML, error pages, and token responses use `no-store` without cross-origin read access. A restart of the current single server process invalidates old tokens: reload the management page or obtain a new token. The public clock needs no CSRF cookie. `/api/v1/device/*` keeps its independent `DEVICE_API_TOKEN` contract and needs no CSRF token. CSRF protection does not authenticate users who can directly reach the server.
+Reminder deletion `/delete/<id>` accepts only token-protected POST; GET/HEAD return 405. Management HTML, error pages, and token responses use `no-store` without cross-origin read access. Uninitialized self mode uses an ephemeral signing secret, so a restart invalidates its CSRF cookies. Once authorization state is initialized, the signing secret persists across ordinary restarts; login/logout rotates the CSRF token, and host password recovery invalidates all managed sessions. Reload the management page or obtain a new CSRF token after an invalidation. The public clock needs no CSRF cookie. Only in self mode does `/api/v1/device/*` retain the independent `DEVICE_API_TOKEN` contract without CSRF; managed mode rejects those legacy calls. CSRF protection itself does not authenticate users.
 
 Each `/api/calendar` source contains `id`, `name`, `provider`, `url`, and `display_enabled`; `local_display_enabled` controls local reminders. Keep IDs stable when updating because alarms reference them. POST saves the complete source set, while PATCH accepts only source IDs and display flags. URLs appear only in the dedicated management response and never in clock, schedule, device, backup, or offline-cache output.
 
@@ -113,7 +123,7 @@ Each `/api/calendar` source contains `id`, `name`, `provider`, `url`, and `displ
 
 ## Browser alarms
 
-`GET /api/v1/browser-alarms` returns:
+In self mode, `GET /api/v1/browser-alarms` returns the following fields. Managed mode returns 401 `device_authorization_required`, including when the browser has an administrator session.
 
 | Field | Meaning |
 | --- | --- |
@@ -144,7 +154,7 @@ Device paths remain under `/api/v1/device/*`; configuration responses use **`sch
 | `/api/v1/device/register` | POST device `id` and `name`; returns 201 |
 | `/api/v1/device/status` | POST status and acknowledgements; returns device and pending commands |
 
-Schedule and holiday endpoints are read-only. Set `DEVICE_API_TOKEN` in `.env` and send `Authorization: Bearer <token>` for all device calls. An empty value keeps trusted-LAN mode. This is one shared token, not per-device identity, and does not protect management APIs.
+Schedule and holiday endpoints are read-only. In self mode, set `DEVICE_API_TOKEN` in `.env` and send `Authorization: Bearer <token>` for all device calls; an empty value keeps trusted-LAN access. This is one shared token, not per-device identity, and does not protect management APIs or authorize any legacy device endpoint in managed mode.
 
 ### Transport, scope, and input limits
 
@@ -167,7 +177,7 @@ Management PATCH `/api/v1/devices/<id>` accepts only `{"name":"Living-room clock
 
 Repeated registration still returns 201, updates the reported name, and preserves previous status and commands. Registration itself does not update the heartbeat; new devices have `online: false`, `sync_status: {"state":"idle"}`, and no `last_seen`. Status returns 200 with `device` and `commands`; the same pending list also appears under `device.commands`. Server-generated registration, heartbeat, and command timestamps are UTC ISO strings, not Unix milliseconds. RTC, Wi-Fi, battery, error, and actual ringing fields are not accepted yet. Reported revision strings are stored without proving that the device persisted or executed anything.
 
-Validation errors use 400; token failures 401; Origin failures 403; missing registered devices 404; unsupported methods 405; oversized bodies 413; missing JSON Content-Type 415; storage I/O failures 500. Check HTTP status and Content-Type before parsing: routing errors or proxy pages may be HTML. Retry transient failures with backoff; do not ACK failed synchronization or downgrade to an empty token after authentication failure. Complete response examples and management input limits are in the [Traditional Chinese reference](server-api.md#裝置-api).
+Validation errors use 400; token failures 401; Origin failures 403; missing registered devices 404; unsupported methods 405; oversized bodies 413; missing JSON Content-Type 415; storage I/O failures 500. Application API routing errors return JSON; proxy error pages may still be HTML, so check HTTP status and Content-Type before parsing. Retry transient failures with backoff; do not ACK failed synchronization or downgrade to an empty token after authentication failure. Complete response examples and management input limits are in the [Traditional Chinese reference](server-api.md#裝置-api).
 
 ### Synchronization flow
 
@@ -223,7 +233,7 @@ The UI's “sync requested,” `online`, matching revisions, or an absent pendin
 
 ### Planned extensions
 
-A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. Per-device credentials, pairing, account ownership, and deployment-mode switching are also unimplemented. See the [ESPHome guide](esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
+A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. B0–B1 provides the administrator/owner and group definitions; per-device credentials, enrollment, authenticated device ownership, and complete production deployment-mode switching remain unimplemented. See the [ESPHome guide](esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
 
 ## Legacy data and storage
 

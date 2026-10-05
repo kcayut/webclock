@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ login_text.title }} · WebClock</title>
+  <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico', v=2) }}" sizes="16x16 32x32 48x48">
+  <style>
+    body { margin: 0; padding: 24px; background: #f6f7fb; color: #17213a; font: 16px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; }
+    main { max-width: 400px; margin: 8vh auto; padding: 28px; background: white; border: 1px solid #dfe4ee; border-radius: 16px; }
+    h1 { margin: 0 0 12px; font-size: 25px; } p { color: #546176; } label { display: block; margin-top: 16px; }
+    input, button { box-sizing: border-box; width: 100%; font: inherit; padding: 10px; border: 1px solid #a5b2c8; border-radius: 6px; }
+    button { margin: 24px 0 16px; background: #245ac5; color: white; border-color: #245ac5; cursor: pointer; }
+    a { color: #245ac5; } .error { color: #a32626; } input:focus, button:focus, a:focus { outline: 3px solid #85b4ff; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{ login_text.title }}</h1>
+    <p>{{ login_text.hint }}</p>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="{{ url_for('auth.login', lang=language) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="username">{{ login_text.username }}</label>
+      <input id="username" name="username" maxlength="128" autocomplete="username" required autofocus>
+      <label for="password">{{ login_text.password }}</label>
+      <input id="password" name="password" type="password" maxlength="1024" autocomplete="current-password" required>
+      <button type="submit">{{ login_text.submit }}</button>
+    </form>
+    <a href="/">{{ login_text.back }}</a>
+  </main>
+</body>
+</html>

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, redirect, url_for, abort, send_from_directory
+from flask import Flask, render_template, jsonify, request, redirect, url_for, abort, send_from_directory, g
 from datetime import datetime, timezone, timedelta
 import requests
 from icalendar import Calendar
@@ -20,6 +20,12 @@ from webclock.services.holiday_service import HolidayService
 from webclock.services.schedule_service import next_event, read_schedules
 from webclock.api import register_api
 from webclock.csrf import register_csrf
+from webclock.services.auth_service import AuthService
+from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings, validate_time
+from webclock.auth import register_auth
+from webclock.access_control import register_access_control
+from webclock.services.device_access_service import DeviceAccessService
+from webclock.api.groups import groups_api
 from webclock.translations.common import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, UI_TRANSLATIONS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,7 +38,23 @@ SETTINGS_FILE = str(STATE_DIR / 'settings.json')
 CACHE_DURATION = 300
 
 app = Flask(__name__, root_path=str(ROOT))
+_auth_services = {}
+
+
+def auth_service():
+    path = Path(SETTINGS_FILE).parent / 'auth.json'
+    key = str(path.resolve())
+    if key not in _auth_services:
+        _auth_services[key] = AuthService(path)
+    return _auth_services[key]
+
+
+# Host initialization/reset takes effect after restart; every authenticated
+# request also checks the server-side session record for immediate revocation.
+app.secret_key = auth_service().session_secret()
+register_access_control(app, auth_service)
 register_csrf(app)
+register_auth(app, auth_service)
 holiday_service = HolidayService()
 calendar_feed_cache = {}
 MAX_CALENDAR_SOURCES = 20
@@ -45,16 +67,16 @@ MAX_CALENDAR_QUERY_CACHE = 3
 def add_cors_headers(response):
     # Only the public display surface is cross-origin. Management HTML includes
     # CSRF tokens, including validation-error pages returned from form actions.
-    if request.endpoint not in ('index', 'status', 'service_worker', 'static'):
+    if request.endpoint not in ('index', 'status', 'public_time', 'health', 'service_worker', 'static'):
         response.headers.setdefault('Cache-Control', 'no-store')
         response.headers['X-Content-Type-Options'] = 'nosniff'
         return response
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+    if request.endpoint in ('status', 'public_time', 'health'):
+        response.headers['Cache-Control'] = 'no-store'
     return response
-
-DEFAULT_NIGHT = {'enabled': False, 'start': '22:00', 'end': '07:00', 'brightness': 15, 'black': False}
 
 
 def deployment_language():
@@ -73,45 +95,6 @@ DEFAULT_SETTINGS = {
 }
 # ponytail: single-process file storage; use a database before adding writer processes.
 settings_lock = RLock()
-
-
-def validate_settings(data):
-    if not isinstance(data, dict) or set(data) - (set(DEFAULT_SETTINGS) | {'night'}):
-        raise ValueError('Invalid settings object')
-    result = dict(data)
-    for key, low, high in (('brightness', 0, 100), ('timezone_offset', -12, 14)):
-        if key in result:
-            value = result[key]
-            if type(value) not in (int, str):
-                raise ValueError('Invalid ' + key)
-            result[key] = int(value)
-            if not low <= result[key] <= high:
-                raise ValueError('Invalid ' + key)
-    if 'mode' in result and result['mode'] not in ('normal', 'black'):
-        raise ValueError('Invalid display mode')
-    if 'language' in result and result['language'] not in SUPPORTED_LANGUAGES:
-        raise ValueError('Invalid language')
-    if 'time_format' in result and result['time_format'] not in ('24h', '12h'):
-        raise ValueError('Invalid time format')
-    if 'night' in result:
-        night = result['night']
-        if not isinstance(night, dict) or set(night) != set(DEFAULT_NIGHT):
-            raise ValueError('Invalid night settings')
-        if type(night['enabled']) is not bool or type(night['black']) is not bool:
-            raise ValueError('Invalid night switch')
-        if type(night['brightness']) is not int or not 0 <= night['brightness'] <= 100:
-            raise ValueError('Invalid night brightness')
-        for key in ('start', 'end'):
-            validate_time(night[key])
-        if night['start'] == night['end']:
-            raise ValueError('Night times must differ')
-    return result
-
-
-def validate_time(value):
-    if not isinstance(value, str) or datetime.strptime(value, '%H:%M').strftime('%H:%M') != value:
-        raise ValueError('Invalid time')
-    return value
 
 
 def load_display_settings():
@@ -628,6 +611,9 @@ def template_context():
 @app.route('/')
 def index():
     context = template_context()
+    if getattr(g, 'deployment_mode', 'self') != 'self':
+        # Cacheable clock HTML never embeds private account display settings.
+        context.update(language=DEFAULT_SETTINGS['language'], time_format='24h')
     keys = ('app_title', 'loading', 'notice_close', 'weekdays', 'page_error',
             'status_parse_failed', 'server_unavailable', 'server_timeout',
             'offline_ready', 'offline_unavailable', 'offline_failed', 'save', 'add', 'delete')
@@ -827,6 +813,8 @@ def delete(id):
 
 @app.route('/api/status')
 def status():
+    if getattr(g, 'deployment_mode', 'self') != 'self':
+        return jsonify(server_timestamp=int(time.time() * 1000), events=[], next_event=None)
     now = get_local_now()
     server_timestamp = int(now.timestamp() * 1000)
     is_holiday = holiday_service.is_holiday(now.date())
@@ -870,9 +858,58 @@ def status():
     })
 
 
+@app.route('/api/time')
+def public_time():
+    return jsonify(server_timestamp=int(time.time() * 1000))
+
+
+@app.route('/api/health')
+def health():
+    mode = getattr(g, 'deployment_mode', 'recovery')
+    if mode == 'recovery':
+        return jsonify(status='recovery_required'), 503
+    return jsonify(status='ok', auth_schema=1, deployment_mode=mode,
+                   device_schema=2, managed_device_schema=3,
+                   managed_devices_ready=False)
+
+
+def group_service():
+    identity = auth_service()
+    if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        identity.ensure_initialized()
+    return DeviceAccessService(
+        Path(SETTINGS_FILE).parent / 'device-access.json',
+        identity.invite_secret(), validate_settings,
+        lambda: dict(display_settings, night=dict(DEFAULT_NIGHT, **display_settings.get('night', {}))),
+        group_content_catalog)
+
+
+def group_content_catalog():
+    calendar = load_calendar_settings()
+    notes = load_notes()
+    schedules = read_schedules(Path(SETTINGS_FILE).parent)
+    return {
+        'calendar_source_ids': [source['id'] for source in calendar['sources']],
+        'manual_note_ids': [note['id'] for note in notes],
+        'schedules': schedules,
+        'default_content': {
+            'calendar_source_ids': [source['id'] for source in calendar['sources'] if source['display_enabled']],
+            'manual_note_ids': [note['id'] for note in notes] if calendar['local_display_enabled'] else [],
+            'schedule_ids': [row['id'] for row in schedules],
+        },
+    }
+
+
+def group_owner():
+    if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        auth_service().ensure_initialized()
+    return getattr(g, 'owner_id', None) or auth_service().owner_id()
+
+
 register_api(app, lambda: Path(SETTINGS_FILE).parent, holiday_service, template_context,
              calendar_events=lambda **query: get_calendar_events(**query),
              calendar_sources=lambda: get_calendar_sources())
+app.register_blueprint(groups_api(group_service, group_owner))
 
 
 def main():

@@ -1,0 +1,10 @@
+{
+  "settings.json": {"mode": "normal", "brightness": 60, "timezone_offset": 8, "language": "zh-TW", "time_format": "24h"},
+  "manual_notes.json": [{"id": 7, "text": "Legacy reminder", "due_date": "", "enabled": true}],
+  "calendar.json": {"sources": [
+    {"id": "visible", "name": "Visible", "provider": "ics", "url": "https://example.invalid/visible.ics", "display_enabled": true},
+    {"id": "hidden", "name": "Hidden", "provider": "ics", "url": "https://example.invalid/hidden.ics", "display_enabled": false}
+  ], "local_display_enabled": true},
+  "schedules.json": [{"id": "legacy-alarm", "name": "Wake", "time": "07:30", "type": "alarm", "enabled": true, "rule": {}, "skipped_occurrences": [], "skip_holidays": false, "browser_sound": "bell", "browser_volume": 100}],
+  "devices.json": {"legacy-self-reported": {"id": "legacy-self-reported", "name": "Old iPad", "registered_at": "2026-10-01T00:00:00+00:00", "last_seen": "2026-10-01T00:00:00+00:00"}}
+}

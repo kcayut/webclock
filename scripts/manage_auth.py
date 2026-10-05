@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Host-only administrator setup/recovery; stop WebClock before making changes."""
+import argparse
+import getpass
+import os
+from pathlib import Path
+import sys
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from webclock.services.auth_service import AuthError, AuthService, AuthStateError
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--state-dir', type=Path, help='Override WEBCLOCK_STATE_DIR.')
+    actions = parser.add_subparsers(dest='action', required=True)
+    setup = actions.add_parser('setup', help='Initialize an isolated managed-mode test installation.')
+    setup.add_argument('--username', required=True)
+    setup.add_argument('--enable-managed-test', action='store_true',
+                       help='Explicitly acknowledge that production migration remains blocked until B4.')
+    actions.add_parser('reset-password', help='Recover the existing administrator; revoke all login sessions.')
+    actions.add_parser('status', help='Print mode/owner only, without exposing secrets.')
+    args = parser.parse_args(argv)
+    load_dotenv(ROOT / '.env')
+    path = (args.state_dir or Path(os.getenv('WEBCLOCK_STATE_DIR', str(ROOT / 'webclock_state')))) / 'auth.json'
+    service = AuthService(path)
+    try:
+        if args.action == 'status':
+            data = service.state()
+            print('mode=' + data['mode'] + ' owner_id=' + data['owner_id'])
+            return 0
+        if args.action == 'setup' and not args.enable_managed_test:
+            parser.error('setup requires --enable-managed-test; production enablement remains blocked until B4')
+        # Never put a password on the command line, environment, or stdout.
+        password = getpass.getpass('New administrator password (at least 12 characters): ')
+        if password != getpass.getpass('Confirm password: '):
+            raise AuthError('password_mismatch', 'Passwords do not match.')
+        if args.action == 'setup':
+            result = service.setup(args.username, password, enable_managed_test=args.enable_managed_test)
+        else:
+            result = service.reset_password(password)
+        print('Administrator saved. owner_id=' + result['owner_id'] + '. Restart WebClock before use.')
+        return 0
+    except (AuthError, AuthStateError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

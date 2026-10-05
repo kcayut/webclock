@@ -1,5 +1,13 @@
 # WebClock English Guide
 
+## Administrator sign-in and B0–B1 test scope
+
+Existing installations remain in self mode. Managed mode is limited to isolated testing: stop the test service, run `./venv/bin/python scripts/manage_auth.py --state-dir /path/to/test-state setup --username admin --enable-managed-test` as the service user, enter a password of at least 12 characters interactively, restart, and open `/admin` over HTTPS. Use `reset-password` with the same state path to revoke all admin sessions. Sessions last at most 8 hours; the management header has a Sign out button. Production migration and device enrollment/display await B2–B4.
+
+Groups and invitations currently have services/APIs only, without a group UI or device entry panel. Default migration requires an explicit groups/initialize request; new groups select no content. Codes last 10 minutes with 5 slots by default and cannot sign in as an administrator. See the [B0–B1 contract](b0-b1-contract.md). Unenrolled managed clocks still display time/date but receive no private events or alarms, even when their browser has an admin session.
+
+Full host backups contain unencrypted credentials. Historical restore rotates session/invitation secrets, clears sessions/attempts, closes invitations and invalidates device credentials while retaining groups/content and observation records. A managed target cannot become anonymous through an old backup. Immediate update rollback preserves current authorization data; unsupported older code stays stopped for host recovery. The management version-1 export remains settings and notes only.
+
 [README](../README_en.md) · [繁體中文](guide.md) · [日本語](guide_jp.md) · [Device API](server-api_en.md)
 
 ## Public clock
@@ -96,7 +104,7 @@ Open `/schedules#devices` for devices registered through the device API. Each ca
 
 If refresh fails, the page keeps the last successful list and marks it as not updated. Automatic list updates every 15 seconds and in-page language changes preserve unsaved name drafts, input focus, and text selection; reloading or reopening the page does not preserve drafts. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing or display updates. See the [device contract](server-api_en.md#status-and-command-acknowledgement).
 
-This is still a shared management space with self-reported device IDs. `DEVICE_API_TOKEN` is a shared access token, not an individual device identity. Display groups, six-character enrollment codes, login, and individual revocation are not implemented. Opening the clock page alone does not automatically register it in this list.
+The existing device list still uses self-reported IDs and the self-mode shared DEVICE_API_TOKEN. B0–B1 adds test-only admin login and group/invitation APIs; enrollment, per-device credentials and revocation await B2–B4. Opening the clock page does not register a device.
 
 ## Night mode and offline use
 
@@ -138,7 +146,7 @@ venv/bin/python scripts/backup_clock.py restore "$HOME/private-webclock-backups/
 
 Target data paths come only from the target host's effective environment, `.env`, and explicit `--state-dir /target/state --notes-file /target/reminders.json` options, never from the source host's archived paths. If service environment overrides select custom paths, explicitly pass the actual paths to `create` and `restore`. Backups using custom locations require corresponding target locations with the same nesting and relative paths within each data root. The tool adjusts `WEBCLOCK_STATE_DIR` / `NOTES_FILE` only when an archived `.env` exists and target data paths differ, preserving its other settings. If the source used runtime environment variables without an `.env`, restore that environment separately before starting services. For Docker, stop the container first, then run host Python with the dependencies installed and pass host mount paths, not container `/app/...` paths. For Docker volumes, establish the actual host data location first.
 
-`restore` requires `--yes` and a new `--rollback-dir`. It retains a complete pre-restore copy before replacing target data; items absent from the backup are restored as absent. It attempts recovery on failure but does not resume automatically after power loss. If recovery is incomplete, keep services stopped and retain the pre-restore copy and `.webclock-restore-*` staging data for recovery. Copies preserve numeric UID/GID. After a privileged restore to another host or an external directory, check that the service account can traverse parent directories and read/write the data. After success, check data, paths, and permissions before manually starting services. This does not establish Raspberry Pi, Docker, or iPad acceptance.
+`restore` requires `--yes` and a new `--rollback-dir`. It retains a complete pre-restore copy before replacing target data; ordinary content absent from the backup is restored as absent. Authorization markers, secrets and credentials follow the protected-restore rules above and cannot lower the protection mode. It attempts recovery on failure but does not resume automatically after power loss. If recovery is incomplete, keep services stopped and retain the pre-restore copy and `.webclock-restore-*` staging data for recovery. Copies preserve numeric UID/GID. After a privileged restore to another host or an external directory, check that the service account can traverse parent directories and read/write the data. After success, check data, paths, and permissions before manually starting services. This does not establish Raspberry Pi, Docker, or iPad acceptance.
 
 ### Updating the application
 

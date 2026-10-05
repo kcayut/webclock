@@ -1,4 +1,4 @@
-"""CSRF protection for the anonymous management UI, independent of device auth."""
+"""Origin and CSRF protection, independent of management/device authentication."""
 import hmac
 import secrets
 from urllib.parse import urlsplit
@@ -6,10 +6,26 @@ from urllib.parse import urlsplit
 from flask import jsonify, request, session
 
 
+def same_origin():
+    origin = request.headers.get('Origin')
+    if origin is not None and origin != request.host_url.rstrip('/'):
+        return False
+    referer = request.headers.get('Referer')
+    if referer:
+        try:
+            parsed = urlsplit(referer)
+            if parsed.scheme + '://' + parsed.netloc != request.host_url.rstrip('/'):
+                return False
+        except ValueError:
+            return False
+    return request.headers.get('Sec-Fetch-Site') != 'cross-site'
+
+
 def register_csrf(app):
-    # ponytail: one server process, like JSON storage. Restarting requires a fresh
-    # management page; shared/persistent sessions belong with future account auth.
-    app.secret_key = secrets.token_bytes(32)
+    # Protected installations provide a durable key. Uninitialized self mode
+    # may keep an ephemeral CSRF key without creating authorization state.
+    if not app.secret_key:
+        app.secret_key = secrets.token_bytes(32)
     app.config.update(SESSION_COOKIE_NAME='webclock_csrf', SESSION_COOKIE_HTTPONLY=True,
                       SESSION_COOKIE_SAMESITE='Lax')
 
@@ -19,20 +35,6 @@ def register_csrf(app):
         return session['csrf_token']
 
     app.jinja_env.globals['csrf_token'] = token
-
-    def same_origin():
-        origin = request.headers.get('Origin')
-        if origin is not None and origin != request.host_url.rstrip('/'):
-            return False
-        referer = request.headers.get('Referer')
-        if referer:
-            try:
-                parsed = urlsplit(referer)
-                if parsed.scheme + '://' + parsed.netloc != request.host_url.rstrip('/'):
-                    return False
-            except ValueError:
-                return False
-        return request.headers.get('Sec-Fetch-Site') != 'cross-site'
 
     def rejected():
         return jsonify(error='CSRF validation failed; reload the management page.', code='csrf_failed'), 403

@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -79,6 +80,36 @@ class SettingsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             clock.load_display_settings()
         self.assertEqual(self.path.read_text(), 'broken')
+
+
+class ProtectedDataValidationTest(unittest.TestCase):
+    def test_installed_validators_reject_bad_access_without_app_import_or_secret_output(self):
+        from webclock.services.auth_service import AuthService
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            source = Path(__file__).resolve().parents[1]
+            shutil.copytree(source / 'webclock', project / 'webclock',
+                            ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+            (project / 'venv/bin').mkdir(parents=True)
+            (project / 'venv/bin/python3').symlink_to(sys.executable)
+            state = project / 'state'
+            service = AuthService(state / 'auth.json')
+            service.setup('admin', 'test-only-password-long', enable_managed_test=True)
+            before = {path.name: path.read_bytes() for path in state.iterdir()}
+            real_run = updater.run
+            def check():
+                # Reuse this test environment's installed packages, but execute
+                # the copied installation's validators in a fresh subprocess.
+                with patch.object(updater, 'run', side_effect=lambda args, cwd=None:
+                                  real_run([sys.executable, *args[1:]], cwd=cwd)):
+                    updater.verify_protected_data(project, state)
+            check()
+            self.assertEqual({path.name: path.read_bytes() for path in state.iterdir()}, before)
+            self.assertFalse((project / 'webclock_state').exists())
+            (state / 'device-access.json').write_text('{"private-secret": "invalid schema"}')
+            with self.assertRaisesRegex(RuntimeError, 'cannot read protected state') as error:
+                check()
+            self.assertNotIn('private-secret', str(error.exception))
 
 
 class UpdaterTest(unittest.TestCase):
@@ -389,6 +420,102 @@ class UpdaterTest(unittest.TestCase):
                 with patch.object(updater.time, 'sleep'):
                     with self.assertRaisesRegex(RuntimeError, 'health check'):
                         updater.wait_healthy('http://localhost', self.settings)
+
+    def managed_installation(self, external=False, previous_support=True):
+        (self.remote / 'webclock/services').mkdir(parents=True)
+        (self.remote / 'webclock/app.py').write_text('# modular server')
+        if previous_support:
+            (self.remote / 'webclock/services/auth_service.py').write_text('AUTH_SCHEMA_VERSION = 1\n')
+        self.commit('protected baseline')
+        self.real_run(['git', 'fetch'], cwd=self.project)
+        self.real_run(['git', 'merge', '--ff-only', 'origin/main'], cwd=self.project)
+        self.old_head = self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project)
+        (self.remote / 'webclock/services/auth_service.py').write_text('AUTH_SCHEMA_VERSION = 1\n# updated\n')
+        self.commit('protected update')
+        if external:
+            self.configuration.update(WEBCLOCK_STATE_DIR=str(self.root / 'private-state'),
+                                      NOTES_FILE=str(self.root / 'private-notes.json'))
+        state, notes = updater.data_layout(self.project, self.configuration, True)
+        state.mkdir()
+        (state / 'settings.json').write_text(json.dumps(self.settings))
+        notes.write_bytes((self.project / 'manual_notes.json').read_bytes())
+        auth = dict(version=1, mode='managed', owner_id='owner', username='admin', password_hash='scrypt:32768:8:1$' + 's' * 16 + '$' + 'a' * 128,
+                    session_secret='s' * 43, invite_secret='i' * 43, generation=1, sessions={})
+        (state / 'auth.json').write_text(json.dumps(auth))
+        (state / 'auth-required').write_text(json.dumps({'version': 1, 'mode': 'managed'}))
+        return state, auth
+
+    def public_health_only(self, url, data=None, headers=None):
+        self.assertTrue(url.endswith('/api/health'), url)
+        self.assertIsNone(data)
+        return {'status': 'ok', 'auth_schema': 1, 'deployment_mode': 'managed',
+                'device_schema': 2, 'managed_device_schema': 3}
+
+    def test_managed_update_custom_paths_uses_only_public_health(self):
+        state, auth = self.managed_installation(external=True)
+        with patch.object(updater, 'http_json', side_effect=self.public_health_only), \
+             patch.object(updater, 'service_property', side_effect=lambda key: '123' if key == 'MainPID' else 'active'), \
+             patch.object(updater.time, 'sleep'):
+            updater.update(self.project)
+        self.assertEqual(json.loads((state / 'auth.json').read_text()), auth)
+        self.assertEqual(list(self.project.glob('.webclock-update-*')), [])
+
+    def test_managed_rollback_keeps_latest_revocations_and_never_reads_private_api(self):
+        state, auth = self.managed_installation(external=True)
+        def fail_after_change(*args):
+            auth['generation'] += 1
+            (state / 'auth.json').write_text(json.dumps(auth))
+            (state / 'device-access.json').write_text(json.dumps(dict(
+                version=1, groups={}, invites={}, devices={'latest': {'status': 'revoked'}}, attempts={})))
+            raise RuntimeError('failed new health')
+        with patch.object(updater, 'http_json', side_effect=self.public_health_only), \
+             patch.object(updater, 'wait_healthy'), patch.object(updater, 'verify_server', side_effect=fail_after_change):
+            with self.assertRaisesRegex(RuntimeError, 'failed new health'):
+                updater.update(self.project)
+        self.assertEqual(json.loads((state / 'auth.json').read_text()), auth)
+        self.assertEqual(json.loads((state / 'device-access.json').read_text())['devices']['latest']['status'], 'revoked')
+        self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
+        self.assertEqual(self.state, 'active')
+
+    def test_managed_rollback_to_unsupported_code_remains_stopped(self):
+        state, auth = self.managed_installation(previous_support=False)
+        self.fail_pip = True
+        with patch.object(updater, 'http_json', side_effect=self.public_health_only), patch.object(updater, 'wait_healthy'):
+            with self.assertRaises(subprocess.CalledProcessError):
+                updater.update(self.project)
+        self.assertEqual(self.state, 'inactive')
+        self.assertEqual(json.loads((state / 'auth.json').read_text()), auth)
+        self.assertFalse(any(command[:2] == ['systemctl', 'start'] for command in self.calls))
+
+    def test_corrupt_or_missing_protected_auth_stops_before_service_mutations(self):
+        state, auth = self.managed_installation()
+        for contents in ('{secret-invalid-json', '', json.dumps(dict(auth, mode='self'))):
+            (state / 'auth.json').write_text(contents)
+            with self.assertRaisesRegex(RuntimeError, 'authorization state') as error:
+                updater.update(self.project)
+            self.assertNotIn('secret-invalid-json', str(error.exception))
+        (state / 'auth.json').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'authorization state'):
+            updater.update(self.project)
+        self.assertFalse(any(command[0] == 'systemctl' for command in self.calls))
+
+    def test_mode_changed_during_stop_cannot_start_unsupported_source(self):
+        from webclock.services.auth_service import AuthService
+        original = self.fake_run
+        switched = False
+        def setup_during_stop(args, cwd=None):
+            nonlocal switched
+            result = original(args, cwd=cwd)
+            if args[:2] == ['systemctl', 'stop'] and not switched:
+                switched = True
+                AuthService(self.project / 'webclock_state/auth.json').setup(
+                    'admin', 'test-only-password-long', enable_managed_test=True)
+            return result
+        with patch.object(updater, 'run', side_effect=setup_during_stop), patch.object(updater, 'wait_healthy'):
+            with self.assertRaisesRegex(RuntimeError, 'does not support protected'):
+                updater.update(self.project)
+        self.assertEqual(self.state, 'inactive')
+        self.assertFalse(any(command[:2] == ['systemctl', 'start'] for command in self.calls))
 
 
 if __name__ == '__main__':

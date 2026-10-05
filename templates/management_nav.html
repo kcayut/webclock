@@ -47,5 +47,11 @@
 </aside>
 <header class="management-topbar">
     <span class="management-location" data-i18n="management_title">{{ m.management_title }}</span>
+    {% if management_authenticated %}
+    <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" data-i18n="management_logout">{{ m.management_logout }}</button>
+    </form>
+    {% endif %}
     <a class="button clock-link" href="/" target="_blank" rel="noopener"><span data-i18n="management_open_clock">{{ m.management_open_clock }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></a>
 </header>

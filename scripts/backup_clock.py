@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import secrets
 import stat
 import sys
 import tempfile
@@ -19,6 +20,11 @@ if __package__:
     from . import update_clock as updater
 else:
     import update_clock as updater
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# These modules only validate/read state; importing the app would migrate data.
+from webclock.services.device_access_service import DeviceAccessService
+from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings
 
 
 FORMAT = 'webclock-host-backup'
@@ -189,12 +195,86 @@ def remove_data(path):
         path.unlink()
 
 
+def revoke_restored_access(state):
+    """Only schema-1 credential records can be safely retained and invalidated."""
+    path = state / 'device-access.json'
+    if not path.exists():
+        return
+    try:
+        service = DeviceAccessService(path, lambda: '', validate_settings,
+            lambda: {'night': dict(DEFAULT_NIGHT)}, lambda: {})
+        data = service._load()
+        for invite in data['invites'].values():
+            if not isinstance(invite, dict) or type(invite.get('closed')) is not bool:
+                raise ValueError()
+            invite['closed'] = True
+        keys = {'id', 'owner_id', 'group_id', 'enabled', 'status', 'credential_digest',
+                'credential_generation', 'created_at', 'assignment_revision', 'rejoin_required'}
+        for identity, device in data['devices'].items():
+            if (not isinstance(device, dict) or set(device) != keys or device.get('id') != identity
+                    or type(device.get('credential_generation')) is not int or device['credential_generation'] < 1
+                    or type(device.get('assignment_revision')) is not int or device['assignment_revision'] < 1
+                    or type(device.get('enabled')) is not bool or type(device.get('rejoin_required')) is not bool
+                    or device.get('status') not in ('active', 'disabled', 'revoked')
+                    or any(not isinstance(device.get(key), str) or not device[key]
+                           for key in ('owner_id', 'group_id', 'created_at'))
+                    or (device['credential_digest'] is not None and not isinstance(device['credential_digest'], str))):
+                raise ValueError()
+            device.update(enabled=False, status='revoked', credential_digest=None,
+                          credential_generation=device['credential_generation'] + 1, rejoin_required=True)
+        data['attempts'] = {}
+    except (ValueError, KeyError, TypeError, OSError):
+        raise ValueError('Unsupported or invalid device authorization state. Keep the service stopped.') from None
+    write_private_json(path, data)
+
+
+def write_private_json(path, value):
+    with path.open('w', encoding='utf-8') as stream:
+        os.chmod(stream.fileno(), 0o600)
+        json.dump(value, stream, ensure_ascii=False)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def invalidate_restored_authorization(state, target_auth):
+    auth = updater.authorization_state(state, required=bool(target_auth and target_auth['mode'] == 'managed'))
+    if auth is None:
+        # Legacy backups have no authorization contract; reject orphaned access data.
+        if (state / 'device-access.json').exists():
+            raise ValueError('Device authorization state is missing its owner authorization data.')
+        return
+    auth['session_secret'] = secrets.token_urlsafe(32)
+    auth['invite_secret'] = secrets.token_urlsafe(32)
+    auth['generation'] = max(auth['generation'], (target_auth or {}).get('generation', 0)) + 1
+    auth['sessions'] = {}
+    revoke_restored_access(state)
+    if auth['mode'] == 'managed':
+        marker = state / 'auth-required'
+        write_private_json(marker, {'version': 1, 'mode': 'managed'})
+        if os.geteuid() == 0:
+            owner = (state / 'auth.json').stat()
+            os.chown(marker, owner.st_uid, owner.st_gid)
+    write_private_json(state / 'auth.json', auth)
+
+
 def restore_backup(directory, roots, rollback_directory, project, values):
     directory = separate(directory, roots.values())
     manifest = verify_backup(directory)
     layout = updater.data_layout(project, values, modular=True)
     if set(manifest['data']) != set(roots) or manifest['layout'] != layout_signature(roots, layout):
         raise ValueError('Data layout differs; use --state-dir / --notes-file with the same nesting and relative filenames.')
+    source_location = manifest['layout']['state']
+    # A custom state layout also archives the dormant default directory. Invalidate
+    # both so changing the state path later cannot revive historical credentials.
+    locations = {(source_location['root'], source_location['relative']), ('default_state', '.')}
+    floors = {}
+    for role, relative in locations:
+        target_auth = updater.authorization_state(roots[role] / relative)
+        source_auth = updater.authorization_state(directory / 'data' / role / relative,
+            required=bool(target_auth and target_auth['mode'] == 'managed'))
+        if source_auth and source_auth['mode'] == 'managed' and not updater.supports_authorization(project):
+            raise ValueError('Target code cannot enforce restored authorization. Keep the service stopped.')
+        floors[role, relative] = target_auth
     rollback_directory = separate(rollback_directory, [*roots.values(), directory])
     # ponytail: cold restore only; stop every writer. Multi-file live transactions need a shared server lock.
     staged = {}
@@ -230,6 +310,8 @@ def restore_backup(directory, roots, rollback_directory, project, values):
                 os.chmod(env, stat.S_IMODE(original.st_mode))
                 if os.geteuid() == 0:
                     os.chown(env, original.st_uid, original.st_gid)
+        for (role, relative), target_auth in floors.items():
+            invalidate_restored_authorization(staged[role] / 'incoming' / relative, target_auth)
         create_backup(rollback_directory, roots, layout)
         print('Pre-restore backup: ' + str(rollback_directory), flush=True)
         for role, target in roots.items():
