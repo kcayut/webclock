@@ -8,17 +8,21 @@ if (( $# > 1 )); then
     exit 2
 fi
 
-if (( EUID == 0 )); then
-    echo "Run this script without sudo; it will request sudo only for the updater." >&2
-    exit 1
-fi
-
-for command in git python3 sudo mktemp; do
+for command in git python3 mktemp; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
     fi
 done
+
+SUDO=()
+if (( EUID != 0 )); then
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo "Required command not found: sudo" >&2
+        exit 1
+    fi
+    SUDO=(sudo)
+fi
 
 if ! PROJECT_DIR="$(cd "$REQUESTED_PROJECT_DIR" 2>/dev/null && pwd -P)"; then
     echo "WebClock project directory not found: $REQUESTED_PROJECT_DIR" >&2
@@ -48,4 +52,4 @@ if [[ ! -s "$UPDATER_FILE" ]]; then
 fi
 
 echo "Starting the guarded WebClock updater from upstream commit $UPSTREAM_COMMIT"
-sudo python3 "$UPDATER_FILE" "$PROJECT_DIR"
+"${SUDO[@]}" python3 "$UPDATER_FILE" "$PROJECT_DIR"
