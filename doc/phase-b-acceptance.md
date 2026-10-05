@@ -1,6 +1,6 @@
 # B 批次：群組、六碼與裝置授權驗收
 
-驗收日期：2026-10-06（Asia/Taipei）。B0–B4 已實作，B5-1 正在完成本批提交的 Linux CI；B5-2 iPad mini 1／iOS 9 實機仍待驗收。此文件不表示已部署至使用中的主機。
+驗收日期：2026-10-06（Asia/Taipei）。B0–B4 與 B5-1 的軟體、文件、本機及 Linux CI 已完成；B5-2 iPad mini 1／iOS 9 實機仍待驗收。此文件不表示已部署至使用中的主機。
 
 ## 本次交付
 
@@ -20,8 +20,8 @@
 | 行事曆與群組瀏覽器操作 | 隔離 HTTPS Chrome，1440×1000 與 390×844 通過；詳見下段 |
 | 裝置生命週期瀏覽器操作 | 隔離 HTTPS 兩個獨立 Cookie 身份通過：單台停用、原憑證恢復、移組／重開與 390×844 無水平溢出 |
 | 時鐘 ES5 解析 | Acorn 8.15.0、ecmaVersion 5：8 外部腳本＋4 實際渲染 inline，12 段通過；不代替實機 |
-| Linux CI／systemd | 此次新增 managed 演練尚待提交後執行；前一批 cf3994d 的成功不代替本批驗證 |
-| 提交與雙遠端 | 行事曆／群組 UI 已於 cf3994df13e2c826c40ba660994d4fc741aced31 同步 Gitea、GitHub；本批 B4 尚待提交 |
+| Linux CI／systemd | **通過**；`69c944c` 的 [執行 37359263802](https://github.com/kcayut/webclock/actions/runs/37359263802)，264 項 Python、11 組 JS 與 self／managed 真實 systemd 演練 |
+| 提交與雙遠端 | 行事曆／群組 UI 已於 cf3994df13e2c826c40ba660994d4fc741aced31 同步 Gitea、GitHub；B4 實作 `4a1aeba`、演練修正 `69c944cfa5dd62de43b5c87a3b2e2af852a0b2c0` 均已同步，兩遠端獨立讀回受測 SHA；其後僅補本文件 |
 | 正式部署 | 未執行；既有 self 安裝不會自動切成 managed |
 | B5-2 實機 | 待 iPad mini 1／iOS 9 與實際網址；Chromium 或視窗模擬不算完成 |
 
@@ -47,7 +47,9 @@ Python 回歸涵蓋最後名額競態、成功回應遺失後重送、保存失�
 4. 注入啟動故障前撤銷一台裝置；回復舊 Git／venv 時仍保留該次撤權。
 5. 完整備份 → 撤銷 → 歷史還原，舊管理與裝置 cookie、邀請仍失效；使用新碼取得新身份後才能重取內容。
 
-本機僅驗證此 TLS helper、CLI 與相關服務測試。完整 Linux 結果及精確提交另於成功後填入，不使用 macOS 測試替代 systemd 證據。
+2026-10-06 02:52:45–02:56:15（Asia/Taipei），[執行 37359263802](https://github.com/kcayut/webclock/actions/runs/37359263802) 在 `69c944cfa5dd62de43b5c87a3b2e2af852a0b2c0` **完整成功**：上述五項及既有 self／schema 2 演練全部通過，264 項 Python、11 組 JavaScript、shell 與差異檢查通過；最後服務 active，演練 service 隨後清除。這是一次性 x86 Linux runner，不代替 Raspberry Pi／ARM、Docker、正式主機或 iOS 9 驗收。
+
+首次執行 [37358326955](https://github.com/kcayut/webclock/actions/runs/37358326955) 在最後斷言誤以為歷史邀請應被刪除。既有還原契約保留邀請紀錄、設為關閉並輪換秘密。修正只改演練與回歸測試，並加入「尚有名額的舊碼也不能重新加入」的實際 HTTPS 檢查；產品還原行為未變。
 
 ## 正式啟用與硬體交接
 
