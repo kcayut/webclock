@@ -14,6 +14,7 @@ assert.match(template, /alarm-audio\.js/);
 assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
 assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
 assert.ok(template.indexOf("time-inputs.js") < template.indexOf("schedules.js"));
+assert.ok(template.indexOf("group-assignment.js") < template.indexOf("schedules.js"));
 assert.ok(template.indexOf("schedules.js") < template.indexOf("management.js"), "Language controls wait for the schedule translation hook");
 const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "07:30", rule: {},
     skipped_occurrences: [], next_occurrence: "2026-10-01T07:30:00+08:00"};
@@ -99,6 +100,9 @@ $("schedule-form").reset = () => {
     weekdays.forEach(input => input.checked = false);
 };
 const pending = [], requests = [], intervals = [], navigation = {}, inputRefreshes = [];
+const assignmentValues = {alarm: {group_ids: ["work"], partial_group_ids: []}};
+const assignmentEditors = [], assignmentSummaries = new Set();
+let assignmentOptions, assignmentLoads = 0, assignmentLanguages = 0, groupRefreshes = 0;
 const timeouts = new Map();
 let monotonicTime = 0, timeoutId = 0;
 const body = element("body");
@@ -124,6 +128,24 @@ const context = vm.createContext({
         }
     },
     window: {confirm: () => true, location: {hash: ""}, scrollTo() {},
+        WebClockAssignments: {create(options) {
+            assignmentOptions = options;
+            return {
+                load() { assignmentLoads++; options.onChange(); return Promise.resolve(); },
+                get(kind, id) { assert.equal(kind, "schedule"); return assignmentValues[id] || {group_ids: [], partial_group_ids: []}; },
+                summary(target, assignment) {
+                    assignmentSummaries.add(target);
+                    target.textContent = assignment.group_ids.join(" · ") || "Unassigned";
+                },
+                removeSummary(target) { assert.equal(assignmentSummaries.delete(target), true); },
+                createEditor(container) {
+                    assert.equal(container, $("schedule-group-assignment"));
+                    return {set(item, assignment) { assignmentEditors.push(plain({item, assignment})); }};
+                },
+                applyLanguage() { assignmentLanguages++; }
+            };
+        }},
+        WebClockGroups: {refresh() { groupRefreshes++; }},
         WebClockTimeInputs: {refresh(root, format, language) {
             assert.equal(root, $("schedule-form"));
             inputRefreshes.push({format, language, required: $("schedule-time").required, disabled: $("schedule-time").disabled});
@@ -208,11 +230,28 @@ const completionTimeout = setTimeout(() => {
     assert.equal(button("schedule-list", "disable").attributes["aria-checked"], "true");
     assert.equal($("next-event").textContent, "Tomorrow 07:30 · Morning");
     assert.match(content($("schedule-list")), /Next ring: Tomorrow 07:30/);
+    assert.equal(assignmentLoads, 1, "Successful schedule polls refresh assignment data");
+    assert.equal(assignmentSummaries.size, 2, "Alarm and other schedule rows both show assignments");
+    const alarmSummary = descendants($("schedule-list")).find(child => child.getAttribute("data-schedule-assignment") === "alarm");
+    assert.equal(alarmSummary.textContent, "work");
+    assert.match(content($("other-schedule-list")), /Unassigned/);
 
     qa.edit({...row, rule: {weekdays: [1, 2, 3, 4, 5, 6, 7]}, browser_volume: 0});
+    assert.deepEqual(assignmentEditors.at(-1).item, {kind: "schedule", id: "alarm"});
+    $("schedule-name").value = "Unsent schedule draft";
+    $("schedule-name").focus();
+    assignmentValues.alarm = {group_ids: ["home", "work"], partial_group_ids: []};
+    assignmentOptions.onChange();
+    assert.equal(alarmSummary.textContent, "home · work", "Assignment refresh updates the existing badge in place");
+    assert.equal(assignmentLoads, 1, "Assignment changes cannot trigger a loading loop");
+    assert.equal($("schedule-name").value, "Unsent schedule draft");
+    assert.equal(activeElement, $("schedule-name"), "Assignment refresh leaves schedule draft focus untouched");
+    assignmentOptions.onSaved({kind: "schedule", id: "alarm"}, assignmentValues.alarm);
+    assert.equal(groupRefreshes, 1, "Saving assignments refreshes the group management view");
     assert.equal($("select-every-day").hidden, true, "Existing seven-day rules also hide the shortcut");
     assert.equal($("schedule-volume").value, "0", "Saved mute must not fall back to maximum volume");
     await $("add-schedule").trigger("click");
+    assert.deepEqual(assignmentEditors.at(-1), {item: null, assignment: null}, "A new schedule has no persistent assignment target yet");
     assert.equal($("schedule-rule").value, "once");
     assert.equal($("schedule-volume").value, "100");
     assert.equal($("schedule-volume-value").textContent, "100%");
@@ -951,8 +990,11 @@ const completionTimeout = setTimeout(() => {
     $("schedule-enabled").checked = false;
     const languageDraft = plain(qa.scheduleData());
     for (const language of ["zh-TW", "en"]) {
+        const languageCalls = assignmentLanguages;
         context.document.documentElement.lang = language;
         context.window.applyManagementLanguage(language);
+        assert.equal(assignmentLanguages, languageCalls + 1, "The assignment editor uses the active management language");
+        assert.equal(assignmentSummaries.size, 1, "Rebuilt lists release old assignment badges");
         assert.equal($("editor").hidden, false);
         assert.equal($("schedule-advanced").open, true);
         assert.deepEqual(plain(qa.scheduleData()), languageDraft);

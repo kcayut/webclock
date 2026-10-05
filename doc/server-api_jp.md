@@ -22,7 +22,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 
 `display_overrides` で省略した項目は共通設定を継承し、`night` 内も項目ごとに継承します。`false` と `0` は有効な指定値です。`content` は `calendar_source_ids`、`manual_note_ids`、`schedule_ids` と任意の `calendar_targets` を含み、空配列は選択なし、メモ ID は正の整数です。グループの表示言語は管理画面言語と独立し、共通の表示 `language` は引き続き `/api/control` で更新します。
 
-`calendar_targets` は `{source_id, uid, scope, recurrence_id}` の配列で、表示専用の `title` は任意です。`scope` は `series` または `occurrence`。`recurrence_id` は系列・繰り返さない予定では空文字列、繰り返しの個別予定では元の `RECURRENCE-ID` を使い、日時変更後も追跡します。参照元全体は引き続き `calendar_source_ids` で指定します。正規化では参照元全体、系列、個別予定の順に優先し、包含される重複選択を除きます。参照元・系列の全選択は今後の予定も含みます。`calendar_targets` がない旧データや `[]` は互換で、PATCH は省略したリストを維持します。一覧の 366 日の範囲外でも選択済みの対象は保持します。
+`calendar_targets` は `{source_id, uid, scope, recurrence_id}` の配列で、表示専用の `title` は任意です。`scope` は `series` または `occurrence`。`recurrence_id` は系列・繰り返さない予定では空文字列、繰り返しの個別予定では元の `RECURRENCE-ID` を使い、日時変更後も追跡します。参照元全体は引き続き `calendar_source_ids` で指定します。除外指定がない場合、正規化では参照元や系列に含まれる重複選択を除きます。除外指定がある場合は必要な個別選択を維持します。参照元・系列の全選択は今後の予定も含みます。`calendar_targets` がない旧データや `[]` は互換で、PATCH は省略したリストを維持します。一覧の 366 日の範囲外でも選択済みの対象は保持します。
 
 各グループの招待は 6 文字、600 秒有効、既定 5 台（1–100）、全体で最大 100 台です。平文は生成 POST の応答だけに含み、GET・永続状態・メンバー一覧には含めません。終了・再生成は参加済みメンバーを変更しません。期限切れ・満員・終了済み・グループ無効時は参加できません。参加関連の制限は送信元ごとに 60 秒 10 回、全体で 100 回で、429 に `Retry-After` を付けます。
 
@@ -55,6 +55,17 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 現在の試作版の使用手順と制限は [ESPHome 端末ガイド](esp-home.md)、完全な応答例は [API 詳細](server-api.md#裝置-api)を参照してください。どちらも繁体字中国語です。起動のたびに時刻の取得と Server 設定の検証が成功してからアラームを有効にします。その後の通信断ではキャッシュで動作しますが、オフライン再起動時に自動で有効にはしません。
 
 現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。schema 3 は認証済み端末に所属グループの内容を配信します。複数ユーザーアカウントとマルチテナントは未実装です。
+
+### 項目ごとのグループ割り当てと表示区間
+
+`GET /api/v1/groups/assignments` は現在の管理者のグループとリマインダー・予定の割り当てを返します。カレンダー項目の割り当ては `GET /api/calendar/display-items` に含まれます。`PUT /api/v1/groups/assignments` は `item`（`{kind:"manual_note",id}`、`{kind:"schedule",id}`、`{kind:"calendar",target}`）と `group_ids` を受け取り、関連グループを一度に原子的に保存します。空配列は割り当て解除です。`all:true` は保存時点の全グループを指し、今後作成するグループは含みません。系列の `keep_partial_group_ids` は未操作の部分割り当てを維持し、選択済みグループと重複できません。不明な項目や別管理者のグループは書き込み全体を拒否します。
+
+任意の `content.calendar_exclusions` は `calendar_targets` と同じ識別形式を使用し、省略時は空です。表示認可は個別除外、個別選択、系列除外、系列選択、参照元全体の順で決定します。継承された個別予定の解除ではその予定だけを除外し、参照元や将来の予定は維持します。系列全体の選択・解除はその系列の個別例外を置き換えます。アラームの参照元認可は独立しています。
+
+`/api/calendar` の PATCH は `calendar_targets` 全体と任意の `display_window` も受け付けます。省略または `{mode:"day"}` は予定当日、`{mode:"relative",before_minutes:180,end:"day_end"}` は3時間前から当日終了までです。終了は `event_end` も指定でき、分数は0–525600の整数です。個別予定は `{mode:"absolute",start:"2026-10-06T08:00",end:"2026-10-07T10:00"}` も使用できます。管理表示タイムゾーンで開始を含み終了を含まず、系列は各回の実際の時刻に従い個別指定を優先します。元の予定とアラームの時刻は変更しません。
+
+`GET /api/calendar/display-items` は選択済み予定、安全な参照元名、時刻、表示区間、グループ割り当て、未検出状態を時刻順に返します。明示的に選んだ系列は代表カード1件にまとめ、個別例外は別に表示します。非公開URLを含まず、取得失敗は空の選択ではなく503です。ホストバックアップには保存されますが、管理画面のversion 1 JSONは引き続きsettingsとnotesのみです。
+
 
 ## 起動と構成
 
@@ -155,7 +166,7 @@ managed の `GET /api/v1/devices` は現在の owner の認可済み端末を、
 
 リマインダー削除 `/delete/<id>` は token 付き POST のみ受け付け、GET／HEAD は 405 です。管理 HTML、エラーページ、token 応答は `no-store` で、クロスオリジン読み取りを許可しません。未初期化の自用モードは一時署名秘密を使うため、再起動で CSRF cookie が失効します。初期化後の署名秘密は通常の再起動で維持されます。ログイン/ログアウトで CSRF token を更新し、ホストのパスワード復元で全管理 session を失効させます。失効後は管理画面を再読み込みするか、新しい CSRF token を取得してください。公開時計に CSRF cookie は不要です。`/api/v1/device/*` の独立した `DEVICE_API_TOKEN` と CSRF 不要の契約は self モードのみで、managed はこれらの旧端末呼び出しを拒否します。CSRF 対策自体は利用者の認証ではありません。
 
-`/api/calendar` の各参照元は `id`、`name`、`provider`、`url`、`display_enabled` を持ち、`local_display_enabled` がローカルリマインダーを制御します。アラームが参照するため、更新時は ID を維持してください。POST は参照元全体を保存し、PATCH は ID と表示フラグだけを受け付けます。URL は専用管理応答にだけ現れ、時計、予定、端末、バックアップ、オフラインキャッシュには出力しません。
+`/api/calendar` の各参照元は `id`、`name`、`provider`、`url`、`display_enabled` を持ち、`local_display_enabled` がローカルリマインダーを制御します。アラームが参照するため、更新時は ID を維持してください。POST は参照元全体を保存し、PATCH は ID・表示フラグ・上記の項目表示規則を受け付けます。URL は専用管理応答にだけ現れ、時計、予定、端末、バックアップ、オフラインキャッシュには出力しません。
 
 `GET /api/v1/calendar-events` は既存の参照元 ID を受け取り、`events` と `server_time` を返します。予定項目は `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id` です。時刻は Unix ミリ秒で、購読 URL は含みません。取り消し・削除された予定は一覧から消えますが、保存済みの指定先が別の予定へ変わることはありません。 指定した参照元の読み込みが一つでも失敗すると 503 `calendar_not_ready` を返し、一部または空の一覧を成功として返しません。管理画面は現在の選択を保持します。
 

@@ -62,6 +62,97 @@ class ManagedDisplayTest(unittest.TestCase):
     def get(self, client, path='display', **kwargs):
         return client.get('/api/v2/device/' + path, base_url='https://localhost', **kwargs)
 
+    def test_global_windows_use_management_zone_without_widening_group_grants(self):
+        settings = clock.load_calendar_settings()
+        rule = dict(source_id='a', uid='wanted', scope='occurrence', recurrence_id='',
+                    display_window=dict(mode='absolute', start='2026-10-05T09:00', end='2026-10-05T10:00'))
+        settings['calendar_targets'] = [rule]
+        clock.save_json(self.root / 'calendar.json', settings)
+        first = self.group('A', display_overrides={'timezone_offset': -5}, content={'calendar_targets': [
+            {key: value for key, value in rule.items() if key != 'display_window'}]})
+        second = self.group('B', content={'calendar_targets': [dict(source_id='a', uid='other', scope='series')]})
+        a, _ = self.device(first)
+        b, _ = self.device(second)
+        event = dict(source_id='a', uid='wanted', recurrence_id='', text='Authorized', all_day=False,
+                     starts_at=int(self.instant.replace(day=9, hour=9).timestamp() * 1000),
+                     ends_at=int(self.instant.replace(day=9, hour=10).timestamp() * 1000))
+        self.instant = self.instant.replace(hour=9, minute=30)
+        with patch.object(clock, 'get_calendar_events', return_value=[]), \
+                patch.object(clock, 'calendar_selected_occurrence', return_value=[event]):
+            self.assertEqual([item['text'] for item in self.get(a).json['events']], ['Authorized'])
+            self.assertEqual(self.get(b).json['events'], [])
+            self.instant = self.instant.replace(hour=10, minute=0)
+            self.assertEqual(self.get(a).json['events'], [])
+
+    def test_display_rule_change_during_io_rejects_payload_and_etag(self):
+        settings = clock.load_calendar_settings()
+        settings['calendar_targets'] = [dict(source_id='a', uid='event', scope='series', display_window={'mode': 'day'})]
+        clock.save_json(self.root / 'calendar.json', settings)
+        group = self.group('A', content={'calendar_source_ids': ['a']})
+        client, _ = self.device(group)
+        def change(**kwargs):
+            settings['calendar_targets'][0]['display_window'] = dict(mode='relative', before_minutes=60, end='day_end')
+            clock.save_json(self.root / 'calendar.json', settings)
+            return []
+        with patch.object(clock, 'get_calendar_events', side_effect=change):
+            response = self.get(client, headers={'If-None-Match': 'old-private-data'})
+        self.assertEqual(response.status_code, 409)
+        self.assertNotIn('ETag', response.headers)
+
+    def test_item_assignment_requires_management_identity_csrf_and_owner_scope(self):
+        group = self.group('Own')
+        foreign = self.service().create_group('another-owner', {'name': 'Private foreign group'})
+        url = '/api/v1/groups/assignments'
+        body = {'item': {'kind': 'manual_note', 'id': 1}, 'group_ids': [group['id']]}
+        client = clock.app.test_client()
+        self.assertEqual(client.put(url, base_url='https://localhost', json=body).status_code, 401)
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        client.post('/login', base_url='https://localhost', data={
+            'username': 'owner', 'password': 'a-long-test-password', 'csrf_token': token})
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        before = (self.root / 'device-access.json').read_bytes()
+        self.assertEqual(client.put(url, base_url='https://localhost', json=body).status_code, 403)
+        self.assertEqual(client.put(url, base_url='https://localhost', json=body,
+                                   headers={'X-CSRF-Token': token, 'Origin': 'https://other.invalid'}).status_code, 403)
+        self.assertEqual(client.put(url, base_url='https://localhost', json=dict(body, group_ids=[foreign['id']]),
+                                   headers={'X-CSRF-Token': token}).status_code, 404)
+        self.assertEqual((self.root / 'device-access.json').read_bytes(), before)
+        result = client.put(url, base_url='https://localhost', json=body, headers={'X-CSRF-Token': token})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json['assignment']['group_ids'], [group['id']])
+        self.assertNotIn(foreign['id'], client.get(url, base_url='https://localhost').text)
+
+    def test_calendar_assignment_rechecks_etag_scope_without_changing_linked_alarms(self):
+        from webclock.services.schedule_service import validate_schedule
+        linked = validate_schedule(dict(self.schedules[0], calendar_link={'source_ids': ['a'], 'mode': 'event', 'offset_minutes': 0}))
+        clock.save_json(self.root / 'schedules.json', [linked])
+        group = self.group('A', content={'calendar_source_ids': ['a'], 'schedule_ids': ['a']})
+        other = self.group('B', content={'calendar_source_ids': ['a']})
+        client, _ = self.device(group)
+        target = dict(source_id='a', uid='weekly', scope='occurrence', recurrence_id='original')
+        stamp = int(self.instant.replace(hour=9).timestamp() * 1000)
+        events = [dict(source_id='a', uid=uid, recurrence_id='original', text=uid, time='09:00',
+                       starts_at=stamp + offset, ends_at=stamp + offset + 60000, all_day=False, recurring=True)
+                  for uid, offset in [('weekly', 0), ('unrelated', 3600000)]]
+        with patch.object(clock, 'get_calendar_events', return_value=events):
+            initial = self.get(client)
+            self.assertEqual(len(initial.json['events']), 2)
+            self.service().set_assignments(self.owner, {'item': {'kind': 'calendar', 'target': target}, 'group_ids': [other['id']]})
+            changed = self.get(client, headers={'If-None-Match': initial.headers['ETag']})
+            self.assertEqual(changed.status_code, 200)
+            self.assertEqual([row['text'] for row in changed.json['events']], ['unrelated'])
+            self.assertNotEqual(changed.headers['ETag'], initial.headers['ETag'])
+            self.assertEqual(self.get(client, 'browser-alarms').json['alarms'][0]['starts_at'], stamp)
+        def revoke_during_io(**kwargs):
+            self.service().set_assignments(self.owner, {'item': {'kind': 'calendar', 'target': dict(target, uid='unrelated')},
+                                                       'group_ids': [other['id']]})
+            return events
+        with patch.object(clock, 'get_calendar_events', side_effect=revoke_during_io):
+            denied = self.get(client, headers={'If-None-Match': changed.headers['ETag']})
+        self.assertEqual(denied.status_code, 409)
+        self.assertNotIn('ETag', denied.headers)
+        self.assertNotIn('unrelated', denied.text)
+
     def test_two_groups_filter_on_server_and_empty_means_empty(self):
         first = self.group('A', display_overrides={'brightness': 0, 'language': 'ja'},
                            content={'calendar_source_ids': ['a'], 'manual_note_ids': [1], 'schedule_ids': ['a']})

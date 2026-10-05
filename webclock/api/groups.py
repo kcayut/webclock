@@ -31,6 +31,13 @@ def groups_api(service_provider, owner_id_provider, catalog_provider=None, membe
             return jsonify(service.create_group(owner, request.get_json())), 201
         return jsonify(groups=service.list_groups(owner))
 
+    @api.route('/api/v1/groups/assignments', methods=['GET', 'PUT'])
+    def assignments():
+        service, owner = service_provider(), owner_id_provider()
+        if request.method == 'PUT':
+            return jsonify(service.set_assignments(owner, request.get_json()))
+        return jsonify(service.get_assignments(owner))
+
     @api.route('/api/v1/groups/initialize', methods=['POST'])
     def initialize():
         data = request.get_json()

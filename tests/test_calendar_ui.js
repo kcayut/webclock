@@ -6,10 +6,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const admin = fs.readFileSync(path.join(__dirname, '../templates/admin.html'), 'utf8');
 const source = fs.readFileSync(path.join(__dirname, '../static/calendar-settings.js'), 'utf8');
+const chooserSource = fs.readFileSync(path.join(__dirname, '../static/calendar-chooser.js'), 'utf8');
 assert.ok(admin.indexOf('class="note-list cards"') < admin.indexOf('id="calendar-source-settings"'));
 assert.match(admin, /<details id="calendar-source-settings" class="panel calendar-source-settings">/);
 assert.doesNotMatch(source, /localStorage|sessionStorage/);
 const created = [];
+let active = null;
 function element(tag = 'div') {
     let ownText = '';
     const item = {tag, id: '', children: [], attrs: {}, listeners: {}, disabled: false, hidden: false,
@@ -17,11 +19,15 @@ function element(tag = 'div') {
         setAttribute(key, value) { this.attrs[key] = String(value); },
         getAttribute(key) { return this.attrs[key]; },
         removeAttribute(key) { delete this.attrs[key]; },
-        appendChild(child) { this.children.push(child); child.parentNode = this; return child; },
+        appendChild(child) { if (child.parentNode) child.remove(); this.children.push(child); child.parentNode = this; return child; },
+        append(...children) { children.forEach(child => this.appendChild(child)); },
+        insertBefore(child, before) { if (child.parentNode) child.remove(); this.children.splice(before ? this.children.indexOf(before) : this.children.length, 0, child); child.parentNode = this; },
         removeChild(child) { this.children.splice(this.children.indexOf(child), 1); child.parentNode = null; },
+        remove() { if (this.parentNode) this.parentNode.removeChild(this); },
+        contains(child) { return this === child || this.children.some(item => item.contains(child)); },
         addEventListener(name, listener) { this.listeners[name] = listener; },
-        trigger(name) { assert.ok(this.listeners[name], name + ' listener'); return this.listeners[name].call(this, {preventDefault() {}}); },
-        focus() { this.focused = true; }
+        trigger(name, details = {}) { assert.ok(this.listeners[name], name + ' listener'); return this.listeners[name].call(this, {preventDefault() {}, ...details}); },
+        focus() { this.focused = true; active = this; }
     };
     Object.defineProperty(item, 'textContent', {
         get() { return ownText + this.children.map(child => child.textContent).join(''); },
@@ -41,24 +47,32 @@ const buttons = providers.map(provider => {
 });
 const $ = id => { assert.ok(elements.has(id), id); return elements.get(id); };
 $('csrf-token').content = 'calendar-csrf-token';
+$('timezone-select').value = '8';
+$('time-format-select').value = '24h';
 const requests = [];
-let language = 'en';
+let language = 'en', autoList = true;
 const context = vm.createContext({
-    document: {getElementById: $, createElement: element, querySelectorAll(selector) {
+    document: {documentElement: {lang: 'en'}, get activeElement() { return active; }, getElementById: $, createElement: element, querySelectorAll(selector) {
         assert.equal(selector, '[data-calendar-add]'); return buttons;
     }},
     window: {t(key) { return key === 'calendar_source_count' ? (language === 'en' ? '{count} sources configured' : '已設定 {count} 個來源') : key; }},
     XMLHttpRequest: class {
-        open(method, url) { this.method = method; assert.equal(url, '/api/calendar'); }
+        open(method, url) { this.method = method; this.url = url; }
         constructor() { this.headers = {}; }
         setRequestHeader(name, value) { this.headers[name] = value; }
-        send(body) { this.body = body; requests.push(this); }
+        send(body) {
+            this.body = body;
+            if (autoList && this.url === '/api/calendar/display-items') reply(this, 200, {items: []});
+            else requests.push(this);
+        }
     }
 });
+vm.runInContext(chooserSource, context);
 vm.runInContext(source, context);
-function take(method) {
-    assert.ok(requests.length, 'Expected ' + method);
-    const request = requests.shift(); assert.equal(request.method, method);
+function take(method, url = '/api/calendar') {
+    const index = requests.findIndex(request => request.method === method && request.url === url);
+    assert.ok(index >= 0, 'Expected ' + method + ' ' + url);
+    const request = requests.splice(index, 1)[0];
     assert.equal(request.headers['X-CSRF-Token'], method === 'GET' ? undefined : 'calendar-csrf-token');
     return request;
 }
@@ -69,7 +83,7 @@ function descendants(item) { return item.children.flatMap(child => [child, ...de
 function sourceRows(provider) { return $('calendar-sources-' + provider).children; }
 function input(row, kind) { return descendants(row).find(item => item.tag === 'input' && item.id.startsWith('calendar-' + kind + '-')); }
 function button(row, key) { return descendants(row).find(item => item.tag === 'button' && item.textContent === key); }
-function display(id) { return descendants($('calendar-display-list')).find(item => item.getAttribute('data-calendar-source') === id); }
+function display(id) { return descendants($('calendar-display-list')).find(item => item.getAttribute('data-calendar-source') === id || item.getAttribute('data-group-content') === 'calendar_source_ids:' + id); }
 function submit(id) { $(id).trigger('submit'); }
 const initial = {local_display_enabled: true, errors: [{id: 'google1', error: 'fetch_failed'}], sources: [
     {id: 'apple1', name: 'Home', provider: 'apple', url: 'https://apple.example/home.ics', display_enabled: true},
@@ -108,7 +122,7 @@ display('google1').checked = false;
 display('google1').trigger('change');
 submit('calendar-display-form');
 const firstPatch = take('PATCH');
-assert.deepEqual(JSON.parse(firstPatch.body), {local_display_enabled: false, sources: [
+assert.deepEqual(JSON.parse(firstPatch.body), {local_display_enabled: false, calendar_targets: [], sources: [
     {id: 'apple1', display_enabled: true}, {id: 'google1', display_enabled: false}
 ]});
 assert.doesNotMatch(firstPatch.body, /url|provider|name|new\.ics/);
@@ -178,3 +192,146 @@ assert.ok(buttons.every(item => item.disabled));
 buttons[0].trigger('click');
 assert.equal(sourceRows('apple').length, 20);
 console.log('Calendar sources: masking, load protection, multiple providers, independent visibility saves and retained drafts passed.');
+
+async function calendarWindows() {
+    const flush = () => new Promise(resolve => setImmediate(resolve));
+    const plain = value => JSON.parse(JSON.stringify(value));
+    const key = target => JSON.stringify([target.source_id, target.uid, target.scope, target.recurrence_id || '']);
+    const occurrence = {source_id: 'cal', uid: 'weekly', scope: 'occurrence', recurrence_id: 'original-start', title: 'Weekly'};
+    const series = {...occurrence, scope: 'series', recurrence_id: ''};
+    const relative = {mode: 'relative', before_minutes: 60, end: 'event_end'};
+    const sourceConfig = {id: 'cal', name: 'Calendar', provider: 'apple', url: 'https://private.example/calendar.ics', display_enabled: true};
+    let config = {sources: [sourceConfig], local_display_enabled: false, calendar_targets: [{...occurrence, display_window: relative}]};
+    sourceRows('apple').slice(1).forEach(row => button(row, 'calendar_remove_source').trigger('click'));
+    input(sourceRows('apple')[0], 'name').value = sourceConfig.name;
+    input(sourceRows('apple')[0], 'url').value = sourceConfig.url;
+    submit('calendar-form');
+    autoList = false;
+    reply(take('POST'), 200, config);
+    const item = (id, target, time, extra = {}) => ({id, source_name: 'Calendar', text: 'Weekly', starts_at: Date.parse(time),
+        ends_at: Date.parse(time) + 3600000, all_day: false, recurring: true, selection_scope: 'source',
+        target: {...target, display_window: config.calendar_targets.find(entry => key(entry) === key(target))?.display_window || {mode: 'day'}},
+        series_target: {...series, display_window: config.calendar_targets.find(entry => key(entry) === key(series))?.display_window || {mode: 'day'}},
+        window_start: 0, window_end: 0, visible: false, status: 'ready', ...extra});
+    const items = () => [item('first', occurrence, '2030-01-02T03:00:00Z'),
+        item('second', {...occurrence, recurrence_id: 'next-start'}, '2030-01-02T05:00:00Z')];
+    const listReply = data => reply(take('GET', '/api/calendar/display-items'), 200, {items: data || items()});
+    const card = id => $('calendar-current-list').children.find(entry => entry.getAttribute('data-calendar-item') === id);
+    const field = (entry, name) => descendants(entry).find(child => child.getAttribute('data-calendar-window') === name);
+    const form = entry => descendants(entry).find(child => child.tag === 'form');
+    function change(entry, name, value) { const input = field(entry, name); input.value = value; input.trigger('change'); return input; }
+    function saveReply(request) {
+        const payload = JSON.parse(request.body);
+        config = {...config, ...payload, sources: payload.sources ? config.sources.map(source => ({...source, ...payload.sources.find(entry => entry.id === source.id)})) : config.sources};
+        reply(request, 200, plain(config));
+    }
+    function note(id, time) {
+        const li = element('li'), input = element('input'); li.setAttribute('data-note-id', id); li.setAttribute('data-sort-time', time);
+        input.value = 'Unsent manual note'; li.appendChild(input); $('calendar-current-list').appendChild(li); return {li, input};
+    }
+    const firstNote = note('dated', '2030-01-02 10:00'), laterNote = note('later', '2030-01-02 12:00'), undated = note('undated', '');
+    firstNote.input.focus();
+    listReply();
+    assert.deepEqual($('calendar-current-list').children.map(entry => entry.getAttribute('data-note-id') || entry.getAttribute('data-calendar-item')),
+        ['dated', 'first', 'later', 'second', 'undated'], 'Calendar occurrences use actual start and management timezone when merging manual notes');
+    assert.equal(active, firstNote.input);
+    assert.equal(firstNote.input.value, 'Unsent manual note');
+    assert.equal(field(card('first'), 'calendar_window_mode').value, 'relative');
+    assert.equal(field(card('first'), 'calendar_window_before').value, '1');
+    assert.equal(field(card('first'), 'calendar_window_unit').value, '60');
+    assert.equal(field(card('second'), 'calendar_window_mode').value, 'day', 'New event display defaults to its event day');
+    assert.equal(field(card('second'), 'calendar_window_before').disabled, true, 'Inactive relative inputs do not participate in native validation');
+    const firstCard = card('first');
+    change(firstCard, 'calendar_window_mode', 'absolute');
+    assert.equal(field(firstCard, 'calendar_window_before').disabled, true);
+    assert.equal(field(firstCard, 'display_start').disabled, false);
+    change(firstCard, 'display_start', '2030-01-01T10:00');
+    const focused = change(firstCard, 'display_end', '2030-01-02T20:00'); focused.focus();
+    $('calendar-list-refresh').trigger('click'); listReply();
+    language = 'ja'; context.window.CalendarSettings.applyLanguage();
+    assert.equal(card('first'), firstCard, 'List refresh reuses editor DOM');
+    assert.equal(active, focused); assert.equal(focused.value, '2030-01-02T20:00');
+    change(firstCard, 'calendar_window_scope', 'series');
+    assert.equal(field(firstCard, 'calendar_window_mode').value, 'day', 'Changing scope does not carry an occurrence absolute window into the series');
+    assert.equal(field(firstCard, 'calendar_window_mode').children.find(option => option.value === 'absolute').disabled, true);
+    change(firstCard, 'calendar_window_mode', 'relative'); change(firstCard, 'calendar_window_before', '3'); change(firstCard, 'calendar_window_unit', '1440');
+    input(sourceRows('apple')[0], 'url').value = 'https://private.example/unsaved-again.ics';
+    display('local').checked = true; display('local').trigger('change');
+    form(firstCard).trigger('submit');
+    let patch = take('PATCH');
+    const timing = JSON.parse(patch.body);
+    assert.deepEqual(Object.keys(timing), ['calendar_targets'], 'Window save does not submit unsaved tree/local/source fields');
+    assert.deepEqual(timing.calendar_targets.find(target => target.scope === 'series').display_window, {mode: 'relative', before_minutes: 4320, end: 'day_end'});
+    reply(patch, 500, {error: 'save_failed'});
+    assert.equal(field(firstCard, 'calendar_window_before').value, '3', 'A failed window save retains entered values');
+    form(firstCard).trigger('submit'); saveReply(take('PATCH')); listReply();
+    assert.equal(display('local').checked, true, 'Window save preserves pending local selection');
+    assert.equal(input(sourceRows('apple')[0], 'url').value, 'https://private.example/unsaved-again.ics');
+    change(firstCard, 'calendar_window_scope', 'occurrence');
+    assert.equal(field(firstCard, 'calendar_window_mode').value, 'absolute');
+    assert.equal(field(firstCard, 'display_start').value, '2030-01-01T10:00', 'Both scope drafts survive switching and successful saves');
+    form(firstCard).trigger('submit'); patch = take('PATCH');
+    assert.deepEqual(JSON.parse(patch.body).calendar_targets.find(target => target.scope === 'occurrence').display_window,
+        {mode: 'absolute', start: '2030-01-01T10:00', end: '2030-01-02T20:00'});
+    saveReply(patch); listReply();
+    submit('calendar-display-form'); patch = take('PATCH');
+    assert.equal(JSON.parse(patch.body).calendar_targets.length, 2, 'Pending selection save preserves windows saved through cards');
+    saveReply(patch); listReply();
+
+    const sourceInput = display('cal'), sourceTree = sourceInput.parentNode.parentNode.parentNode;
+    sourceTree.open = true; sourceTree.trigger('toggle');
+    const events = [
+        {source_id: 'cal', uid: 'weekly', recurring: true, recurrence_id: 'original-start', text: 'Weekly', starts_at: '2030-01-02T03:00:00Z'},
+        {source_id: 'cal', uid: 'weekly', recurring: true, recurrence_id: 'next-start', text: 'Weekly', starts_at: '2030-01-09T03:00:00Z'},
+        {source_id: 'cal', uid: 'single', recurring: false, recurrence_id: '', text: 'Single', starts_at: '2030-01-03T03:00:00Z'}
+    ];
+    reply(take('GET', '/api/v1/calendar-events?source_id=cal'), 200, {events}); await flush();
+    const choice = target => descendants($('calendar-display-list')).find(entry => entry.getAttribute('data-group-content') === 'calendar_targets:' + key(target));
+    function click(input, checked, shift = false) { input.checked = checked; input.trigger('click', {shiftKey: shift}); input.trigger('change'); }
+    click(sourceInput, false); click(sourceInput, true);
+    submit('calendar-display-form'); patch = take('PATCH');
+    assert.equal(JSON.parse(patch.body).calendar_targets.length, 2, 'Whole-source selection does not erase explicit window overrides');
+    saveReply(patch); listReply();
+    click(sourceInput, false);
+    const seriesInput = choice(series); click(seriesInput, false); click(seriesInput, true);
+    submit('calendar-display-form'); patch = take('PATCH');
+    assert.equal(JSON.parse(patch.body).calendar_targets.find(target => target.scope === 'occurrence').display_window.mode, 'absolute', 'Whole-series selection keeps occurrence window overrides');
+    saveReply(patch);
+    const seriesItem = item('stable-series', series, '2030-01-02T03:00:00Z', {selection_scope: 'series'});
+    listReply([seriesItem, items()[0]]);
+    assert.equal(field(card('stable-series'), 'calendar_window_scope').value, 'series');
+    assert.equal(field(card('stable-series'), 'calendar_window_scope').children.length, 1, 'Series summary card edits the series rule');
+    change(card('stable-series'), 'calendar_window_mode', 'relative'); change(card('stable-series'), 'calendar_window_before', '9');
+    const seriesCard = card('stable-series');
+    $('calendar-list-refresh').trigger('click');
+    listReply([{...seriesItem, starts_at: Date.parse('2030-01-09T03:00:00Z')}, items()[0]]);
+    assert.equal(card('stable-series'), seriesCard); assert.equal(field(seriesCard, 'calendar_window_before').value, '9', 'Next occurrence changes keep the series editor draft');
+    $('calendar-list-refresh').trigger('click'); reply(take('GET', '/api/calendar/display-items'), 503, {error: 'Calendar catalog unavailable'});
+    assert.equal(card('stable-series'), seriesCard); assert.equal($('calendar-list-status').textContent, 'calendar_list_failed');
+    $('calendar-list-refresh').trigger('click');
+    const staleList = take('GET', '/api/calendar/display-items');
+    form(seriesCard).trigger('submit'); saveReply(take('PATCH'));
+    reply(staleList, 200, {items: []});
+    assert.equal(card('stable-series'), seriesCard, 'A response started before a window mutation cannot replace current cards');
+    listReply([{...seriesItem, status: 'missing', starts_at: null}, items()[0]]);
+    assert.match(seriesCard.textContent, /group_calendar_unlisted/);
+    // Source edits invalidate the chooser catalog but retain the source tree.
+    submit('calendar-form'); patch = take('POST');
+    config.sources[0].url = JSON.parse(patch.body).sources[0].url;
+    reply(patch, 200, config); listReply();
+    const reload = take('GET', '/api/v1/calendar-events?source_id=cal');
+    reply(reload, 503, {error: 'unavailable'}); await flush();
+    assert.equal(sourceTree.open, true);
+    // Clear the explicit selections; the PATCH must send [] rather than omit.
+    click(choice(series), false);
+    const branch = choice(series).parentNode.parentNode.parentNode; branch.open = true; branch.trigger('toggle');
+    click(choice(occurrence), false);
+    submit('calendar-display-form'); patch = take('PATCH');
+    assert.deepEqual(JSON.parse(patch.body).calendar_targets, []);
+    saveReply(patch); listReply([]);
+    assert.equal(firstNote.input.value, 'Unsent manual note');
+    assert.equal(laterNote.li.parentNode, $('calendar-current-list')); assert.equal(undated.li.parentNode, $('calendar-current-list'));
+    assert.equal(requests.length, 0);
+    console.log('Calendar tree and windows: scoped drafts, source/series inheritance, relative/absolute saves, list ordering, stable focus, failures and stale responses passed.');
+}
+calendarWindows().catch(error => { console.error(error); process.exitCode = 1; });

@@ -25,6 +25,161 @@ class CalendarSettingsTest(unittest.TestCase):
         self.client = clock.app.test_client()
         self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
 
+    def calendar_feed(self, components):
+        payload = ('BEGIN:VCALENDAR\nVERSION:2.0\n' + components + 'END:VCALENDAR\n').replace('\n', '\r\n').encode()
+        patcher = patch.object(clock.requests, 'get', return_value=SimpleNamespace(content=payload, raise_for_status=lambda: None))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        clock.calendar_feed_cache.clear()
+
+    def select_display(self, target, whole=False):
+        result = self.client.patch('/api/calendar', json={'sources': [{'id': 'legacy', 'display_enabled': whole}],
+                                                         'calendar_targets': [target]})
+        self.assertEqual(result.status_code, 200, result.text)
+        return result
+
+    def status_on(self, value):
+        now = datetime.fromisoformat(value)
+        with patch.object(clock, 'get_local_now', return_value=now):
+            response = self.client.get('/api/status')
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json
+
+    def test_selected_display_day_relative_boundaries_and_raw_alarm_time(self):
+        self.calendar_feed('BEGIN:VEVENT\nUID:meeting\nDTSTART:20261009T020000Z\nDTEND:20261009T030000Z\nSUMMARY:Selected\nEND:VEVENT\n'
+                           'BEGIN:VEVENT\nUID:other\nDTSTART:20261009T010000Z\nSUMMARY:Unselected\nEND:VEVENT\n')
+        target = dict(source_id='legacy', uid='meeting', scope='occurrence', recurrence_id='')
+        self.select_display(target)
+        for moment, expected in [('2026-10-08T23:59:59+08:00', False), ('2026-10-09T00:00:00+08:00', True),
+                                 ('2026-10-09T23:59:59+08:00', True), ('2026-10-10T00:00:00+08:00', False)]:
+            self.assertEqual(bool(self.status_on(moment)['events']), expected, moment)
+        target['display_window'] = dict(mode='relative', before_minutes=4320, end='event_end')
+        self.select_display(target)
+        for moment, expected in [('2026-10-06T09:59:59+08:00', False), ('2026-10-06T10:00:00+08:00', True),
+                                 ('2026-10-09T10:59:59+08:00', True), ('2026-10-09T11:00:00+08:00', False)]:
+            payload = self.status_on(moment)
+            self.assertEqual(bool(payload['events']), expected, moment)
+            self.assertNotIn('Unselected', json.dumps(payload))
+        raw = clock.get_calendar_events(datetime.fromisoformat('2026-10-06T00:00:00+08:00'),
+                                         datetime.fromisoformat('2026-10-10T00:00:00+08:00'), ['legacy'])
+        self.assertEqual(next(item for item in raw if item['uid'] == 'meeting')['starts_at'],
+                         int(datetime.fromisoformat('2026-10-09T10:00:00+08:00').timestamp() * 1000))
+
+    def test_absolute_selection_finds_past_and_far_future_event_and_list_keeps_unresolved(self):
+        self.calendar_feed('BEGIN:VEVENT\nUID:past\nDTSTART:20251001T020000Z\nSUMMARY:Past event\nEND:VEVENT\n'
+                           'BEGIN:VEVENT\nUID:future\nDTSTART:20281001T020000Z\nSUMMARY:Future event\nEND:VEVENT\n')
+        window = dict(mode='absolute', start='2026-10-06T09:00', end='2026-10-06T10:00')
+        rules = [dict(source_id='legacy', uid=uid, scope='occurrence', recurrence_id='', display_window=window)
+                 for uid in ('past', 'future', 'missing')]
+        response = self.client.patch('/api/calendar', json={'sources': [{'id': 'legacy', 'display_enabled': False}],
+                                                            'calendar_targets': rules})
+        self.assertEqual(response.status_code, 200, response.text)
+        for stamp, expected in [('2026-10-06T08:59:59+08:00', []),
+                                ('2026-10-06T09:00:00+08:00', ['Past event', 'Future event']),
+                                ('2026-10-06T10:00:00+08:00', [])]:
+            self.assertEqual([item['text'] for item in self.status_on(stamp)['events']], expected)
+        with patch.object(clock, 'get_local_now', return_value=datetime.fromisoformat('2026-10-06T08:00:00+08:00')):
+            listed = self.client.get('/api/calendar/display-items')
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual([item['text'] for item in listed.json['items']], ['Past event', 'Future event', 'missing'])
+        self.assertFalse(any(item['visible'] for item in listed.json['items']))
+        self.assertEqual(listed.json['items'][-1]['status'], 'missing')
+        self.assertNotIn('private.ics', listed.text)
+
+    def test_series_relative_reschedule_override_and_cancel_keep_stable_identity(self):
+        self.calendar_feed('BEGIN:VEVENT\nUID:weekly\nDTSTART:20261009T020000Z\nRRULE:FREQ=WEEKLY;COUNT=3\nSUMMARY:Series\nEND:VEVENT\n'
+                           'BEGIN:VEVENT\nUID:weekly\nRECURRENCE-ID:20261009T020000Z\nDTSTART:20261010T030000Z\nSUMMARY:Moved\nEND:VEVENT\n'
+                           'BEGIN:VEVENT\nUID:weekly\nRECURRENCE-ID:20261016T020000Z\nSTATUS:CANCELLED\nEND:VEVENT\n')
+        rule = dict(source_id='legacy', uid='weekly', scope='series', recurrence_id='',
+                    display_window=dict(mode='relative', before_minutes=60, end='day_end'))
+        self.select_display(rule)
+        self.assertEqual(self.status_on('2026-10-10T09:59:59+08:00')['events'], [])
+        self.assertEqual(self.status_on('2026-10-10T10:00:00+08:00')['events'], [{'text': 'Moved', 'time': '11:00'}])
+        self.assertEqual(self.status_on('2026-10-16T09:30:00+08:00')['events'], [])
+        original = '2026-10-09T02:00:00+00:00'
+        once = dict(rule, scope='occurrence', recurrence_id=original,
+                    display_window=dict(mode='absolute', start='2026-10-12T09:00', end='2026-10-12T10:00'))
+        self.client.patch('/api/calendar', json={'calendar_targets': [rule, once]})
+        self.assertEqual(self.status_on('2026-10-10T10:00:00+08:00')['events'], [])
+        self.assertEqual([event['text'] for event in self.status_on('2026-10-12T09:00:00+08:00')['events']], ['Moved'])
+        with patch.object(clock, 'get_local_now', return_value=datetime.fromisoformat('2026-10-06T08:00:00+08:00')):
+            items = self.client.get('/api/calendar/display-items').json['items']
+        self.assertEqual(len(items), 2)  # One series editor plus the explicit single override.
+        self.assertEqual({item['target']['scope'] for item in items}, {'series', 'occurrence'})
+        series_item = next(item for item in items if item['target']['scope'] == 'series')
+        self.assertEqual(series_item['starts_at'], int(datetime.fromisoformat('2026-10-23T10:00:00+08:00').timestamp() * 1000))
+        with patch.object(clock, 'get_local_now', return_value=datetime.fromisoformat('2026-10-10T10:00:00+08:00')):
+            preview = self.client.get('/api/calendar/display-items').json['items']
+        self.assertFalse(any(item['visible'] for item in preview))  # The first instance's override takes priority.
+        self.assertEqual(next(item for item in items if item['target']['scope'] == 'occurrence')['target']['recurrence_id'], original)
+        # The cancellation above deliberately has no DTSTART; exact absolute lookup stays empty.
+        self.select_display(dict(once, recurrence_id='2026-10-16T02:00:00+00:00'))
+        self.assertEqual(self.status_on('2026-10-12T09:00:00+08:00')['events'], [])
+        with patch.object(clock, 'get_local_now', return_value=datetime.fromisoformat('2026-10-12T09:00:00+08:00')):
+            missing = self.client.get('/api/calendar/display-items')
+        self.assertEqual(missing.status_code, 200, missing.text)
+        self.assertEqual(missing.json['items'][0]['status'], 'missing')
+
+    def test_display_settings_atomic_legacy_preservation_and_partial_group_initialization(self):
+        rule = dict(source_id='legacy', uid='meeting', scope='occurrence', recurrence_id='', display_window={'mode': 'day'})
+        self.select_display(rule)
+        before = (self.root / 'calendar.json').read_bytes()
+        for window in ({'mode': 'relative', 'before_minutes': True, 'end': 'day_end'},
+                       {'mode': 'relative', 'before_minutes': 525601, 'end': 'day_end'},
+                       {'mode': 'absolute', 'start': '', 'end': ''},
+                       {'mode': 'absolute', 'start': '2026-10-06T10:00', 'end': '2026-10-06T09:00'}):
+            response = self.client.patch('/api/calendar', json={'calendar_targets': [dict(rule, display_window=window)]})
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual((self.root / 'calendar.json').read_bytes(), before)
+        with patch.object(clock, 'save_json', side_effect=OSError('disk full')):
+            self.assertEqual(self.client.patch('/api/calendar', json={'calendar_targets': []}).status_code, 500)
+        self.assertEqual((self.root / 'calendar.json').read_bytes(), before)
+        self.client.post('/api/calendar', json={'url': 'https://changed.invalid/private'})
+        self.assertEqual(clock.load_calendar_settings()['calendar_targets'], [rule])
+        self.client.post('/api/calendar', json={'sources': clock.load_calendar_settings()['sources']})
+        self.assertEqual(clock.load_calendar_settings()['calendar_targets'], [rule])
+        with clock.app.test_request_context('/'):
+            group = clock.group_service().initialize_owner('calendar-owner')
+        self.assertEqual(group['content']['calendar_source_ids'], [])
+        self.assertEqual(group['content']['calendar_targets'], [{key: value for key, value in rule.items() if key != 'display_window'}])
+        self.client.post('/api/calendar', json={'sources': []})
+        self.assertNotIn('calendar_targets', clock.load_calendar_settings())
+
+    def test_all_day_end_zero_length_and_legacy_multiday_list_visibility(self):
+        self.calendar_feed('BEGIN:VEVENT\nUID:allday\nDTSTART;VALUE=DATE:20261006\nDTEND;VALUE=DATE:20261008\nSUMMARY:All day\nEND:VEVENT\n'
+                           'BEGIN:VEVENT\nUID:point\nDTSTART:20261005T155930Z\nSUMMARY:Point\nEND:VEVENT\n')
+        target = dict(source_id='legacy', uid='allday', scope='occurrence', recurrence_id='',
+                      display_window=dict(mode='relative', before_minutes=0, end='event_end'))
+        self.select_display(target)
+        self.assertEqual([event['text'] for event in self.status_on('2026-10-07T23:59:59+08:00')['events']], ['All day'])
+        self.assertEqual(self.status_on('2026-10-08T00:00:00+08:00')['events'], [])
+        self.select_display(dict(target, uid='point'))
+        self.assertEqual([event['text'] for event in self.status_on('2026-10-06T00:00:00+08:00')['events']], ['Point'])
+        self.assertEqual(self.status_on('2026-10-06T00:00:30+08:00')['events'], [])
+        self.client.patch('/api/calendar', json={'calendar_targets': [], 'sources': [{'id': 'legacy', 'display_enabled': True}]})
+        with patch.object(clock, 'get_local_now', return_value=datetime.fromisoformat('2026-10-07T09:00:00+08:00')):
+            items = self.client.get('/api/calendar/display-items').json['items']
+        self.assertTrue(next(item for item in items if item['text'] == 'All day')['visible'])
+
+    def test_current_list_keeps_future_selections_and_clock_uses_complete_date_sort(self):
+        self.calendar_feed('BEGIN:VEVENT\nUID:future\nDTSTART:20261007T010000Z\nSUMMARY:Tomorrow\nEND:VEVENT\n')
+        self.select_display(dict(source_id='legacy', uid='future', scope='occurrence', recurrence_id='',
+                                 display_window=dict(mode='relative', before_minutes=2880, end='day_end')))
+        clock.save_note('Today noon', '2026-10-06 12:00')
+        self.assertEqual([item['text'] for item in self.status_on('2026-10-06T09:00:00+08:00')['events']],
+                         ['Today noon', 'Tomorrow'])
+        with patch.object(clock, 'get_local_now', return_value=datetime.fromisoformat('2026-10-04T09:00:00+08:00')):
+            result = self.client.get('/api/calendar/display-items')
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual([item['text'] for item in result.json['items']], ['Tomorrow'])
+        self.assertFalse(result.json['items'][0]['visible'])
+        with patch.object(clock.requests, 'get', side_effect=clock.requests.RequestException('private.ics')):
+            clock.calendar_feed_cache.clear()
+            failed = self.client.get('/api/calendar/display-items')
+        self.assertEqual(failed.status_code, 503)
+        self.assertNotIn('items', failed.json)
+        self.assertNotIn('private.ics', failed.text)
+
     def test_save_reload_clear_legacy_and_private_responses(self):
         self.assertEqual(self.client.get('/api/calendar').json['url'], clock.ICAL_URL)
         url = 'webcal://p01-caldav.icloud.com/published/2/test-private-token'

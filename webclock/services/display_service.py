@@ -4,6 +4,24 @@ from datetime import datetime, timedelta
 from webclock.services.schedule_service import TAIPEI, next_occurrence, prefetch_calendar_sources
 
 
+def parse_display_window(values):
+    mode = values.get('display_mode', 'range')
+    if mode not in ('range', 'daily'):
+        raise ValueError('Invalid display mode')
+    start = values.get('display_start', '')
+    end = values.get('display_end', '')
+    if not start and not end:
+        return '', ''
+    for value in (start, end):
+        parsed = datetime.strptime(value, '%H:%M' if mode == 'daily' else '%Y-%m-%dT%H:%M')
+        normalized = parsed.strftime('%H:%M') if mode == 'daily' else parsed.isoformat(timespec='minutes')
+        if normalized != value:
+            raise ValueError('Invalid display datetime')
+    if end == start or (mode == 'range' and end < start):
+        raise ValueError('Invalid display window order')
+    return start, end
+
+
 def browser_alarm_payload(schedules, holidays, now, calendar_events=None):
     now = now.astimezone(TAIPEI)
     minute = now.replace(second=0, microsecond=0)

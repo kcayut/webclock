@@ -13,7 +13,9 @@
     <script defer src="{{ url_for('static', filename='time-format.js') }}"></script>
     <script defer src="{{ url_for('static', filename='time-inputs.js') }}"></script>
     <script defer src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='group-assignment.js') }}"></script>
     <script defer src="{{ url_for('static', filename='schedules.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='calendar-chooser.js') }}"></script>
     <script defer src="{{ url_for('static', filename='groups.js') }}"></script>
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
 </head>
@@ -100,6 +102,7 @@
                             </fieldset>
                         </div>
                     </div>
+                    <div id="schedule-group-assignment"></div>
                     <p id="form-error" class="error" role="alert"></p>
                     <div class="schedule-editor-footer">
                         <div id="editor-actions" class="actions" hidden></div>

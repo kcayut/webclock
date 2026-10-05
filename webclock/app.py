@@ -18,7 +18,10 @@ from urllib.parse import urlsplit, urlunsplit
 from webclock.services.storage import load_json, save_json, revision, storage_lock
 from webclock.services.holiday_service import HolidayService
 from webclock.services.schedule_service import TAIPEI, next_event, read_schedules, calendar_target_matches
-from webclock.services.display_service import browser_alarm_payload
+from webclock.services.display_service import browser_alarm_payload, parse_display_window
+from webclock.services.calendar_display_service import (
+    validate_display_targets, display_rule, display_bounds, display_item_id,
+)
 from webclock.services.device_service import DeviceService
 from webclock.api.device import conditional
 from webclock.api import register_api
@@ -27,7 +30,7 @@ from webclock.services.auth_service import AuthService
 from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings, validate_time
 from webclock.auth import register_auth
 from webclock.access_control import register_access_control
-from webclock.services.device_access_service import AccessError, DeviceAccessService
+from webclock.services.device_access_service import AccessError, DeviceAccessService, calendar_content_allows
 from webclock.api.groups import groups_api
 from webclock.api.managed_device import managed_device_api
 from webclock.translations.clock_enrollment import DEVICE_ENROLLMENT_TRANSLATIONS
@@ -149,24 +152,6 @@ def load_notes():
         for note in data:
             note.setdefault('due_date', '')
         return sorted(data, key=lambda note: note['due_date'] or '9999')
-
-
-def parse_display_window(values):
-    mode = values.get('display_mode', 'range')
-    if mode not in ('range', 'daily'):
-        raise ValueError('Invalid display mode')
-    start = values.get('display_start', '')
-    end = values.get('display_end', '')
-    if not start and not end:
-        return '', ''
-    for value in (start, end):
-        parsed = datetime.strptime(value, '%H:%M' if mode == 'daily' else '%Y-%m-%dT%H:%M')
-        normalized = parsed.strftime('%H:%M') if mode == 'daily' else parsed.isoformat(timespec='minutes')
-        if normalized != value:
-            raise ValueError('Invalid display datetime')
-    if end == start or (mode == 'range' and end < start):
-        raise ValueError('Invalid display window order')
-    return start, end
 
 
 def save_note(text, due_date, display_start='', display_end='', display_mode='range', weekdays=None):
@@ -341,7 +326,12 @@ def load_calendar_settings():
     enabled = data.get('local_display_enabled', True)
     if type(enabled) is not bool:
         raise ValueError('Invalid local display flag')
-    return dict(sources=validate_calendar_sources(data['sources']), local_display_enabled=enabled)
+    sources = validate_calendar_sources(data['sources'])
+    result = dict(sources=sources, local_display_enabled=enabled)
+    targets = validate_display_targets(data.get('calendar_targets', []), {source['id'] for source in sources})
+    if targets:
+        result['calendar_targets'] = targets
+    return result
 
 
 def get_calendar_sources():
@@ -694,7 +684,7 @@ def calendar_settings():
             if not isinstance(data, dict):
                 raise ValueError('Invalid calendar settings')
             if request.method == 'PATCH':
-                if not data or set(data) - {'local_display_enabled', 'sources'}:
+                if not data or set(data) - {'local_display_enabled', 'sources', 'calendar_targets'}:
                     raise ValueError('Invalid visibility settings')
                 updated = current
                 changes = data.get('sources', [])
@@ -721,10 +711,18 @@ def calendar_settings():
                 elif updated['sources']:
                     updated['sources'].pop(0)
             else:
-                if 'sources' not in data or set(data) - {'sources', 'local_display_enabled', 'url', 'errors'}:
+                if 'sources' not in data or set(data) - {'sources', 'local_display_enabled', 'url', 'errors', 'calendar_targets'}:
                     raise ValueError('Invalid calendar settings')
                 updated = dict(sources=validate_calendar_sources(data['sources'], create_ids=True),
                                local_display_enabled=current['local_display_enabled'])
+            source_ids = {source['id'] for source in updated['sources']}
+            targets = data.get('calendar_targets', [target for target in current.get('calendar_targets', [])
+                                                    if target['source_id'] in source_ids])
+            targets = validate_display_targets(targets, source_ids)
+            if targets:
+                updated['calendar_targets'] = targets
+            else:
+                updated.pop('calendar_targets', None)
             if 'local_display_enabled' in data:
                 if type(data['local_display_enabled']) is not bool:
                     raise ValueError('Invalid local display flag')
@@ -836,13 +834,207 @@ def delete(id):
     return redirect(url_for('admin', _anchor='calendar-title'))
 
 
+def calendar_selected_occurrence(target, settings, zone, strict=False):
+    """Locate an exact saved occurrence beyond the catalog horizon, then use the normal expander."""
+    source = next((row for row in settings['sources'] if row['id'] == target['source_id']), None)
+    if source is None:
+        return []
+    with settings_lock:
+        cached = fetch_calendar_source(source['url'])
+        if cached['calendar'] is None:
+            if strict:
+                raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready')
+            return []
+        recurrence_id = target.get('recurrence_id', '')
+        anchor = None
+        if recurrence_id:
+            try:
+                anchor = datetime.fromisoformat(recurrence_id)
+            except ValueError:
+                return []
+        for component in cached['calendar'].walk('VEVENT'):
+            if str(component.get('uid', '')) != target['uid']:
+                continue
+            original = component.get('recurrence-id')
+            if original is not None:
+                original = original.dt
+                if isinstance(original, datetime) and original.utcoffset() is not None:
+                    original = original.astimezone(timezone.utc)
+                if original.isoformat() != recurrence_id:
+                    continue
+            elif recurrence_id or target['uid'] in cached['recurring_uids']:
+                continue
+            if str(component.get('status', '')).upper() == 'CANCELLED':
+                return []
+            begins = component.get('dtstart')
+            if begins is not None:
+                anchor = begins.dt
+            break
+        if anchor is None:
+            return []
+        if not isinstance(anchor, datetime):
+            anchor = datetime.combine(anchor, datetime.min.time())
+        anchor = anchor.replace(tzinfo=zone) if anchor.tzinfo is None else anchor.astimezone(zone)
+        start = anchor.replace(hour=0, minute=0, second=0, microsecond=0)
+        return [event for event in get_calendar_events(start=start, end=start + timedelta(days=1),
+                source_ids=[target['source_id']], strict=strict) if calendar_target_matches(event, target)]
+
+
+def calendar_display_events(now, settings, whole_sources=None, targets=None, exclusions=None):
+    """Apply selection and display windows after fetching raw alarm-compatible events."""
+    rules = settings.get('calendar_targets', [])
+    if whole_sources is None and not rules:
+        return get_calendar_events()  # Preserve legacy whole-source and multi-day display.
+    whole = set(whole_sources if whole_sources is not None else
+                [source['id'] for source in settings['sources'] if source['display_enabled']])
+    selected = targets if targets is not None else rules
+    sources = sorted(whole | {target['source_id'] for target in selected})
+    if not sources:
+        return []
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    events = get_calendar_events(start=start, end=end, source_ids=sources)
+    base_keys = {(event.get('source_id'), event.get('uid'), event.get('recurrence_id', '')) for event in events}
+    relevant = [rule for rule in rules if rule['source_id'] in sources]
+    management_now = get_local_now()
+    management_start = management_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    days = max([1] + [ceil(rule['display_window'].get('before_minutes', 0) / 1440) + 1
+                     if rule['display_window']['mode'] != 'absolute' else 1 for rule in relevant])
+    if relevant and (days > 1 or management_start != start):
+        events += get_calendar_events(start=management_start, end=management_start + timedelta(days=days),
+                                      source_ids=sorted({rule['source_id'] for rule in relevant}))
+    # Absolute windows need the actual selected occurrence even when it is years away.
+    for rule in relevant:
+        window = rule['display_window']
+        if window['mode'] == 'absolute' and window['start'] <= management_now.isoformat(timespec='minutes')[:16] < window['end']:
+            events += calendar_selected_occurrence(rule, settings, management_now.tzinfo)
+    if (management_now - management_start < timedelta(minutes=1)
+            and any(rule['display_window'].get('end') == 'event_end' for rule in relevant)):
+        events += get_calendar_events(start=management_start - timedelta(minutes=1), end=management_start,
+                                      source_ids=sorted({rule['source_id'] for rule in relevant}))
+    unique, visible = {}, []
+    grants = dict(calendar_source_ids=whole, calendar_targets=selected, calendar_exclusions=exclusions or [])
+    for event in events:
+        if not calendar_content_allows(grants, event):
+            continue
+        key = (event.get('source_id'), event.get('uid'), event.get('recurrence_id', ''))
+        unique[key] = event
+    for event in unique.values():
+        rule = display_rule(event, relevant)
+        if rule:
+            first, last = display_bounds(event, rule, management_now.tzinfo)
+            if not first <= int(now.timestamp() * 1000) < last:
+                continue
+        elif (event.get('source_id'), event.get('uid'), event.get('recurrence_id', '')) not in base_keys:
+            continue
+        event = dict(event)
+        begins = datetime.fromtimestamp(event['starts_at'] / 1000, now.tzinfo)
+        event['time'] = '' if event.get('all_day') or begins.date() < now.date() else begins.strftime('%H:%M')
+        visible.append(event)
+    return sorted(visible, key=lambda event: (event['starts_at'], event['source_id'], event['uid']))
+
+
+@app.route('/api/calendar/display-items')
+def calendar_display_items():
+    """Management projection includes future selections, never subscription URLs."""
+    try:
+        settings = load_calendar_settings()
+        now = get_local_now()
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=366)
+        rules = settings.get('calendar_targets', [])
+        whole = {source['id'] for source in settings['sources'] if source['display_enabled']}
+        sources = sorted(whole | {target['source_id'] for target in rules})
+        events = get_calendar_events(start=start, end=end, source_ids=sources, strict=True) if sources else []
+        # Saved single occurrences remain editable outside the rolling year catalog.
+        for rule in rules:
+            if rule['scope'] == 'occurrence' and not any(calendar_target_matches(event, rule) for event in events):
+                events += calendar_selected_occurrence(rule, settings, now.tzinfo, strict=True)
+        names = {source['id']: source['name'] for source in settings['sources']}
+        items, found = [], set()
+        for event in events:
+            rule = display_rule(event, rules)
+            if event['source_id'] not in whole and rule is None:
+                continue
+            for index, candidate in enumerate(rules):
+                if calendar_target_matches(event, candidate):
+                    found.add(index)
+            window = dict(rule['display_window']) if rule else {'mode': 'day'}
+            target = dict(source_id=event['source_id'], uid=event['uid'], scope='occurrence',
+                          recurrence_id=event.get('recurrence_id', ''), title=event['text'][:500], display_window=window)
+            series = next((value for value in rules if value['scope'] == 'series' and calendar_target_matches(event, value)), None)
+            series_target = (dict(source_id=event['source_id'], uid=event['uid'], scope='series', recurrence_id='',
+                                  title=event['text'][:500], display_window=dict(series['display_window']) if series else {'mode': 'day'})
+                             if event.get('recurring') else None)
+            first, last = display_bounds(event, target, now.tzinfo)
+            if rule is None:
+                # Whole-source legacy events remain visible on every overlapping day.
+                first_day = datetime.fromtimestamp(event['starts_at'] / 1000, now.tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
+                last_day = datetime.fromtimestamp(max(event['starts_at'], event['ends_at'] - 1) / 1000, now.tzinfo).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+                first, last = int(first_day.timestamp() * 1000), int(last_day.timestamp() * 1000)
+            items.append(dict(id=display_item_id(target), target=target, series_target=series_target,
+                              source_name=names[event['source_id']], text=event['text'],
+                              starts_at=event['starts_at'], ends_at=event['ends_at'], all_day=event['all_day'],
+                              recurring=event.get('recurring', False), selection_scope=rule['scope'] if rule else 'source',
+                              window_start=first, window_end=last, visible=first <= int(now.timestamp() * 1000) < last,
+                              status='ready'))
+        def missing_item(rule):
+            return dict(id=display_item_id(rule), target=rule, series_target=rule if rule['scope'] == 'series' else None,
+                        source_name=names[rule['source_id']], text=rule.get('title') or rule['uid'],
+                        starts_at=None, ends_at=None, all_day=False, recurring=rule['scope'] == 'series',
+                        selection_scope=rule['scope'], window_start=None, window_end=None, visible=False, status='missing')
+        for index, rule in enumerate(rules):
+            if index not in found:
+                items.append(missing_item(rule))
+        expanded = items
+        items = [item for item in expanded if item['status'] == 'missing'
+                 or item['selection_scope'] != 'series' or item['target']['source_id'] in whole]
+        stamp = int(now.timestamp() * 1000)
+        for rule in rules:
+            if rule['scope'] != 'series' or rule['source_id'] in whole:
+                continue
+            candidates = [item for item in expanded if item['status'] == 'ready' and item['selection_scope'] == 'series'
+                          and calendar_target_matches(item['target'], rule)]
+            if not candidates:
+                if not any(item['id'] == display_item_id(rule) for item in items):
+                    items.append(missing_item(rule))
+                continue
+            def order(item):
+                current = item['starts_at'] <= stamp < max(item['ends_at'], item['starts_at'] + 60000)
+                return (0 if current else 1 if item['starts_at'] >= stamp else 2, item['starts_at'])
+            item = dict(min(candidates, key=order), id=display_item_id(rule), target=rule, series_target=rule,
+                        selection_scope='series')
+            first, last = display_bounds(item, rule, now.tzinfo)
+            item.update(window_start=first, window_end=last, visible=first <= stamp < last)
+            items.append(item)
+        items.sort(key=lambda item: (item['starts_at'] is None, item['starts_at'] or 0, item['id']))
+        selectors = []
+        for item in items:
+            for key in ('target', 'series_target'):
+                if item[key] is not None:
+                    selectors.append(dict(kind='calendar', target={field: value for field, value in item[key].items()
+                                                                  if field != 'display_window'}))
+        memberships = iter(group_service().item_assignments(group_owner(), selectors))
+        for item in items:
+            item['assignment'] = next(memberships)
+            item['series_assignment'] = next(memberships) if item['series_target'] is not None else None
+        response = jsonify(items=items, server_time=now.isoformat(), range_start=start.isoformat(), range_end=end.isoformat())
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except AccessError as error:
+        return jsonify(error=str(error), code=error.code), error.status
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        return jsonify(error='Calendar catalog is unavailable; retry later', code='calendar_not_ready'), 503
+
+
 def display_snapshot(now, notes, schedules, calendar, calendar_lookup):
     events, upcoming = [], []
     for note in notes:
         try:
             if note_visible(note, now):
                 due = note.get('due_date', '')
-                events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else ''})
+                events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else '',
+                               '_sort': (due + ' 99:99' if len(due) == 10 else due) or '9999'})
             candidate = next_note_time(note, now)
             if candidate:
                 upcoming.append({'text': note['text'], 'starts_at': int(candidate.timestamp() * 1000)})
@@ -854,8 +1046,13 @@ def display_snapshot(now, notes, schedules, calendar, calendar_lookup):
     for event in calendar:
         if not event.get('all_day') and (event.get('starts_at') or 0) > int(now.timestamp() * 1000):
             upcoming.append({'text': event['text'], 'starts_at': event['starts_at']})
-    events = [{'text': event['text'], 'time': event['time']} for event in calendar] + events
-    events.sort(key=lambda event: event['time'] or '99:99')
+    events = [{'text': event['text'], 'time': event['time'],
+               '_sort': datetime.fromtimestamp(event['starts_at'] / 1000, now.tzinfo).strftime(
+                   '%Y-%m-%d 99:99' if event.get('all_day') else '%Y-%m-%d %H:%M')}
+              for event in calendar] + events
+    events.sort(key=lambda event: event['_sort'])
+    for event in events:
+        del event['_sort']
     return dict(events=events, next_event=min(upcoming, key=lambda event: event['starts_at'], default=None),
                 is_holiday=holiday_service.is_holiday(now.date()))
 
@@ -866,11 +1063,13 @@ def status():
         return jsonify(server_timestamp=int(time.time() * 1000), events=[], next_event=None)
     now = get_local_now()
     try:
-        show_local = load_calendar_settings()['local_display_enabled']
+        calendar_settings = load_calendar_settings()
+        show_local = calendar_settings['local_display_enabled']
     except (OSError, ValueError, KeyError):
         show_local = True
+        calendar_settings = {'sources': [], 'local_display_enabled': True}
     payload = display_snapshot(now, load_notes() if show_local else [],
-                               read_schedules(Path(SETTINGS_FILE).parent), get_calendar_events(), get_calendar_events)
+                               read_schedules(Path(SETTINGS_FILE).parent), calendar_display_events(now, calendar_settings), get_calendar_events)
     # Calendar I/O may take time; send a fresh timestamp after projection.
     return jsonify(dict(payload, settings=display_settings, server_timestamp=int(get_local_now().timestamp() * 1000)))
 
@@ -923,6 +1122,8 @@ def group_content_catalog():
             'calendar_source_ids': [source['id'] for source in calendar['sources'] if source['display_enabled']],
             'manual_note_ids': [note['id'] for note in notes] if calendar['local_display_enabled'] else [],
             'schedule_ids': [row['id'] for row in schedules],
+            **({'calendar_targets': [{key: value for key, value in target.items() if key != 'display_window'}
+                                     for target in calendar['calendar_targets']]} if calendar.get('calendar_targets') else {}),
         },
     }
 
@@ -951,7 +1152,8 @@ def managed_content(identity):
         content = group['content']
         all_notes = load_notes()
         notes = [row for row in all_notes if row['id'] in content['manual_note_ids']]
-        source_rows = get_calendar_sources()
+        calendar_settings = load_calendar_settings()
+        source_rows = calendar_settings['sources']
         sources = {row['id'] for row in source_rows}
         schedules = [row for row in read_schedules(Path(SETTINGS_FILE).parent)
                      if row['id'] in content['schedule_ids']
@@ -960,8 +1162,13 @@ def managed_content(identity):
             target['source_id'] for target in content.get('calendar_targets', [])} | {
             source for row in schedules for source in (row.get('calendar_link') or {}).get('source_ids', [])}
         # This server-only digest detects deletion/replacement during calendar I/O.
-        source_revision = revision([[row for row in source_rows if row['id'] in needed],
-                                    all_notes if 'local' in needed else []])
+        dependencies = [[row for row in source_rows if row['id'] in needed],
+                        all_notes if 'local' in needed else []]
+        rules = [target for target in calendar_settings.get('calendar_targets', []) if target['source_id'] in needed]
+        # Management display rules/timezone can change while calendar I/O is running.
+        if rules:
+            dependencies += [rules, display_settings.get('timezone_offset', 8)]
+        source_revision = revision(dependencies)
         return group, notes, schedules, source_revision
 
 
@@ -1002,13 +1209,10 @@ def managed_display(identity):
     group, notes, schedules, source_revision = managed_content(identity)
     settings = group['effective_settings']
     now = datetime.now(timezone(timedelta(hours=settings['timezone_offset'])))
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    whole_sources = set(group['content']['calendar_source_ids'])
-    targets = group['content'].get('calendar_targets', [])
-    sources = sorted(whole_sources | {target['source_id'] for target in targets})
-    calendar = get_calendar_events(start=start, end=start + timedelta(days=1), source_ids=sources) if sources else []
-    calendar = [event for event in calendar if event.get('source_id') in whole_sources
-                or any(calendar_target_matches(event, target) for target in targets)]
+    calendar = calendar_display_events(now, load_calendar_settings(),
+                                       group['content']['calendar_source_ids'],
+                                       group['content'].get('calendar_targets', []),
+                                       group['content'].get('calendar_exclusions', []))
     payload = display_snapshot(now, notes, schedules, calendar, managed_calendar_events)
     payload['settings'] = settings
     return managed_response(identity, group, notes, schedules, source_revision, payload)

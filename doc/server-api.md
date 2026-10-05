@@ -22,7 +22,7 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 
 群組 `display_overrides` 未提供的欄位繼承全域設定，含 `night` 內的逐欄繼承；`false` 與 `0` 是有效覆寫。`content` 包含 `calendar_source_ids`、`manual_note_ids`、`schedule_ids`，並可選填 `calendar_targets`；空陣列代表不選取，文字提醒 ID 保留正整數。群組的顯示語言與後台語言分開。全域顯示語言仍由 `/api/control` 的 `language` 更新。
 
-`calendar_targets` 是 `{source_id, uid, scope, recurrence_id}` 物件的陣列，可選 `title` 作顯示標籤；`scope` 為 `series` 或 `occurrence`。系列及非週期行程的 `recurrence_id` 為空字串；週期單次使用原始 `RECURRENCE-ID` 追蹤改期。整個來源仍以 `calendar_source_ids` 選取，正規化時來源全選優先於系列、系列優先於單次，移除被涵蓋的重複選取；來源／系列全選包括未來行程。舊資料缺少 `calendar_targets` 或值為 `[]` 均相容；PATCH 未傳的清單保持原值。已選目標不因超出目錄的 366 天範圍而清除。
+`calendar_targets` 是 `{source_id, uid, scope, recurrence_id}` 物件的陣列，可選 `title` 作顯示標籤；`scope` 為 `series` 或 `occurrence`。系列及非週期行程的 `recurrence_id` 為空字串；週期單次使用原始 `RECURRENCE-ID` 追蹤改期。整個來源仍以 `calendar_source_ids` 選取，沒有排除例外時，正規化會移除被來源或系列涵蓋的重複選取；有排除例外時保留必要的個別覆寫；來源／系列全選包括未來行程。舊資料缺少 `calendar_targets` 或值為 `[]` 均相容；PATCH 未傳的清單保持原值。已選目標不因超出目錄的 366 天範圍而清除。
 
 每群一組六碼，600 秒有效、預設 5 台（1–100），全站最多 100 台裝置。明文只在產碼 POST 回一次；GET、持久檔及成員列表不回明文。重產／關閉不改成員。過期、額滿、關閉或停用群組不能加入。加入相關限制為每來源 10 次／60 秒、全站 100 次／60 秒，429 附 `Retry-After`。
 
@@ -55,6 +55,17 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
 自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。新 schema 3 裝置依已認證身份取得所屬群組內容；一般成員帳號與多租戶仍未提供。
+
+### 項目群組指派與顯示區間
+
+`GET /api/v1/groups/assignments` 提供目前管理者的群組與文字提醒／排程指派；行事曆項目的指派隨 `GET /api/calendar/display-items` 回傳。`PUT /api/v1/groups/assignments` 接受 `item`（`{kind:"manual_note",id}`、`{kind:"schedule",id}` 或 `{kind:"calendar",target}`）及 `group_ids`，以一次原子保存更新目前管理者的所有相關群組；空清單取消全部指派。`all:true` 指保存當下全部現有群組，不自動包含未來建立的群組。系列可用 `keep_partial_group_ids` 保留未操作的部分指派，不能與選中的群組重疊。未知／其他管理者的群組或無效項目會整批拒絕。
+
+群組 `content.calendar_exclusions` 可選填，使用與 `calendar_targets` 相同的識別欄位；缺省等同空陣列。單次排除、單次選取、系列排除、系列選取、整份來源依序決定顯示授權。取消繼承而來的單次行程只建立該項例外，不會移除整份來源或未來行程；對整個系列設定全部／不選取會覆蓋該系列的單次例外。鬧鐘來源授權仍獨立。
+
+`/api/calendar` 的 PATCH 另接受完整 `calendar_targets` 清單，每個目標可帶 `display_window`：缺省或 `{mode:"day"}` 為當日；`{mode:"relative",before_minutes:180,end:"day_end"}` 提前三小時顯示，亦可選 `event_end`；`before_minutes` 為 0–525600 的整數。單次行程可用 `{mode:"absolute",start:"2026-10-06T08:00",end:"2026-10-07T10:00"}`。區間以管理顯示時區計算，包含開始、不包含結束；系列按每次實際發生時間計算，單次規則優先。這些設定不修改原行程時間或鬧鐘。
+
+`GET /api/calendar/display-items` 回傳已選行程、安全來源名稱、實際時間、有效顯示區間、群組指派與缺席狀態，依完整時間排序；明確選取的系列集中為一張卡，單次例外另列。私人來源 URL 不下發；讀取失敗回 503，不能當作空選取。主機備份包含這些設定，管理頁 version 1 JSON 匯出仍只包含 settings 與 notes。
+
 
 ## 啟動與目錄
 
@@ -181,7 +192,7 @@ rm -f "$cookie_file"
 
 提醒刪除 `/delete/<id>` 只接受帶 token 的 POST，GET／HEAD 回 405。管理 HTML、錯誤頁及 token 回應使用 `no-store`，不開放跨來源讀取。未初始化授權檔的自用程序重啟會使舊 CSRF token 失效；初始化後使用持久簽章秘密，登入/登出與主機密碼復原會輪換或失效 token。公開時鐘不需要 CSRF cookie；self 的 `/api/v1/device/*` 沿用獨立 shared `DEVICE_API_TOKEN`，不要求 CSRF token；managed 則完全拒絕這組入口。CSRF 本身不等於登入保護。
 
-`/api/calendar` 的 `sources` 每筆包含 `id`、`name`、`provider`（`apple`／`google`／`ics`）、`url`、`display_enabled`；`local_display_enabled` 控制本地提醒顯示。新增來源可省略 ID，由伺服器產生；更新時保留 ID 以延續鬧鐘引用。POST 完整保存來源，PATCH 只接受來源 ID 與顯示旗標。舊 `{"url":"..."}` 與 `.env` 的 `ICAL_URL` 仍可讀取遷移。網址僅出現在專用管理回應，不進入時鐘 API、排程 API、裝置 API、備份匯出或離線快取。
+`/api/calendar` 的 `sources` 每筆包含 `id`、`name`、`provider`（`apple`／`google`／`ics`）、`url`、`display_enabled`；`local_display_enabled` 控制本地提醒顯示。新增來源可省略 ID，由伺服器產生；更新時保留 ID 以延續鬧鐘引用。POST 完整保存來源，PATCH 接受來源 ID、顯示旗標與下述項目顯示規則。舊 `{"url":"..."}` 與 `.env` 的 `ICAL_URL` 仍可讀取遷移。網址僅出現在專用管理回應，不進入時鐘 API、排程 API、裝置 API、備份匯出或離線快取。
 
 `GET /api/v1/schedules` 的 `calendar_sources` 提供含本地提醒的來源目錄，每筆僅有 `id`、`name`、`provider`，供鬧鐘選擇使用。
 

@@ -45,6 +45,101 @@ class DeviceAccessTest(unittest.TestCase):
     def create(self, **data):
         return self.service.create_group('owner1', dict(name='Clock', **data))
 
+    def test_item_assignment_replaces_membership_atomically_and_all_is_a_snapshot(self):
+        first = self.create(content={'manual_note_ids': [1], 'schedule_ids': ['alarm2']})
+        second = self.create()
+        foreign = self.service.create_group('owner2', {'name': 'Private other owner', 'content': {'manual_note_ids': [1]}})
+        original = self.path.read_bytes()
+        body = dict(item={'kind': 'manual_note', 'id': 1}, group_ids=[second['id']])
+        with patch('webclock.services.device_access_service.save_json', side_effect=OSError('full disk')) as write:
+            with self.assertRaises(OSError):
+                self.service.set_assignments('owner1', body)
+            self.assertEqual(write.call_count, 1)
+        self.assertEqual(self.path.read_bytes(), original)
+        result = self.service.set_assignments('owner1', body)
+        self.assertEqual(result['assignment'], {'group_ids': [second['id']], 'partial_group_ids': []})
+        self.assertEqual(self.service.get_group('owner1', first['id'])['content']['schedule_ids'], ['alarm2'])
+        self.assertEqual(self.service.get_group('owner2', foreign['id']), foreign)
+        all_result = self.service.set_assignments('owner1', {'item': {'kind': 'schedule', 'id': 'alarm1'}, 'all': True})
+        self.assertEqual(set(all_result['assignment']['group_ids']), {first['id'], second['id']})
+        later = self.create()
+        self.assertEqual(self.service.get_group('owner1', later['id'])['content']['schedule_ids'], [])
+        snapshot = self.service.get_assignments('owner1')
+        self.assertNotIn(foreign['id'], str(snapshot))
+        self.assertEqual(snapshot['manual_notes']['1']['group_ids'], [second['id']])
+        self.service.set_assignments('owner1', dict(body, group_ids=[]))
+        self.assertEqual(self.service.get_assignments('owner1')['manual_notes']['1']['group_ids'], [])
+
+    def test_calendar_assignment_excludes_inherited_occurrence_without_losing_future_series(self):
+        from webclock.services.device_access_service import calendar_content_allows
+        group = self.create(content={'calendar_source_ids': ['cal1']})
+        once = dict(source_id='cal1', uid='weekly', scope='occurrence', recurrence_id='2026-10-06T01:00:00+00:00')
+        item = dict(kind='calendar', target=once)
+        self.service.set_assignments('owner1', dict(item=item, group_ids=[]))
+        content = self.make_service().get_group('owner1', group['id'])['content']
+        self.assertEqual(content['calendar_source_ids'], ['cal1'])
+        self.assertEqual(content['calendar_exclusions'], [once])
+        self.assertFalse(calendar_content_allows(content, once))
+        self.assertTrue(calendar_content_allows(content, dict(once, recurrence_id='2035-10-06T01:00:00+00:00')))
+        self.assertTrue(calendar_content_allows(content, dict(once, uid='unrelated')))
+        series = dict(once, scope='series', recurrence_id='')
+        mixed = self.service.item_assignments('owner1', [dict(kind='calendar', target=series)])[0]
+        self.assertEqual(mixed, {'group_ids': [], 'partial_group_ids': [group['id']]})
+        self.service.set_assignments('owner1', dict(item=item, group_ids=[group['id']]))
+        restored = self.make_service().get_group('owner1', group['id'])['content']
+        self.assertNotIn('calendar_exclusions', restored)
+        self.assertEqual(restored['calendar_source_ids'], ['cal1'])
+
+    def test_single_allow_overrides_denied_series_and_untouched_partial_groups_stay_unchanged(self):
+        from webclock.services.device_access_service import calendar_content_allows
+        group = self.create(content={'calendar_source_ids': ['cal1']})
+        other = self.create()
+        series = dict(source_id='cal1', uid='weekly', scope='series', recurrence_id='')
+        once = dict(series, scope='occurrence', recurrence_id='2026-10-06T01:00:00+00:00')
+        self.service.set_assignments('owner1', {'item': {'kind': 'calendar', 'target': series}, 'group_ids': []})
+        self.service.set_assignments('owner1', {'item': {'kind': 'calendar', 'target': once}, 'group_ids': [group['id']]})
+        saved = self.service.update_group('owner1', group['id'], {'content': {'manual_note_ids': [1]}})['content']
+        self.assertEqual(saved['calendar_targets'], [once])
+        self.assertEqual(saved['calendar_exclusions'], [series])
+        self.assertTrue(calendar_content_allows(saved, once))
+        self.assertFalse(calendar_content_allows(saved, dict(once, recurrence_id='another-slot')))
+        self.assertTrue(calendar_content_allows(saved, dict(once, uid='other-event')))
+        self.assertEqual(self.make_service().get_group('owner1', group['id'])['content'], saved)
+        result = self.service.set_assignments('owner1', {'item': {'kind': 'calendar', 'target': series},
+            'group_ids': [other['id']], 'keep_partial_group_ids': [group['id']]})
+        self.assertEqual(result['assignment'], {'group_ids': [other['id']], 'partial_group_ids': [group['id']]})
+        self.assertEqual(self.service.get_group('owner1', group['id'])['content'], saved)
+        self.service.set_assignments('owner1', {'item': {'kind': 'calendar', 'target': series}, 'all': True})
+        content = self.service.get_group('owner1', group['id'])['content']
+        self.assertNotIn('calendar_exclusions', content)
+        self.assertTrue(calendar_content_allows(content, dict(once, recurrence_id='2035-future')))
+
+    def test_assignment_api_rejects_foreign_groups_and_invalid_inputs_without_writes(self):
+        from flask import Flask
+        from webclock.api.groups import groups_api
+        own = self.create()
+        foreign = self.service.create_group('owner2', {'name': 'Private owner'})
+        app = Flask(__name__)
+        app.register_blueprint(groups_api(lambda: self.service, lambda: 'owner1'))
+        client = app.test_client()
+        url = '/api/v1/groups/assignments'
+        self.assertEqual([row['id'] for row in client.get(url).json['groups']], [own['id']])
+        before = self.path.read_bytes()
+        for body in [dict(item={'kind': 'manual_note', 'id': True}, group_ids=[]),
+                     dict(item={'kind': 'manual_note', 'id': 1}, group_ids=[], all=True),
+                     dict(item={'kind': 'schedule', 'id': 'alarm1'}, group_ids=[], keep_partial_group_ids=[own['id']]),
+                     dict(item={'kind': 'calendar', 'target': {'source_id': 'cal1', 'uid': 'x', 'scope': 'title'}}, group_ids=[])]:
+            self.assertEqual(client.put(url, json=body).status_code, 400)
+            self.assertEqual(self.path.read_bytes(), before)
+        for identifier in [foreign['id'], 'missing-group']:
+            response = client.put(url, json={'item': {'kind': 'manual_note', 'id': 1}, 'group_ids': [own['id'], identifier]})
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(self.path.read_bytes(), before)
+        response = client.put(url, json={'item': {'kind': 'manual_note', 'id': 1}, 'group_ids': [own['id']]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json['assignment']['group_ids'], [own['id']])
+        self.assertNotIn('owner2', response.text)
+
     def test_initialization_is_explicit_idempotent_and_inherits_existing_selections(self):
         self.assertEqual(self.service.list_groups('owner1'), [])
         self.assertFalse(self.path.exists())

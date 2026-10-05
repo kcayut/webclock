@@ -61,6 +61,14 @@ Under **Calendars & reminders** in `/admin`, expand **Calendar source settings**
 
 Source settings and clock display selection are saved separately. Hiding a source does not delete its URL or change alarm source selection. URLs are stored in `webclock_state/calendar.json` and are excluded from the public clock, status APIs, and JSON backups downloaded from the admin page. Never commit this file or private URLs to a public repository.
 
+### Select events and display windows
+
+Expand a calendar under **Sources shown on the clock** to select individual occurrences or a recurring series. Shift-click selects a range at the same level. After saving, selected events join manual reminders in the **Current list**, ordered by event time. A series shows its next occurrence; the event catalog covers the next year.
+
+Events appear on their event day by default. Open an item’s display window to start showing it a chosen number of days, hours, or minutes beforehand, ending at the event end or the end of that day. Individual occurrences also support explicit start and end date-times. Series windows are recalculated for each actual occurrence, including rescheduled events. Windows include the start, exclude the end, and use the management display timezone. These settings affect WebClock display only, leaving the original calendar and alarms unchanged. Groups still receive only their own selected content.
+
+Each note, calendar item, and alarm lists its assigned groups on the right. In its editor, choose individual groups or **All current groups**, then **Save applied groups**. Group assignment is saved separately from other edits and does not automatically include groups created later. Partial series assignments are labeled and remain unchanged unless edited. An individual event can be removed from a group even when the whole calendar is selected, preserving other and future events. Device management offers **Select all current reminders**; alarms and device schedules appear below reminders.
+
 ### Apple iCloud
 
 1. Open [iCloud Calendar](https://www.icloud.com/calendar/) and sign in.

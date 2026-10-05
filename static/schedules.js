@@ -18,6 +18,21 @@
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
     let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null;
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
+    const assignmentSummaries = new Map();
+    const assignments = window.WebClockAssignments ? window.WebClockAssignments.create({
+        t, onChange: renderAssignments,
+        onSaved() { if (window.WebClockGroups && window.WebClockGroups.refresh) window.WebClockGroups.refresh(); }
+    }) : null;
+    const assignmentEditor = assignments && $("schedule-group-assignment") ?
+        assignments.createEditor($("schedule-group-assignment")) : null;
+    function renderAssignments() {
+        if (!assignments) return;
+        assignmentSummaries.forEach((element, id) => assignments.summary(element, assignments.get("schedule", id)));
+        if (assignmentEditor) {
+            const id = $("editor").hidden ? "" : $("schedule-id").value;
+            assignmentEditor.set(id ? {kind: "schedule", id} : null, id ? assignments.get("schedule", id) : null);
+        }
+    }
     const displayTime = value => window.WebClockTime.format(value, timeFormat, document.documentElement.lang);
     const refreshTimeInputs = () => window.WebClockTimeInputs.refresh($("schedule-form"), timeFormat, document.documentElement.lang);
     const serverNow = () => serverTime === null ? null : serverTime + performance.now() - serverSynced;
@@ -236,6 +251,8 @@
         const otherList = $("other-schedule-list");
         list.replaceChildren();
         otherList.replaceChildren();
+        assignmentSummaries.forEach(element => assignments.removeSummary(element));
+        assignmentSummaries.clear();
         nextPauseEnd = null;
         schedules.forEach(schedule => {
             const skip = pendingSkip(schedule), paused = isRecurringAlarm(schedule) && skip;
@@ -251,6 +268,12 @@
             if (paused) details.append(node("p", resumeMessage(paused, "resume_at"), "schedule-next"));
             details.append(node("p", schedule.type === "alarm" ? format("next_ring", {datetime: next}) : t("next") + ": " + next, "schedule-next"));
             const actions = node("div", undefined, "schedule-row-actions");
+            if (assignments) {
+                const summary = node("span", undefined, "content-group-summary");
+                summary.setAttribute("data-schedule-assignment", schedule.id);
+                assignmentSummaries.set(schedule.id, summary);
+                actions.append(summary);
+            }
             const toggle = action(t(enabled ? "disable" : "enable"), async () => {
                 if (enabled && isRecurringAlarm(schedule)) {
                     const choice = await choosePause(schedule);
@@ -284,6 +307,7 @@
         });
         if (!schedules.some(schedule => schedule.type === "alarm")) list.append(node("li", t("none"), "empty"));
         if (!schedules.some(schedule => schedule.type !== "alarm")) otherList.append(node("li", t("none"), "empty"));
+        renderAssignments();
         renderEditorActions();
     }
     function closeEditor() {
@@ -292,6 +316,7 @@
         ++calendarRequest;
         previewTime = null;
         $("editor").hidden = true;
+        renderAssignments();
         $(editorPanel + "-panel").classList.toggle("is-editing", false);
         if (!$(editorPanel + "-panel").hidden) $(editorPanel === "alarms" ? "add-schedule" : "add-other-schedule").focus();
     }
@@ -340,6 +365,7 @@
         renderDayStatus();
         renderEditorTime();
         queuePreview();
+        if (assignments) assignments.load();
     }
     function renderDayStatus() {
         $("day-status").textContent = (day.date || "") + " · " + t(day.type || "unknown");
@@ -363,6 +389,7 @@
         renderDevices();
         renderNextEvent();
         renderDayStatus();
+        if (assignments) assignments.applyLanguage();
         if (!$("editor").hidden) {
             const alarm = $("schedule-type").value === "alarm";
             $("editor-title").textContent = t($("schedule-id").value ? (alarm ? "edit_alarm" : "edit_other") : (alarm ? "add_alarm" : "add_other"));
@@ -523,6 +550,7 @@
         if ($("schedule-rule").value === "every_day") document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
         $("schedule-advanced").open = !!(schedule && (schedule.skip_holidays || schedule.rule.workday_only || schedule.rule.holiday_only || (schedule.rule.dates || []).length > 1));
         $("editor").hidden = false;
+        renderAssignments();
         setRule();
         setCalendarMode();
         renderEditorActions();

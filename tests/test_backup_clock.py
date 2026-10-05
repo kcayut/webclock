@@ -348,7 +348,8 @@ class HostBackupTest(unittest.TestCase):
         legacy = next(iter(access['groups'].values()))
         selective = dict(legacy, id='selective', name='Selective', content=dict(legacy['content'],
             calendar_targets=[dict(source_id='unavailable-source', uid='weekly', scope='occurrence',
-                                   recurrence_id='2026-10-05T01:00:00+00:00', title='Saved selection')]))
+                                   recurrence_id='2026-10-05T01:00:00+00:00', title='Saved selection')],
+            calendar_exclusions=[dict(source_id='unavailable-source', uid='weekly', scope='series', recurrence_id='')]))
         access['groups']['selective'] = selective
         (state / 'device-access.json').write_text(json.dumps(access))
         directory, rollback = self.root / 'calendar-backup', self.root / 'calendar-rollback'

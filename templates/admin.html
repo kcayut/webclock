@@ -173,6 +173,9 @@
     <form id="calendar-display-form" class="panel calendar-display-settings">
         <h2 data-i18n="calendar_display_sources">{{ translations[language].calendar_display_sources }}</h2>
         <p class="help" data-i18n="calendar_display_hint">{{ translations[language].calendar_display_hint }}</p>
+        <p class="help group-range-hint" data-i18n="group_range_hint">{{ translations[language].group_range_hint }}</p>
+        <p class="help" data-i18n="group_calendar_parent_hint">{{ translations[language].group_calendar_parent_hint }}</p>
+        <p class="help" data-i18n="group_calendar_window">{{ translations[language].group_calendar_window }}</p>
         <fieldset id="calendar-display-fields" disabled>
             <div id="calendar-display-list" class="calendar-display-list"></div>
             <div class="actions"><button id="calendar-display-save" type="submit" data-i18n="calendar_save_display">{{ translations[language].calendar_save_display }}</button></div>
@@ -195,9 +198,11 @@
     </section>
 
     <h2 class="section-title" data-i18n="current_list">{{ translations[language].current_list }}</h2>
-    <ul class="note-list cards">
+    <p class="help" data-i18n="calendar_window_timezone">{{ translations[language].calendar_window_timezone }}</p>
+    <div class="actions"><button id="calendar-list-refresh" type="button" data-i18n="calendar_list_refresh">{{ translations[language].calendar_list_refresh }}</button><span id="calendar-list-status" role="status" aria-live="polite"></span></div>
+    <ul id="calendar-current-list" class="note-list cards">
         {% for note in notes %}
-        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}">
+        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}">
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag" data-time-value="{{ note.due_date }}">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
@@ -209,6 +214,7 @@
                 <span class="window-tag"><span data-i18n="{{ 'daily_mode' if note.display_mode == 'daily' else 'range_mode' }}">{{ translations[language]['daily_mode' if note.display_mode == 'daily' else 'range_mode'] }}</span>: <span data-time-value="{{ note.display_start }}">{{ note.display_start | replace('T', ' ') }}</span> ~ <span data-time-value="{{ note.display_end }}">{{ note.display_end | replace('T', ' ') }}</span></span>
                 {% endif %}
             </div>
+            <span data-note-group-summary="{{ note.id }}" class="content-group-summary"></span>
             <div class="note-actions">
                 <form action="/toggle/{{ note.id }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
                 <form action="/delete/{{ note.id }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
@@ -219,12 +225,13 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
+                    <div data-note-group-editor="{{ note.id }}"></div>
                     <div class="actions"><button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button></div>
                 </form>
             </details>
         </li>
         {% else %}
-        <li class="empty" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
+        <li id="calendar-current-empty" class="empty" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
         {% endfor %}
     </ul>
     <details id="calendar-source-settings" class="panel calendar-source-settings">
@@ -479,6 +486,8 @@
         }
 
     </script>
+    <script defer src="{{ url_for('static', filename='calendar-chooser.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='group-assignment.js') }}"></script>
     <script defer src="{{ url_for('static', filename='calendar-settings.js') }}"></script>
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
 </body>
