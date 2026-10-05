@@ -19,10 +19,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', type=Path, help='Override WEBCLOCK_STATE_DIR.')
     actions = parser.add_subparsers(dest='action', required=True)
-    setup = actions.add_parser('setup', help='Initialize an isolated managed-mode test installation.')
+    setup = actions.add_parser('setup', help='Explicitly enable managed mode on a stopped installation.')
     setup.add_argument('--username', required=True)
-    setup.add_argument('--enable-managed-test', action='store_true',
-                       help='Explicitly acknowledge that production migration remains blocked until B4.')
+    setup.add_argument('--enable-managed', '--enable-managed-test', dest='enable_managed', action='store_true',
+                       help='Enable administrator login and require each display to join with its own code. '
+                            '--enable-managed-test remains a compatible alias.')
     actions.add_parser('reset-password', help='Recover the existing administrator; revoke all login sessions.')
     actions.add_parser('status', help='Print mode/owner only, without exposing secrets.')
     args = parser.parse_args(argv)
@@ -34,14 +35,14 @@ def main(argv=None):
             data = service.state()
             print('mode=' + data['mode'] + ' owner_id=' + data['owner_id'])
             return 0
-        if args.action == 'setup' and not args.enable_managed_test:
-            parser.error('setup requires --enable-managed-test; production enablement remains blocked until B4')
+        if args.action == 'setup' and not args.enable_managed:
+            parser.error('setup requires --enable-managed; existing displays must join with a code after restart')
         # Never put a password on the command line, environment, or stdout.
         password = getpass.getpass('New administrator password (at least 12 characters): ')
         if password != getpass.getpass('Confirm password: '):
             raise AuthError('password_mismatch', 'Passwords do not match.')
         if args.action == 'setup':
-            result = service.setup(args.username, password, enable_managed_test=args.enable_managed_test)
+            result = service.setup(args.username, password, enable_managed=args.enable_managed)
         else:
             result = service.reset_password(password)
         print('Administrator saved. owner_id=' + result['owner_id'] + '. Restart WebClock before use.')

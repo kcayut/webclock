@@ -127,10 +127,10 @@ class AuthService:
             raise AuthError('invalid_password', 'Password must contain 12 to 1024 characters.')
         return generate_password_hash(password, method=PASSWORD_METHOD, salt_length=16)
 
-    def setup(self, username, password, *, enable_managed_test=False):
-        """Host-only opt-in for an isolated test installation; not a mode-switch API."""
-        if not enable_managed_test:
-            raise AuthError('managed_not_ready', 'Managed mode is limited to explicit isolated tests until B4.', 409)
+    def setup(self, username, password, *, enable_managed=False, enable_managed_test=False):
+        """Explicit host-only migration; keep the earlier test keyword compatible."""
+        if enable_managed is not True and enable_managed_test is not True:
+            raise AuthError('managed_opt_in_required', 'Explicit managed-mode enablement is required.', 409)
         if (not isinstance(username, str) or not 1 <= len(username.strip()) <= 128
                 or any(ord(char) < 32 for char in username)):
             raise AuthError('invalid_username', 'Invalid administrator username.')

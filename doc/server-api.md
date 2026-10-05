@@ -1,8 +1,8 @@
 # WebClock Server：集中管理與裝置 API
 
-## B0–B3 管理、群組與受管裝置（2026-10-05）
+## B0–B4 管理、群組與受管裝置（2026-10-06）
 
-已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 目前只供明確啟用的隔離測試。已支援裝置自行退出及管理員個別刪除授權；正式模式切換與個別裝置移動／停用仍待 B4。操作方式見[使用指南](guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](b0-b1-contract.md)。
+已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 由主機端明確啟用。裝置可自行退出，管理員可移組、停用／恢復或刪除個別授權。操作方式見[使用指南](guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](b0-b1-contract.md)。
 
 `GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403，`/api/v1/browser-alarms` 回 401。管理登入不能替代裝置憑證。非私人 `/api/health` 提供 `managed_device_schema: 3`、`managed_devices_ready: true`，表示新端點已實作，不表示正式模式切換或實機驗收已完成。以下舊 schema 2 裝置 API 均以 self 模式為前提，現有 ESP codec 不會自動支援 schema 3。
 
@@ -40,7 +40,7 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 
 瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
 
-自行退出與管理端個別刪除授權會移除指定裝置的授權、已完成加入嘗試與 `devices.json` 觀察記錄，管理列表不再顯示該裝置，並釋放全站 100 台上限中的名額。舊憑證與舊加入重試永久失效；API 立即拒絕，離線端仍依最長 300 秒租約處理。其他成員、群組與本機提醒保留；原邀請已用額度不退還。群組停用後仍可退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若觀察記錄已刪除而授權保存失敗，原授權仍有效，觀察記錄由下次 status 重建，不保證跨檔原子回復。移組、停用／恢復與正式遷移仍待 B4。
+自行退出與管理端個別刪除授權會移除指定裝置的授權、已完成加入嘗試與 `devices.json` 觀察記錄，管理列表不再顯示該裝置，並釋放全站 100 台上限中的名額。舊憑證與舊加入重試永久失效；API 立即拒絕，離線端仍依最長 300 秒租約處理。其他成員、群組與本機提醒保留；原邀請已用額度不退還。群組停用後仍可退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若觀察記錄已刪除而授權保存失敗，原授權仍有效，觀察記錄由下次 status 重建，不保證跨檔原子回復。停用與移組保留裝置憑證及觀察記錄；撤銷後不能直接恢復。
 
 display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision`、`schedule_revision`、`holiday_revision`、Unix 毫秒 `server_timestamp` 與最長 300 秒的 `lease`。身份含 owner／device／group、憑證世代、指派 revision 與 `identity_revision`。每次回應（含 304）前重新確認目前授權與內容範圍；I/O 期間範圍變更回 409 `display_scope_changed`，不送出舊內容。ETag 回應使用 `private, no-cache`、`Vary: Cookie, Authorization`，304 以 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` 續期；加入／身份回應為 `no-store`。
 
@@ -171,11 +171,18 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 | `/api/v1/holidays?date=2026-09-30` | GET 日期類型；省略日期時查台灣今天 |
 | `/api/v1/devices` | GET 裝置列表、最後回報與待確認同步指令 |
 | `/api/v1/devices/<id>` | PATCH `{"name":"客廳時鐘"}` 修改管理名稱，回 200 與 `device`；DELETE 撤銷自身 owner 的獨立裝置授權，回 200 `{status: "revoked"}` |
+| `/api/v1/devices/<id>/authorization` | PATCH `{"group_id":"目標群組ID","enabled":false}`，可只傳其中一欄；移組或停用／恢復，200 回安全 `device` 授權資料 |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`，回 202 與 `command` |
 
 managed 的 `GET /api/v1/devices` 列出目前 owner 的授權裝置，尚未回報也會出現，`can_revoke: true`；`reported: false` 時管理頁停用改名及同步。self 保留舊觀察列表，legacy 裝置的 `can_revoke: false`；既存未標來源的觀察無法判定是否為歷史退出殘留，因此保留、不猜測刪除。DELETE 對不存在、其他 owner 或只有共用 token 的裝置回 404；不能用它逐台撤銷 legacy 共用 token。
 
-自用模式的管理 API 保留可信任區網共用規則；帳密測試模式則要求管理 session。Origin/CSRF 不等於身份驗證，遠端部署仍需 HTTPS 與正確代理設定。
+`PATCH /api/v1/devices/<id>/authorization` 只接受非空物件，欄位為 `enabled`（布林值）及／或 `group_id`（既存群組 ID）。移入的群組須屬於同一 owner 且已啟用；目前群組已停用仍可停用／恢復該裝置或移出，恢復裝置不會同時啟用群組。成功回 `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}}`；這些欄位也附於 GET 裝置列表，不覆寫裝置 `name`。`authorization_status` 為 `active|disabled|revoked`；`rejoin_required: true` 表示需要重新加入，包含已撤銷或憑證已清除的歷史記錄。回應不含憑證或其摘要。
+
+一次請求在單一授權檔原子保存，實際改動只增加一次 `assignment_revision`；相同值重送不寫檔。移組與停用／恢復保留同一憑證、裝置名稱、能力、回報與同步 ACK，不增減邀請已用額度。停用立即拒絕私人 API；恢復可用原 cookie 重新確認身份。移組後回新群組範圍與新 revision，舊 ETag 不會沿用，讀取途中移組或停用也不回舊資料／304。離線裝置仍受最長 300 秒私人內容租約限制。
+
+格式錯誤回 400；不存在、其他 owner 或只有 legacy 觀察的裝置，以及不存在／其他 owner 的目標群組，回 404 `not_found`；移入停用群組回 409 `group_disabled`。已撤銷、需重新加入或憑證已清除的記錄回 409 `device_rejoin_required`，不能藉此恢復歷史憑證。管理認證／CSRF 失敗分別為 401／403，儲存失敗為 500 且原授權檔保持，損壞授權檔為 503 `access_not_ready`。改名仍使用獨立的 PATCH `/api/v1/devices/<id>`，不與授權變更合併成跨檔交易。
+
+自用模式的管理 API 保留可信任區網共用規則；managed 模式則要求管理 session。Origin/CSRF 不等於身份驗證，遠端部署仍需 HTTPS 與正確代理設定。
 
 所有管理寫入（POST／PUT／PATCH／DELETE，包括設定、提醒、備份匯入、排程預覽及裝置同步要求）都需要 CSRF token 和同一工作階段的 `webclock_csrf` cookie。管理頁會自動處理；程式呼叫先 GET `/api/csrf`，保存回應 cookie，再以 `X-CSRF-Token` 傳入回應的 `csrf_token`；HTML 表單則使用隱藏欄位 `csrf_token`。省略 Origin 也不能省略 token。缺少、錯誤或失效時回 403 `{"error":"CSRF validation failed; reload the management page.","code":"csrf_failed"}`；跨來源 Origin／Referer／`Sec-Fetch-Site: cross-site` 也會被拒絕。
 
@@ -497,7 +504,7 @@ curl -i -H 'Content-Type: application/json' \
 
 ESPHome 目標中的「未來七天觸發清單」尚未提供 API，現有 `schema_version=2` 不會回 `valid_until` 或完整行事曆聯動事件。`/api/v1/browser-alarms` 也不是七天離線清單，不能代替這個功能。
 
-實作時需另定能力／版本契約，包含清單有效期限、滾動補充、來源更新與失效、刪除、範圍切換，以及容量上限的完整性處理；沿用目前 Server 排程計算，保留既有 schema 2 語意。B2–B3 已提供瀏覽器的獨立裝置認證與群組顯示；ESP 韌體接入新契約與正式部署模式切換仍待後續，不能在舊 status 任意增加尚未支援的欄位。開發順序與硬體驗收見 [ESPHome 裝置指南](esp-home.md)。
+實作時需另定能力／版本契約，包含清單有效期限、滾動補充、來源更新與失效、刪除、範圍切換，以及容量上限的完整性處理；沿用目前 Server 排程計算，保留既有 schema 2 語意。B2–B4 已提供瀏覽器的獨立裝置認證、群組顯示與個別授權生命週期；主機可明確使用 `--enable-managed` 切換模式，舊 `--enable-managed-test` 為相容別名。ESP 韌體接入新契約仍待後續，不能在舊 status 任意增加尚未支援的欄位。開發順序與硬體驗收見 [ESPHome 裝置指南](esp-home.md)。
 
 ## 舊原型與資料保存
 

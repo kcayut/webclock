@@ -702,6 +702,39 @@ class DeviceAccessService:
         with storage_lock:
             self._owned_device(self._load(), owner_id, device_id)
 
+    @staticmethod
+    def _public_authorization(state, row):
+        group = state['groups'][row['group_id']]
+        return {key: row[key] for key in ('id', 'group_id', 'enabled', 'assignment_revision')} | {
+            'authorization_status': row['status'], 'group_name': group['name'], 'group_enabled': group['enabled'],
+            'rejoin_required': row['rejoin_required'] or row['status'] == 'revoked' or row['credential_digest'] is None}
+
+    def update_device(self, owner_id, device_id, data):
+        """Move or pause one credential without replacing it or touching observations."""
+        if not isinstance(data, dict) or not data or set(data) - {'enabled', 'group_id'}:
+            raise ValueError('Expected device enabled or group_id fields')
+        if 'enabled' in data and type(data['enabled']) is not bool:
+            raise ValueError('Enabled must be a boolean')
+        if 'group_id' in data and (not isinstance(data['group_id'], str) or not data['group_id']
+                                   or len(data['group_id']) > 128):
+            raise ValueError('Invalid group ID')
+        with storage_lock:
+            state = self._load()
+            row = self._owned_device(state, owner_id, device_id)
+            if row['status'] == 'revoked' or row['rejoin_required'] or row['credential_digest'] is None:
+                raise AccessError('This device must join again', 409, 'device_rejoin_required')
+            if 'group_id' in data:
+                group = self._group(state, owner_id, data['group_id'])
+                if group['id'] != row['group_id'] and not group['enabled']:
+                    raise AccessError('Enable the destination group before moving a device', 409, 'group_disabled')
+            enabled = data.get('enabled', row['enabled'])
+            group_id = data.get('group_id', row['group_id'])
+            if enabled != row['enabled'] or group_id != row['group_id']:
+                row.update(enabled=enabled, group_id=group_id, status='active' if enabled else 'disabled',
+                           assignment_revision=row['assignment_revision'] + 1)
+                save_json(self.path, state)
+            return self._public_authorization(state, row)
+
     def _remove_device(self, state, device_id):
         # All callers hold storage_lock. Remove observations first: if the final
         # access write fails, the still-authorized device can report them again.
@@ -729,7 +762,7 @@ class DeviceAccessService:
             state = self._load()
             observed = {row['id']: row for row in DeviceService(self.path.with_name('devices.json')).list()}
             result = [dict(observed.get(row['id'], dict(DeviceService._public({'id': row['id']}), online=None)),
-                           can_revoke=True, reported=row['id'] in observed)
+                           **self._public_authorization(state, row), can_revoke=True, reported=row['id'] in observed)
                       for row in state['devices'].values() if row['owner_id'] == owner_id]
             if include_legacy:
                 result.extend(dict(row, can_revoke=False, reported=True) for key, row in observed.items()

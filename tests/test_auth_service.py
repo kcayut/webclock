@@ -56,7 +56,7 @@ class AuthServiceTest(unittest.TestCase):
     def test_managed_requires_explicit_opt_in_and_cannot_replace_admin(self):
         with self.assertRaises(AuthError) as caught:
             self.service.setup('admin', PASSWORD)
-        self.assertEqual(caught.exception.code, 'managed_not_ready')
+        self.assertEqual(caught.exception.code, 'managed_opt_in_required')
         self.assertFalse(self.path.exists())
         self.setup_managed()
         snapshot = self.path.read_bytes()
@@ -64,6 +64,19 @@ class AuthServiceTest(unittest.TestCase):
             self.service.setup('other', PASSWORD, enable_managed_test=True)
         self.assertEqual(caught.exception.code, 'already_initialized')
         self.assertEqual(self.path.read_bytes(), snapshot)
+
+    def test_formal_enablement_preserves_owner_and_invites_but_rotates_sessions(self):
+        before = self.service.ensure_initialized()
+        result = self.service.setup('admin', PASSWORD, enable_managed=True)
+        after = AuthService(self.path).state()
+        self.assertEqual(result['mode'], 'managed')
+        for key in ('owner_id', 'invite_secret'):
+            self.assertEqual(after[key], before[key])
+        self.assertNotEqual(after['session_secret'], before['session_secret'])
+        self.assertEqual(after['generation'], before['generation'] + 1)
+        self.assertTrue(self.service.required_path.exists())
+        with self.assertRaises(AuthError):
+            self.service.setup('other', PASSWORD, enable_managed=True)
 
     def test_password_hash_and_session_digest_persist_without_plaintext(self):
         self.setup_managed()

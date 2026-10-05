@@ -73,7 +73,10 @@ const englishLabels = {
     sync_confirmed: "Confirmed", sync_timed_out: "Timed out", sync_requested_at: "Requested", sync_acknowledged_at: "Confirmed at",
     legacy_devices_title: "Legacy devices / history ({count})", no_authorized_devices: "No authorized devices; expand history below",
     device_data_stale: "Device data stale", device_revoke: "Revoke access",
-    device_revoke_confirm: "Revoke {name}? A new join code is required.", device_revoked: "Device access revoked"
+    device_revoke_confirm: "Revoke {name}? A new join code is required.", device_revoked: "Device access revoked",
+    device_group: "Group", device_move_group: "Move group", device_disable: "Disable device", device_resume: "Resume device",
+    device_access_state: "Device access", device_group_unavailable: "Current group unavailable", device_group_pending: "Group change not saved",
+    device_authorization_failed: "Device authorization failed", device_rejoin_required: "Rejoin with a new code"
 };
 $("schedule-i18n").textContent = JSON.stringify({
     en: englishLabels,
@@ -101,6 +104,7 @@ $("schedule-form").reset = () => {
 };
 const pending = [], requests = [], intervals = [], navigation = {}, inputRefreshes = [];
 const assignmentValues = {alarm: {group_ids: ["work"], partial_group_ids: []}};
+let assignmentGroups = [];
 const assignmentEditors = [], assignmentSummaries = new Set();
 let assignmentOptions, assignmentLoads = 0, assignmentLanguages = 0, groupRefreshes = 0;
 const timeouts = new Map();
@@ -133,6 +137,7 @@ const context = vm.createContext({
             return {
                 load() { assignmentLoads++; options.onChange(); return Promise.resolve(); },
                 get(kind, id) { assert.equal(kind, "schedule"); return assignmentValues[id] || {group_ids: [], partial_group_ids: []}; },
+                groups() { return plain(assignmentGroups); },
                 summary(target, assignment) {
                     assignmentSummaries.add(target);
                     target.textContent = assignment.group_ids.join(" · ") || "Unassigned";
@@ -203,6 +208,7 @@ function pauseReply(request, skipped = row.next_occurrence, next = nextDate) {
 function descendants(root) { return root.children.flatMap(child => [child, ...descendants(child)]); }
 function calendarInput(id) { return descendants($("schedule-calendar-sources")).find(input => input.name === 'calendar-source' && input.value === id); }
 function deviceNameInput(id) { return [...descendants($("device-list")), ...descendants($("legacy-device-list"))].find(input => input.tag === "input" && input.getAttribute("data-device-name") === id); }
+function deviceGroupInput(id) { return descendants($("device-list")).find(input => input.getAttribute("data-device-group") === id); }
 function button(list, label) {
     const result = descendants($(list)).find(child => child.tag === "button" && child.textContent === label);
     assert.ok(result, "Expected button " + label);
@@ -1237,6 +1243,81 @@ const completionTimeout = setTimeout(() => {
     const selfLeave = qa.loadDevices(); reply(take("/devices"), {devices: []}); await selfLeave;
     assert.equal(content($("device-list")).trim(), "no_devices", "Polling removes devices that left elsewhere");
     assert.equal($("legacy-devices").hidden, true, "An empty historical section is hidden");
+
+    {
+    assignmentGroups = [{id: "a", name: "Alpha", enabled: true}, {id: "b", name: "Beta", enabled: true},
+        {id: "c", name: "Gamma", enabled: true}, {id: "closed", name: "Closed", enabled: false}];
+    const authorized = {...savedDevice, can_revoke: true, group_id: "a", group_name: "Alpha", group_enabled: true,
+        enabled: true, authorization_status: "active", assignment_revision: 1, rejoin_required: false};
+    const authFields = (changes = {}) => {
+        const fields = {};
+        ["id", "group_id", "group_name", "group_enabled", "enabled", "authorization_status", "assignment_revision", "rejoin_required"].forEach(key => { fields[key] = authorized[key]; });
+        return {...fields, ...changes};
+    };
+    let deviceLoad = qa.loadDevices(); reply(take("/devices"), {devices: [authorized, legacyDevice]}); await deviceLoad;
+    assert.deepEqual(deviceGroupInput("desk").children.map(option => option.value), ["a", "b", "c"], "Move choices contain only enabled owner groups");
+    assert.equal(deviceGroupInput("legacy"), undefined);
+    assert.ok(deviceButton("desk", "Move group").disabled, "An unchanged group is not resubmitted");
+    let groupSelect = deviceGroupInput("desk"); groupSelect.focus(); groupSelect.value = "b"; await groupSelect.trigger("change");
+    assert.equal(deviceGroupInput("desk").value, "b"); assert.equal(activeElement, deviceGroupInput("desk"));
+    nameInput = deviceNameInput("desk"); nameInput.value = "Unsent while moving"; await nameInput.trigger("input");
+    const beforeMove = qa.loadDevices(), beforeMoveRequest = take("/devices");
+    const moving = deviceButton("desk", "Move group").trigger("click"), moveRequest = take("/devices/desk/authorization", "PATCH");
+    assert.deepEqual(JSON.parse(moveRequest.options.body), {group_id: "b"});
+    assert.ok(deviceButton("desk", "Move group").disabled && deviceButton("desk", "Disable device").disabled &&
+        deviceButton("desk", "Save name").disabled && deviceButton("desk", "Revoke access").disabled);
+    const beforeDuplicateMove = requests.length;
+    await deviceButton("desk", "Move group").trigger("click"); await deviceButton("desk", "Disable device").trigger("click");
+    assert.equal(requests.length, beforeDuplicateMove, "Handlers reject duplicate authorization mutations");
+    reply(beforeMoveRequest, {devices: [{...authorized, name: "Old before move"}]}); await beforeMove;
+    assert.doesNotMatch(content($("device-list")), /Old before move/);
+    groupSelect = deviceGroupInput("desk"); groupSelect.value = "c"; groupSelect.focus(); await groupSelect.trigger("change");
+    const duringMove = qa.loadDevices(), duringMoveRequest = take("/devices");
+    const newerReport = {...authorized, reported_name: "Newest report", capabilities: {display: true, background: true},
+        status: {firmware: "fresh-4", config_revision: "fresh-config"}, sync_status: {state: "confirmed"}};
+    reply(duringMoveRequest, {devices: [newerReport, legacyDevice]}); await duringMove;
+    assert.equal(deviceGroupInput("desk").value, "c"); assert.equal(activeElement, deviceGroupInput("desk"));
+    assert.equal(deviceButton("desk", "Move group").disabled, true, "Polling cannot enable pending authorization actions");
+    const lateMoveRead = qa.loadDevices(), lateMoveRequest = take("/devices");
+    reply(moveRequest, {device: authFields({group_id: "b", group_name: "Beta", assignment_revision: 2})}); await moving;
+    assert.match(content($("device-list")), /Group: Beta/);
+    assert.match(content($("device-list")), /Newest report.*fresh-4.*fresh-config/);
+    assert.match(content($("device-list")), /Sync confirmation: Confirmed/, "A slow authorization response preserves newer ACK data");
+    assert.equal(deviceGroupInput("desk").value, "c", "A successful move keeps a newer unsaved group choice");
+    assert.equal(deviceNameInput("desk").value, "Unsent while moving");
+    reply(lateMoveRequest, {devices: [authorized]}); await lateMoveRead;
+    assert.match(content($("device-list")), /Group: Beta/, "Pre-completion reads cannot roll back a completed move");
+    for (const language of ["zh-TW", "ja", "en"]) {
+        groupSelect = deviceGroupInput("desk"); groupSelect.focus();
+        context.document.documentElement.lang = language; context.window.applyManagementLanguage(language);
+        assert.equal(deviceGroupInput("desk").value, "c"); assert.equal(activeElement, deviceGroupInput("desk"));
+        assert.equal(deviceNameInput("desk").value, "Unsent while moving");
+    }
+    const failedMove = deviceButton("desk", "Move group").trigger("click");
+    reply(take("/devices/desk/authorization", "PATCH"), {code: "group_disabled", error: "Group disabled"}, false); await failedMove;
+    assert.equal(deviceGroupInput("desk").value, "c"); assert.match(content($("device-list")), /Device authorization failed/);
+    assert.equal(deviceButton("desk", "Move group").disabled, false);
+    const newerMove = deviceButton("desk", "Move group").trigger("click");
+    const newerMoveRequest = take("/devices/desk/authorization", "PATCH");
+    deviceLoad = qa.loadDevices();
+    reply(take("/devices"), {devices: [{...newerReport, ...authFields({group_id: "a", group_name: "Alpha", assignment_revision: 9})}]}); await deviceLoad;
+    reply(newerMoveRequest, {device: authFields({group_id: "c", group_name: "Gamma", assignment_revision: 3})}); await newerMove;
+    assert.match(content($("device-list")), /Group: Alpha/, "A lower assignment revision cannot overwrite a newer observed authorization");
+    assert.equal(deviceGroupInput("desk").value, "a", "Saved group drafts clear when the request completes");
+    const disabling = deviceButton("desk", "Disable device").trigger("click");
+    let authRequest = take("/devices/desk/authorization", "PATCH"); assert.deepEqual(JSON.parse(authRequest.options.body), {enabled: false});
+    reply(authRequest, {device: authFields({enabled: false, authorization_status: "disabled", assignment_revision: 10})}); await disabling;
+    assert.equal(deviceButton("desk", "Disable device"), undefined); assert.ok(deviceButton("desk", "Resume device"));
+    const resuming = deviceButton("desk", "Resume device").trigger("click");
+    authRequest = take("/devices/desk/authorization", "PATCH"); assert.deepEqual(JSON.parse(authRequest.options.body), {enabled: true});
+    reply(authRequest, {device: authFields({assignment_revision: 11})}); await resuming;
+    assert.ok(deviceButton("desk", "Disable device"));
+    deviceLoad = qa.loadDevices(); reply(take("/devices"), {devices: [{...authorized, enabled: false, authorization_status: "revoked", rejoin_required: true}]}); await deviceLoad;
+    assert.equal(deviceGroupInput("desk"), undefined); assert.equal(deviceButton("desk", "Resume device"), undefined);
+    assert.ok(deviceButton("desk", "Revoke access")); assert.match(content($("device-list")), /Rejoin with a new code/);
+    deviceLoad = qa.loadDevices(); reply(take("/devices"), {devices: [{...authorized, enabled: false, authorization_status: "disabled", rejoin_required: true}]}); await deviceLoad;
+    assert.equal(deviceButton("desk", "Resume device"), undefined, "A historical missing credential is not resumable even if its old state says disabled");
+    }
 
     const emptyPost = qa.api("/schedules/alarm/skip-next", {method: "POST"});
     const emptyPostRequest = take("/schedules/alarm/skip-next", "POST");

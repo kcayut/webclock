@@ -133,7 +133,7 @@
             };
             editors.add(editor); return editor;
         }
-        return {load, get, summary, createEditor, applyLanguage: render, removeSummary(element) { summaries.delete(element); }};
+        return {load, get, summary, createEditor, groups() { return data ? data.groups.slice() : null; }, applyLanguage: render, removeSummary(element) { summaries.delete(element); }};
     }
     window.WebClockAssignments = {create};
 }());

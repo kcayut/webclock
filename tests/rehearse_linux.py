@@ -12,25 +12,27 @@ from pathlib import Path
 import platform
 import pwd
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
 import time
 from urllib.error import HTTPError
-from urllib.request import HTTPCookieProcessor, ProxyHandler, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPSHandler, ProxyHandler, Request, build_opener
 
 
 SOURCE = Path(__file__).resolve().parents[1]
 BASELINE = '1ad7868ff7b51e581421f85fefccfef4e7520ddd'
 UNIT = Path('/run/systemd/system/webclock.service')
 FAKE_TOKEN = 'rehearsal-only-not-a-real-secret'
+FAKE_PASSWORD = 'rehearsal-only-administrator-password'
 PASSED = []
 
 
-def run(*args, cwd=None, user=None, check=True):
+def run(*args, cwd=None, user=None, check=True, input=None):
     command = (['runuser', '-u', user, '--'] if user else []) + [str(arg) for arg in args]
     result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, timeout=300)
+                            stderr=subprocess.STDOUT, timeout=300, input=input)
     if check and result.returncode:
         raise RuntimeError('Command failed: ' + ' '.join(command) + '\n' + result.stdout)
     return result
@@ -85,12 +87,12 @@ def main():
     url = 'http://127.0.0.1:' + str(port)
     opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(CookieJar()))
 
-    def request(path, data=None, *, method=None, headers=None, expected=200):
+    def request(path, data=None, *, method=None, headers=None, expected=200, client=None, base=None):
         payload = None if data is None else json.dumps(data).encode()
-        req = Request(url + path, data=payload, method=method,
+        req = Request((base or url) + path, data=payload, method=method,
                       headers={'Content-Type': 'application/json', **(headers or {})})
         try:
-            response = opener.open(req, timeout=8)
+            response = (client or opener).open(req, timeout=8)
         except HTTPError as error:
             response = error
         with response:
@@ -115,9 +117,10 @@ def main():
                     raise
                 time.sleep(1)
 
-    def management(path, data, expected=200):
-        token = request('/api/csrf')[0]['csrf_token']
-        return request(path, data, headers={'X-CSRF-Token': token}, expected=expected)[0]
+    def management(path, data=None, expected=200, *, method=None, client=None, base=None):
+        token = request('/api/csrf', client=client, base=base)[0]['csrf_token']
+        return request(path, data, method=method, headers={'X-CSRF-Token': token}, expected=expected,
+                       client=client, base=base)[0]
 
     def data_hashes():
         return {'state': inventory(state), 'notes': inventory(notes), 'env': inventory(installed / '.env')}
@@ -290,6 +293,176 @@ def main():
         assert data_hashes() == rollback_data
         passed('Startup failure restores exact prior Git revision, venv and data; failed-data/venv and manifest retained')
         passed('Recovered service survives another restart, device reads and authenticated management writes')
+
+        # Continue from the same installation/data. Only the local fixture remote
+        # is reset; SOURCE and the published candidate never receive test commits.
+        git('reset', '--hard', target, cwd=injector)
+        git('push', '--force', 'origin', 'rehearsal', cwd=injector)
+        management('/api/v1/devices/fixture', {'name': 'Managed migration desk'}, method='PATCH')
+        command = management('/api/v1/devices/fixture/commands', {'action': 'sync'}, expected=202)['command']
+        request('/api/v1/device/status', dict(id='fixture', device_type='browser',
+                capabilities={'display': True, 'audio': False}, acknowledged_commands=[command['id']]),
+                headers={'Authorization': 'Bearer ' + FAKE_TOKEN})
+        group = management('/api/v1/groups/initialize', {})
+        group = management('/api/v1/groups/' + group['id'], {'content': {'manual_note_ids': [1]}}, method='PATCH')
+        original_auth = json.loads((state / 'auth.json').read_text())
+        migration_data = data_hashes()
+        run('systemctl', 'stop', 'webclock')
+        backup('create', root / 'before-managed-enable', '--stopped')
+        backup('verify', root / 'before-managed-enable')
+        # Exercise the real interactive CLI using a private stdin pipe. The
+        # synthetic password is never in argv/environment or command output.
+        run(installed / 'venv/bin/python3', installed / 'scripts/manage_auth.py', '--state-dir', state,
+            'setup', '--username', 'owner', '--enable-managed', user=user,
+            input=FAKE_PASSWORD + '\n' + FAKE_PASSWORD + '\n')
+        managed_auth = json.loads((state / 'auth.json').read_text())
+        assert managed_auth['mode'] == 'managed' and (state / 'auth-required').exists()
+        for key in ('owner_id', 'invite_secret'):
+            assert managed_auth[key] == original_auth[key]
+        for name, digest in migration_data['state'].items():
+            if name != 'auth.json':
+                assert inventory(state)[name] == digest
+        assert inventory(notes) == migration_data['notes']
+        assert json.loads((state / 'device-access.json').read_text())['devices'] == {}
+
+        certificate, private_key = root / 'localhost.crt', root / 'localhost.key'
+        run('openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+            '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
+            '-keyout', private_key, '-out', certificate, user=user)
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            tls_port = listener.getsockname()[1]
+        tls_url = 'https://127.0.0.1:' + str(tls_port)
+        tls_runner = root / 'serve-test-https.py'
+        # One application process serves both actual TLS enrollment and the
+        # unchanged HTTP loopback health endpoint expected by the updater.
+        tls_runner.write_text('import os, sys\nfrom pathlib import Path\nfrom threading import Thread\n'
+            'assert sys.argv[1] == "app.py"\nsys.path.insert(0, str(Path.cwd()))\nimport app\n'
+            'from werkzeug.serving import make_server\n'
+            'tls = make_server("127.0.0.1", ' + str(tls_port) + ', app.app, threaded=True, ssl_context=' +
+            repr((str(certificate), str(private_key))) + ')\n'
+            'Thread(target=tls.serve_forever, daemon=True).start()\n'
+            'make_server("127.0.0.1", int(os.environ["PORT"]), app.app, threaded=True).serve_forever()\n', encoding='utf-8')
+        os.chown(tls_runner, account.pw_uid, account.pw_gid)
+        UNIT.write_text(UNIT.read_text().replace(' -B app.py\n', ' -B ' + str(tls_runner) + ' app.py\n'))
+        run('systemctl', 'daemon-reload')
+        run('systemctl', 'start', 'webclock')
+
+        def managed_healthy():
+            healthy()  # Public managed status intentionally has no settings.
+            health = request('/api/health')[0]
+            assert health['deployment_mode'] == 'managed' and health['managed_devices_ready'] is True
+            assert request('/api/status')[0]['events'] == []
+
+        def browser():
+            jar = CookieJar()
+            return build_opener(ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context(cafile=str(certificate))),
+                                HTTPCookieProcessor(jar)), jar
+
+        def login(client):
+            return management('/login', {'username': 'owner', 'password': FAKE_PASSWORD}, client=client, base=tls_url)
+
+        def enroll(client, code):
+            attempt = management('/api/v2/device/join/prepare', {}, expected=201, client=client, base=tls_url)
+            return management('/api/v2/device/join', {'attempt_id': attempt['attempt_id'], 'code': code},
+                              expected=201, client=client, base=tls_url)['identity']
+
+        def denied(client, expected=401):
+            for endpoint in ('identity', 'display', 'browser-alarms'):
+                _, headers = request('/api/v2/device/' + endpoint, headers={'If-None-Match': '*'},
+                                     expected=expected, client=client, base=tls_url)
+                assert 'ETag' not in headers
+
+        managed_healthy()
+        anonymous, _ = browser()
+        request('/api/v1/devices', expected=401, client=anonymous, base=tls_url)
+        for endpoint in ('config', 'schedules', 'holidays'):
+            request('/api/v1/device/' + endpoint, expected=403, client=anonymous, base=tls_url,
+                    headers={'Authorization': 'Bearer ' + FAKE_TOKEN})
+        assert json.loads((state / 'devices.json').read_text())['fixture']['name'] == 'Managed migration desk'
+        admin, _ = browser()
+        login(admin)
+        invitation = management('/api/v1/groups/' + group['id'] + '/invite', {'capacity': 2}, expected=201, client=admin, base=tls_url)
+        assert len(invitation['code']) == 6
+        display, display_cookies = browser()
+        denied(display)
+        identity = enroll(display, invitation['code'])
+        assert identity['group_id'] == group['id'] and identity['device_id'] != 'fixture'
+        cookie = next(cookie for cookie in display_cookies if cookie.name == 'webclock_device')
+        assert cookie.secure and cookie.has_nonstandard_attr('HttpOnly')
+        payload, etag_headers = request('/api/v2/device/display', client=display, base=tls_url)
+        assert payload['schema_version'] == 3 and payload['identity'] == identity
+        assert payload['events'] == [{'text': 'Synthetic reminder', 'time': ''}]
+        request('/api/v2/device/display', client=display, base=tls_url,
+                headers={'If-None-Match': etag_headers['ETag']}, expected=304)
+        passed('Explicit CLI migration preserves owner, invite secret, legacy names/capabilities/ACK and source references; no legacy IDs gain authority')
+        passed('Real HTTPS six-character enrollment uses Secure/HttpOnly cookies; anonymous/shared-token private reads are denied')
+
+        # A genuine next local commit exercises managed Git/pip/systemd success.
+        with (injector / 'app.py').open('a') as stream:
+            stream.write('\n# Synthetic managed upgrade candidate\n')
+        git('add', 'app.py', cwd=injector)
+        git('-c', 'user.name=Rehearsal', '-c', 'user.email=rehearsal@example.invalid',
+            '-c', 'commit.gpgsign=false', 'commit', '-m', 'Fixture only: next managed release', cwd=injector)
+        git('push', 'origin', 'rehearsal', cwd=injector)
+        managed_head = git('rev-parse', 'HEAD', cwd=injector)
+        managed_before = data_hashes()
+        assert update().returncode == 0
+        assert git('rev-parse', 'HEAD') == managed_head and data_hashes() == managed_before
+        managed_healthy()
+        assert request('/api/v2/device/identity', client=display, base=tls_url)[0]['identity'] == identity
+        passed('Managed update succeeds through public health only and preserves every authorization/data byte')
+
+        # Revoke a second real enrollment during failed startup. Protected
+        # rollback must retain that latest revocation, not restore an old grant.
+        doomed, _ = browser()
+        doomed_identity = enroll(doomed, invitation['code'])
+        managed_venv = inventory(installed / 'venv')
+        (injector / 'app.py').write_text('from pathlib import Path\nimport os\n'
+            'from webclock import app as clock\n'
+            'with clock.app.test_request_context("/"):\n'
+            '    clock.group_service().revoke(clock.auth_service().owner_id(), ' + repr(doomed_identity['device_id']) + ')\n'
+            'Path("venv/rehearsal-managed-fault").write_text("failed managed environment")\n'
+            'raise SystemExit(17)\n', encoding='utf-8')
+        git('add', 'app.py', cwd=injector)
+        git('-c', 'user.name=Rehearsal', '-c', 'user.email=rehearsal@example.invalid',
+            '-c', 'commit.gpgsign=false', 'commit', '-m', 'Fixture only: fail after managed revocation', cwd=injector)
+        git('push', 'origin', 'rehearsal', cwd=injector)
+        result = update()
+        assert result.returncode != 0 and 'Previous service and data restored.' in result.stdout
+        assert git('rev-parse', 'HEAD') == managed_head and inventory(installed / 'venv') == managed_venv
+        managed_healthy()
+        denied(doomed)
+        assert request('/api/v2/device/identity', client=display, base=tls_url)[0]['identity'] == identity
+        passed('Failed managed startup restores prior Git/venv while retaining a revocation committed before failure')
+
+        managed_backup, managed_rollback = root / 'managed-backup', root / 'managed-before-restore'
+        run('systemctl', 'stop', 'webclock')
+        backup('create', managed_backup, '--stopped')
+        backup('verify', managed_backup)
+        run('systemctl', 'start', 'webclock')
+        managed_healthy()
+        management('/api/v1/devices/' + identity['device_id'], method='DELETE', client=admin, base=tls_url)
+        denied(display)
+        run('systemctl', 'stop', 'webclock')
+        backup('restore', managed_backup, '--stopped', '--yes', '--rollback-dir', managed_rollback)
+        backup('verify', managed_rollback)
+        run('systemctl', 'start', 'webclock')
+        managed_healthy()
+        denied(display)
+        request('/api/v1/groups', expected=401, client=admin, base=tls_url)
+        restored = json.loads((state / 'device-access.json').read_text())
+        member = restored['devices'][identity['device_id']]
+        assert member['credential_digest'] is None and member['rejoin_required'] is True
+        assert member['status'] == 'revoked' and restored['invites'] == {} and restored['attempts'] == {}
+        assert json.loads((state / 'auth.json').read_text())['owner_id'] == original_auth['owner_id']
+        login(admin)
+        invitation = management('/api/v1/groups/' + group['id'] + '/invite', {'capacity': 1}, expected=201, client=admin, base=tls_url)
+        replacement, _ = browser()
+        replacement_identity = enroll(replacement, invitation['code'])
+        assert replacement_identity['device_id'] != identity['device_id']
+        assert request('/api/v2/device/display', client=replacement, base=tls_url)[0]['events'] == payload['events']
+        passed('Managed backup → revoke → restore never revives old device/admin cookies; a new code and new identity are required')
         print('Final service: ' + run('systemctl', 'is-active', 'webclock').stdout.strip(), flush=True)
         summary = os.environ.get('GITHUB_STEP_SUMMARY')
         if summary:

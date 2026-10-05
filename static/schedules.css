@@ -205,3 +205,11 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 
 .group-calendar-field { grid-column: 1 / -1; }
 .group-calendar-field > .group-content-options { max-height: 480px; }
+
+.device-authorization-editor { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--line); }
+.device-group-editor { flex: 1 1 240px; display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.device-group-editor label { flex: 1 1 180px; min-width: 0; }
+.device-authorization-editor > .help, .device-authorization-editor > [role="status"] { flex-basis: 100%; margin: 0; }
+@media (max-width: 680px) {
+    .device-group-editor { flex-basis: 100%; }
+}

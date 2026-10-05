@@ -67,6 +67,199 @@ class DeviceManagementTest(unittest.TestCase):
     def remove(self, device):
         return self.call('/api/v1/devices/' + device['identity']['device_id'], 'DELETE', headers=self.headers)
 
+    def update_authorization(self, device, data):
+        return self.call('/api/v1/devices/' + device['identity']['device_id'] + '/authorization',
+                         'PATCH', json=data, headers=self.headers)
+
+    def test_move_and_pause_preserve_credential_reports_ack_and_invitation_seats(self):
+        device = self.device('Original group')
+        device_id = device['identity']['device_id']
+        service = self.service()
+        attempt = service.prepare(self.owner, 'same-group-peer')
+        peer_id = service.join(self.owner, attempt['token'], attempt['attempt_id'],
+                               device['invite']['code'], 'same-group-peer')['identity']['device_id']
+        target = service.create_group(self.owner, {'name': 'Destination'})
+        self.devices.rename(device_id, {'name': 'Preserved admin name'})
+        command = self.devices.command(device_id, 'sync')
+        self.devices.report({'id': device_id, 'firmware': 'existing-build', 'config_revision': 'old-config',
+                             'capabilities': {'audio': False, 'display': True},
+                             'acknowledged_commands': [command['id']]})
+        self.devices.command(device_id, 'sync')
+        before, observed = service._load(), self.devices.path.read_bytes()
+        response = self.update_authorization(device, {'group_id': target['id'], 'enabled': False})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        self.assertEqual(response.json['device'], dict(id=device_id, group_id=target['id'], group_name='Destination',
+            group_enabled=True, enabled=False, authorization_status='disabled', assignment_revision=2, rejoin_required=False))
+        after = service._load()
+        self.assertEqual(after['devices'][device_id], dict(before['devices'][device_id], group_id=target['id'],
+                                                         enabled=False, status='disabled', assignment_revision=2))
+        self.assertEqual(after['devices'][peer_id], before['devices'][peer_id])
+        for field in ('groups', 'invites', 'attempts'):
+            self.assertEqual(after[field], before[field])
+        self.assertEqual(self.devices.path.read_bytes(), observed)
+        self.assertEqual(service.authenticate(attempt['token'], self.owner)['group_id'], device['identity']['group_id'])
+        row = self.rows()[device_id]
+        self.assertEqual(row['name'], 'Preserved admin name')
+        self.assertEqual(row['group_name'], 'Destination')
+        self.assertEqual(row['capabilities'], {'audio': False, 'display': True})
+        self.assertEqual(row['authorization_status'], 'disabled')
+        self.assertNotIn('credential_digest', response.text)
+        with patch('webclock.services.device_access_service.save_json') as write:
+            self.assertEqual(self.update_authorization(device, {'group_id': target['id'], 'enabled': False}).status_code, 200)
+            write.assert_not_called()
+        resumed = self.update_authorization(device, {'enabled': True})
+        self.assertEqual(resumed.json['device']['assignment_revision'], 3)
+        identity = self.device_call(device, 'identity')
+        self.assertEqual(identity.status_code, 200)
+        self.assertEqual(identity.json['group'], {'id': target['id'], 'name': 'Destination'})
+        self.assertEqual(identity.json['identity']['credential_generation'], before['devices'][device_id]['credential_generation'])
+        self.assertEqual(self.devices.path.read_bytes(), observed)
+
+    def test_authorization_changes_require_owner_session_csrf_and_valid_active_destination(self):
+        own, foreign = self.device('Own'), self.device('Foreign', owner='other')
+        self.devices.register({'id': 'legacy', 'name': 'Legacy'})
+        disabled = self.service().create_group(self.owner, {'name': 'Disabled group', 'enabled': False})
+        url = '/api/v1/devices/' + own['identity']['device_id'] + '/authorization'
+        before = self.service().path.read_bytes(), self.devices.path.read_bytes()
+        anonymous = clock.app.test_client()
+        self.assertEqual(anonymous.patch(url, base_url='https://localhost', json={'enabled': False}).status_code, 401)
+        for headers in ({}, {'X-CSRF-Token': self.csrf, 'Origin': 'https://foreign.invalid'}):
+            self.assertEqual(self.call(url, 'PATCH', json={'enabled': False}, headers=headers).status_code, 403)
+        for body in ({}, [], {'enabled': 1}, {'enabled': None}, {'group_id': []}, {'group_id': ''}, {'group_id': 'x' * 129},
+                     {'group_id': 1}, {'name': 'Wrong endpoint'}, {'enabled': True, 'unknown': True}):
+            self.assertEqual(self.update_authorization(own, body).status_code, 400, body)
+        for group_id in (foreign['identity']['group_id'], 'missing'):
+            response = self.update_authorization(own, {'enabled': False, 'group_id': group_id})
+            self.assertEqual(response.status_code, 404)
+        response = self.update_authorization(own, {'group_id': disabled['id'], 'enabled': False})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json['code'], 'group_disabled')
+        for device_id in (foreign['identity']['device_id'], 'legacy', 'missing'):
+            response = self.call('/api/v1/devices/' + device_id + '/authorization', 'PATCH',
+                                 json={'enabled': False}, headers=self.headers)
+            self.assertEqual(response.status_code, 404)
+        with patch.object(AuthService, 'mode', return_value='self'):
+            response = self.call('/api/v1/devices/legacy/authorization', 'PATCH',
+                                 json={'enabled': False}, headers=self.headers)
+            self.assertEqual(response.status_code, 404)
+        self.assertEqual((self.service().path.read_bytes(), self.devices.path.read_bytes()), before)
+
+    def test_disabled_group_does_not_prevent_pausing_or_moving_its_own_device(self):
+        device = self.device()
+        service = self.service()
+        current_id = device['identity']['group_id']
+        target = service.create_group(self.owner, {'name': 'Enabled destination'})
+        service.update_group(self.owner, current_id, {'enabled': False})
+        response = self.update_authorization(device, {'group_id': current_id, 'enabled': False})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json['device']['group_enabled'])
+        self.assertEqual(response.json['device']['authorization_status'], 'disabled')
+        self.assertEqual(self.update_authorization(device, {'enabled': True}).status_code, 200)
+        self.assertEqual(self.device_call(device, 'identity').status_code, 403)
+        self.assertEqual(self.update_authorization(device, {'group_id': target['id']}).status_code, 200)
+        self.assertEqual(self.device_call(device, 'identity').status_code, 200)
+
+    def test_authorization_write_failure_is_atomic_and_safe_to_retry(self):
+        device = self.device()
+        group = self.service().create_group(self.owner, {'name': 'Target'})
+        before = self.service().path.read_bytes(), self.devices.path.read_bytes()
+        with patch('webclock.services.device_access_service.save_json', side_effect=OSError('PRIVATE path')):
+            with self.assertLogs(clock.app.logger, level='ERROR'):
+                response = self.update_authorization(device, {'group_id': group['id'], 'enabled': False})
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn('PRIVATE', response.text)
+        self.assertEqual((self.service().path.read_bytes(), self.devices.path.read_bytes()), before)
+        self.assertEqual(self.device_call(device).status_code, 200)
+        self.assertEqual(self.update_authorization(device, {'group_id': group['id']}).status_code, 200)
+        self.assertEqual(self.device_call(device, 'identity').json['identity']['assignment_revision'], 2)
+
+    def test_restored_or_revoked_identity_cannot_be_resumed_or_moved(self):
+        device = self.device()
+        device_id = device['identity']['device_id']
+        service = self.service()
+        target = service.create_group(self.owner, {'name': 'Target'})
+        original = service._load()
+        for changes in ({'status': 'revoked'}, {'status': 'disabled', 'rejoin_required': True},
+                        {'status': 'disabled', 'credential_digest': None},
+                        {'status': 'revoked', 'rejoin_required': True, 'credential_digest': None,
+                         'credential_generation': 2}):
+            with self.subTest(changes=changes):
+                state = deepcopy(original)
+                state['devices'][device_id].update(enabled=False, **changes)
+                state['attempts'] = {}
+                save_json(service.path, state)
+                before = service.path.read_bytes(), self.devices.path.read_bytes()
+                for body in ({'enabled': True}, {'enabled': False}, {'group_id': target['id']}):
+                    response = self.update_authorization(device, body)
+                    self.assertEqual(response.status_code, 409)
+                    self.assertEqual(response.json['code'], 'device_rejoin_required')
+                self.assertEqual((service.path.read_bytes(), self.devices.path.read_bytes()), before)
+                self.assertIn(self.device_call(device, 'identity').status_code, (401, 403))
+                row = self.rows()[device_id]
+                self.assertEqual(row['authorization_status'], changes['status'])
+                self.assertTrue(row['rejoin_required'])
+
+    def test_move_and_resume_same_cookie_change_scope_and_invalidate_previous_etags(self):
+        device = self.device('A')
+        service = self.service()
+        save_json(self.root / 'manual_notes.json', [{'id': 1, 'text': 'Only A', 'due_date': ''},
+                                                    {'id': 2, 'text': 'Only B', 'due_date': ''}])
+        service.update_group(self.owner, device['identity']['group_id'], {'content': {'manual_note_ids': [1]}})
+        target = service.create_group(self.owner, {'name': 'B', 'content': {'manual_note_ids': [2]}})
+        before = self.device_call(device)
+        self.assertEqual([row['text'] for row in before.json['events']], ['Only A'])
+        old_etag = before.headers['ETag']
+        self.assertEqual(self.update_authorization(device, {'group_id': target['id']}).status_code, 200)
+        moved = self.device_call(device, headers={'If-None-Match': old_etag})
+        self.assertEqual(moved.status_code, 200)
+        self.assertNotEqual(moved.headers['ETag'], old_etag)
+        self.assertEqual([row['text'] for row in moved.json['events']], ['Only B'])
+        old_etag = moved.headers['ETag']
+        self.assertEqual(self.update_authorization(device, {'enabled': False}).status_code, 200)
+        for path in ('display', 'browser-alarms', 'identity'):
+            response = self.device_call(device, path, headers={'If-None-Match': old_etag})
+            self.assertEqual(response.status_code, 403)
+            self.assertNotIn('ETag', response.headers)
+            self.assertNotIn('events', response.json)
+        self.assertEqual(self.update_authorization(device, {'enabled': True}).status_code, 200)
+        resumed = self.device_call(device, headers={'If-None-Match': old_etag})
+        self.assertEqual(resumed.status_code, 200)
+        self.assertNotEqual(resumed.headers['ETag'], old_etag)
+        self.assertEqual([row['text'] for row in resumed.json['events']], ['Only B'])
+        self.assertEqual(self.device_call(device, 'identity').json['status'], 'active')
+
+    def test_inflight_responses_after_move_or_pause_cannot_return_old_scope_or_304(self):
+        device = self.device('Original')
+        target = self.service().create_group(self.owner, {'name': 'Destination'})
+        respond = clock.managed_response
+        for path, changes in (('display', {'group_id': target['id']}), ('browser-alarms', {'enabled': False})):
+            old_etag = self.device_call(device, path).headers['ETag']
+            def change_during_response(*args, **kwargs):
+                self.service().update_device(self.owner, device['identity']['device_id'], changes)
+                return respond(*args, **kwargs)
+            with patch.object(clock, 'managed_response', side_effect=change_during_response):
+                response = self.device_call(device, path, headers={'If-None-Match': old_etag})
+            self.assertEqual(response.status_code, 403)
+            self.assertNotIn('ETag', response.headers)
+            self.assertNotIn('events', response.json)
+            self.assertNotIn('schedules', response.json)
+        self.service().update_device(self.owner, device['identity']['device_id'], {'enabled': True})
+        observed = self.devices.path.read_bytes()
+        original = DeviceAccessService.authenticate
+        calls = []
+        def pause_after_guard(service, token, owner):
+            identity = original(service, token, owner)
+            calls.append(identity)
+            if len(calls) == 1:
+                service.update_device(owner, identity['device_id'], {'enabled': False})
+            return identity
+        with patch.object(DeviceAccessService, 'authenticate', new=pause_after_guard):
+            response = self.device_call(device, 'status', 'POST', json={'firmware': 'late-report'},
+                                        headers={'Authorization': 'Bearer ' + device['attempt']['token']})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.devices.path.read_bytes(), observed)
+
     def test_lists_only_owner_authority_and_marks_unreported_without_fabricated_heartbeat(self):
         reported = self.device('Reported')
         missing = self.device('Unreported', observed=False)

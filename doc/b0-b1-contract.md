@@ -1,19 +1,21 @@
-# B0–B1：管理身份、群組與邀請契約
+# B0–B4：管理身份、群組與裝置契約
 
-2026-10-05。B0–B3 已提供管理登入、入口隔離、復原相容、群組與邀請、原子加入、受管顯示與輸碼/群組管理畫面。`/api/health` 的 `managed_devices_ready` 為 `true`，顯示契約為 schema 3。逐台撤銷與退出後移除管理記錄已於 2026-10-06 補齊；B4 的移組/停用與正式安裝切換仍待交辦；既有安裝維持 self，managed 仍只供明確啟用的隔離測試。
+2026-10-06。B0–B4 已提供管理登入、入口隔離、復原相容、群組與邀請、原子加入、受管顯示與群組管理畫面，以及個別裝置的移組、停用／恢復、撤銷與自行退出。`/api/health` 的 `managed_devices_ready` 為 `true`，顯示契約為 schema 3。既有安裝維持 self；主機明確執行 `--enable-managed` 才切換為 managed。模式切換能力與各安裝的部署、Linux 演練及實機驗收是分開的證據。
 
 ## 部署與管理者
 
 - 沒有授權檔的舊安裝保持 `self` 自用模式；讀取不自動寫檔，也不把舊裝置 ID 升格為身份。自用模式保留原本可信區網共用管理/顯示規則，CSRF 仍適用。
-- 明確的主機操作才可初始化 `managed`；目前只允許隔離測試，必須指定 `--enable-managed-test`。正式安裝須等 B4 遷移驗收。
+- 明確的主機操作才可初始化 `managed`，必須指定 `--enable-managed`；舊 `--enable-managed-test` 保留為相容別名。更新程式或一般讀取不會自動切換模式。
 - 明確初始化後，每個安裝的 owner 為穩定 UUID。尚未寫入授權檔的純讀取暫回 `local-owner`；首次群組變更會保存 UUID，之後初始化管理員沿用同一 owner。群組、邀請及裝置各有不同 ID，不能用名稱、IP、加入碼或自報 ID 接管。
 - 主機先停止 WebClock，以服務帳號對正確 state 目錄操作，再重新啟動。密碼使用互動式提示，不放命令列、環境變數或日誌。
 
 ```sh
-./venv/bin/python scripts/manage_auth.py --state-dir /path/to/isolated-state setup --username admin --enable-managed-test
-./venv/bin/python scripts/manage_auth.py --state-dir /path/to/isolated-state reset-password
-./venv/bin/python scripts/manage_auth.py --state-dir /path/to/isolated-state status
+./venv/bin/python scripts/manage_auth.py --state-dir /path/to/state setup --username admin --enable-managed
+./venv/bin/python scripts/manage_auth.py --state-dir /path/to/state reset-password
+./venv/bin/python scripts/manage_auth.py --state-dir /path/to/state status
 ```
+
+切換前先備份並停止服務，以上路徑必須是該安裝的有效 state 目錄。沿用已初始化的 owner／邀請秘密與群組、內容、名稱、能力及 ACK 觀察；不把舊自報 ID 升格為認證。重新啟動後管理入口要登入，舊共享 token 的私人讀取關閉，既有時鐘須各自用群組六碼加入。`/` 與公開校時仍可用；部署時須提供 HTTPS。
 
 密碼長度 12–1024 字元，以 scrypt 雜湊保存。登入 session 為隨機 256-bit token；伺服器只保存 SHA-256 摘要，8 小時到期，每次請求重新核對。最多 100 筆 session；登出撤銷目前 session，主機重設密碼使全部 session 失效並輪換簽章秘密，不撤銷獨立裝置或輪換邀請秘密。初始化/重設後必須重啟，使新的 cookie 簽章秘密生效。
 
@@ -71,15 +73,15 @@
 
 使用安全亂數，字母不分大小寫，排除 I/L/O/0/1；期限固定 600 秒，名額預設 5、允許 1–100，總裝置 100。每群同時一組；重產換邀請 ID/碼，但群組與成員不變。invite map 以 group ID 尋址；記錄獨立 `id`、`group_id`、`owner_id`、`code_digest`、`created_at`、`expires_at`、`capacity`、`used`、`closed`。摘要為獨立伺服器秘密的 HMAC-SHA256。
 
-metadata 回 `remaining` 與 `status` (`active|closed|disabled|expired|full`)。明文只在成功產碼 response 出現一次；列表、群組、state 檔、一般管理匯出不含明文。輸碼只能在未來 POST body，不放 URL/query/Referer/console/access log。
+metadata 回 `remaining` 與 `status` (`active|closed|disabled|expired|full`)。明文只在成功產碼 response 出現一次；列表、群組、state 檔、一般管理匯出不含明文。輸碼只放 POST body，不放 URL/query/Referer/console/access log。
 
 `check_invite` 保留服務內部唯讀查驗。B2 正式加入在同一 storage lock/原子提交內重新驗證並扣額。所有新加入驗碼採每來源每 60 秒 10 次、全站每 60 秒 100 次；prepare 使用獨立同額度限速。回 429 `rate_limited` 加 `Retry-After` 秒。無效、過期、關閉、停用、額滿皆一般 `invalid_invitation`，不洩漏群組/owner。pending 最多 200、10 分鐘到期；每台保留一個完成嘗試（最多 100）以支援成功回應遺失後重送。
 
-## B2–B3 裝置契約
+## B2–B4 裝置契約
 
 端點 namespace `/api/v2/device/*`、顯示 schema 3：`join/prepare` 建立 10 分鐘 attempt 與未啟用 HttpOnly cookie；往返確認後 `join` 在單檔交易啟用原憑證、生成 Server ID、綁組並扣額。成功回應遺失後，原 attempt/cookie 重送回同一有效身份，不再次扣額；撤銷不得重送復活。`display`/`browser-alarms`/`status` 使用獨立裝置憑證，不接受 body id/group_id 代替身份。
 
-device record 固定：`id`、`owner_id`、`group_id`、`enabled`、`status` (`active|disabled|revoked`)、`credential_digest`（字串或 null）、`credential_generation`、`created_at`、`assignment_revision`、`rejoin_required`。憑證至少 256-bit，伺服器只存摘要。快照帶 identity/assignment 與三類內容 revision、授權期限；私人內容租約為 300 秒。先驗權限再處理 ETag/304，304 續期明確回租約；失權停止伺服器私人資料與待響鬧鐘，保留本機提醒和有效非私密設定。裝置可自行退出，管理員可刪除個別裝置授權；移組與停用/恢復仍留 B4。
+device record 固定：`id`、`owner_id`、`group_id`、`enabled`、`status` (`active|disabled|revoked`)、`credential_digest`（字串或 null）、`credential_generation`、`created_at`、`assignment_revision`、`rejoin_required`。憑證至少 256-bit，伺服器只存摘要。快照帶 identity/assignment 與三類內容 revision、授權期限；私人內容租約為 300 秒。先驗權限再處理 ETag/304，304 續期明確回租約；失權停止伺服器私人資料與待響鬧鐘，保留本機提醒和有效非私密設定。裝置可自行退出；管理員可移組、停用／恢復或刪除個別裝置授權。
 
 已實作的 wire 格式：
 
@@ -99,7 +101,13 @@ device record 固定：`id`、`owner_id`、`group_id`、`enabled`、`status` (`a
 
 管理 DELETE 只處理目前 owner 的獨立授權，成功回 200 `{status: "revoked"}`；不存在、其他 owner 或只有 legacy 共用 token 的裝置回 404，不能逐台撤銷共用 token。managed 的 `GET /api/v1/devices` 以 owner 目前授權為主，尚未回報也列出，`can_revoke: true`；`reported: false` 時改名與同步停用。self 仍列舊觀察記錄，其 `can_revoke: false`；既存未標來源的觀察無法判定是否為歷史退出殘留，因此保留、不猜測刪除。
 
-移除時在同一 lock 內先保存觀察記錄、再保存授權/嘗試。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若後一檔寫入失敗，原授權仍有效，但觀察記錄可能須由下次 status 重建。此流程不保證跨檔原子回復。移組、停用/恢復與正式部署遷移仍待 B4。
+移除時在同一 lock 內先保存觀察記錄、再保存授權/嘗試。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若後一檔寫入失敗，原授權仍有效，但觀察記錄可能須由下次 status 重建。此流程不保證跨檔原子回復。
+
+`PATCH /api/v1/devices/<id>/authorization` 在 managed 要求管理 session，兩種模式的寫入都要求同源 CSRF。接受非空 `{enabled?: boolean, group_id?: string}`，與改名 API 分開。移入的不同群組必須屬於同一 owner 且已啟用；原群組已停用仍可操作該裝置或移出，恢復裝置不會啟用群組。只有實際變更才在 `device-access.json` 同一 lock／原子寫入內增加一次 `assignment_revision`，停用／恢復分別設 `status: disabled|active`。保持原 credential 與 generation、觀察、名稱、能力、ACK、其他裝置及邀請已用額度不變；相同請求重送不寫檔。
+
+成功回 200 `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}}`，GET 裝置列表同附這些欄位，不覆寫裝置 `name`。公開 `rejoin_required` 是有效判斷：持久旗標、已撤銷或 credential 已清除任一成立即為 true，不回 credential 或摘要。這些歷史記錄一律 409 `device_rejoin_required`，不能恢復或移組；需重新輸入新邀請。不存在、跨 owner 或 legacy 觀察回 404 `not_found`，移入停用群組回 409 `group_disabled`，非法 payload 回 400，保存失敗回 500 且授權檔原樣保留。
+
+停用立即阻擋私人 API；恢復後同 cookie 可重新確認 active 身份。移組後只下發新群組範圍，更新身份／內容 revisions；舊 ETag 與讀取途中移組／停用都不得回舊資料或 304。離線端仍依既有最長 300 秒 lease 失效，不宣稱能即時清除離線畫面。
 
 304 只可在當前憑證與指派仍有效時回傳，附 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`（Unix 毫秒）及 `X-WebClock-Identity-Revision`。缺少續租欄位的 304 不延長租約。v2 私人資料禁止 CORS `*`，使用 private/no-cache 且不進 SW。Bearer 與管理 session 永遠不互換；首版 browser 加入只支援同源自架頁。
 

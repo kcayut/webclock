@@ -206,6 +206,13 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             check_device(device_id)
             return jsonify(device=devices().rename(device_id, request.get_json()))
 
+    @api.route('/api/v1/devices/<device_id>/authorization', methods=['PATCH'])
+    def device_authorization(device_id):
+        if device_access is None:
+            abort(503, description='Device authorization is unavailable')
+        access = device_access()
+        return jsonify(device=access.update_device(owner_id(), device_id, request.get_json()))
+
     @api.route('/api/v1/devices/<device_id>/commands', methods=['POST'])
     def device_command(device_id):
         data = request.get_json()

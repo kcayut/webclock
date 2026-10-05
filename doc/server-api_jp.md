@@ -1,8 +1,8 @@
 # WebClock Server：集中管理と端末 API
 
-## B0–B3 管理・グループ・受管端末（2026-10-05）
+## B0–B4 管理・グループ・受管端末（2026-10-06）
 
-管理者 session、owner ごとのグループ、招待、原子的な参加処理、認証に基づく表示・アラーム配信、グループ管理画面を実装しました。既存環境は `self` を維持し、`managed` は明示的な隔離テストのみです。端末の退出と管理者による個別アクセスの取り消しに対応しています。本番モード移行と個別端末の移動・無効化は B4 の対象です。操作は[ガイド](guide_jp.md)、保存と更新・復元の境界は [B0–B1 契約](b0-b1-contract.md)を参照してください。
+管理者session、owner別グループ、招待、原子的な参加、認証に基づく表示・アラーム、グループ管理に対応します。既存環境は `self` を維持し、`managed` はホスト側で明示的に有効化します。端末の退出と、管理者による個別移動・無効化／再開・取り消しが可能です。操作は[ガイド](guide_jp.md)、保存と更新・復元は [B0–B1 契約](b0-b1-contract.md)を参照してください。
 
 公開 `GET /api/time` は時刻のみを返します。managed の `/api/status` は時刻と空の予定、旧 `/api/v1/device/*` は 403、`/api/v1/browser-alarms` は 401 を返します。管理 session は端末認証を代替しません。非公開情報を含まない `/api/health` の `managed_device_schema: 3` と `managed_devices_ready: true` は endpoint の実装を示し、本番移行や実機検収の完了ではありません。以下の旧 schema 2 API は self が前提です。旧 ESP codec が自動的に schema 3 に対応するわけではありません。
 
@@ -40,7 +40,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 
 ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed は HTTPS と Secure Cookie を要求します。prepare・join・leave は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
 
-退出と管理者による個別アクセスの取り消しは、対象端末の認可、完了済み参加試行、`devices.json` の観測記録を削除します。管理一覧からも消え、全体の上限 100 台の枠を解放します。旧認証情報と旧参加試行の再送は永久に無効となり、API は直ちに拒否します。オフライン端末には既存の最大 300 秒のリースが適用されます。他のメンバー、グループ、ローカルのリマインダーは保持し、元の招待の使用済み枠は戻しません。無効化されたグループからも退出できます。成功後は再度 prepare し、新しい招待で新しい端末 ID として参加できます。保存失敗は 500（端末の退出は `storage_failure`）を返し、Cookie を削除せず、成功とも報告しません。観測記録の削除後に認可の保存が失敗した場合、元の認可は有効なままで、観測記録は次回の status で再作成されます。複数ファイルの原子的なロールバックは保証しません。移動・無効化／復帰・本番移行は B4 の対象です。
+退出と管理者による個別アクセスの取り消しは、対象端末の認可、完了済み参加試行、`devices.json` の観測記録を削除します。管理一覧からも消え、全体の上限 100 台の枠を解放します。旧認証情報と旧参加試行の再送は永久に無効となり、API は直ちに拒否します。オフライン端末には既存の最大 300 秒のリースが適用されます。他のメンバー、グループ、ローカルのリマインダーは保持し、元の招待の使用済み枠は戻しません。無効化されたグループからも退出できます。成功後は再度 prepare し、新しい招待で新しい端末 ID として参加できます。保存失敗は 500（端末の退出は `storage_failure`）を返し、Cookie を削除せず、成功とも報告しません。観測記録の削除後に認可の保存が失敗した場合、元の認可は有効なままで、観測記録は次回の status で再作成されます。複数ファイルの原子的なロールバックは保証しません。無効化と移動は認証情報・観察記録を維持します。取り消し後は直接再開できません。
 
 display・alarms は `schema_version: 3`、`identity`、config・schedule・holiday revision、ミリ秒 `server_timestamp`、最大 300 秒の `lease` を返します。identity は owner・device・group ID、認証世代、割り当て revision、`identity_revision` を含みます。304 を含む応答の直前に現在の認証と内容範囲を再確認し、I/O 中の範囲変更は古い内容ではなく 409 `display_scope_changed` を返します。ETag 応答は `private, no-cache` と `Vary: Cookie, Authorization` を使い、304 は `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` で期限を更新します。参加・identity 応答は `no-store` です。
 
@@ -156,11 +156,18 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 | `/api/v1/holidays?date=2026-09-30` | GET 日付分類。省略時は台湾の今日 |
 | `/api/v1/devices` | GET 登録端末と未確認指令 |
 | `/api/v1/devices/<id>` | PATCH `{"name":"リビングの時計"}`、200 と `device` を返す。DELETE は現在の owner の独立した端末認可を取り消し、200 `{status: "revoked"}` を返す |
+| `/api/v1/devices/<id>/authorization` | PATCH `{"group_id":"移動先グループID","enabled":false}`。片方の項目だけでも可。移動または無効化／再開し、200 と安全な `device` 認可情報を返す |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`、202 を返す |
 
 managed の `GET /api/v1/devices` は現在の owner の認可済み端末を、未報告でも `can_revoke: true` として表示します。`reported: false` では管理画面の改名・同期操作を無効にします。self は旧観測一覧を維持し、legacy 端末は `can_revoke: false` です。既存の出所不明な観測記録は過去の退出による残存か判定できないため、推測で削除せず保持します。DELETE は存在しない端末、他の owner、共有 token のみの旧端末に 404 を返します。共有 token は端末ごとに失効できません。
 
-自用モードは信頼できる LAN の共通管理を維持し、帳密テストモードは管理 session を要求します。Origin/CSRF は認証ではありません。外部公開には HTTPS と適切なプロキシ設定が必要です。
+`PATCH /api/v1/devices/<id>/authorization` は、`enabled`（真偽値）と／または `group_id`（既存グループ ID）だけを持つ空でないオブジェクトを受け付けます。別の移動先は同じ owner に属し、有効である必要があります。現在のグループが無効でも端末の無効化・再開・移動は可能ですが、端末を再開してもグループは有効になりません。成功応答は `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}}` です。GET 端末一覧にも同じ項目を追加し、端末の `name` は維持します。`authorization_status` は `active|disabled|revoked`。`rejoin_required: true` は、取り消し済みまたは認証情報が消去された過去の記録も含みます。認証情報とその digest は返しません。
+
+認可ファイルを一度の原子的な書き込みで保存します。実際の変更で `assignment_revision` が一度増え、同じ値の再送では書き込みません。移動・無効化／再開は認証情報、端末名、能力、報告、同期 ACK を保持し、招待の使用数を変えません。無効化後の非公開 API は拒否され、再開後は元の cookie で再び本人確認できます。移動後は新しいグループ範囲と revision を返し、旧 ETag や読み込み途中の旧データ／304 を許可しません。オフラインの非公開内容には最長 300 秒の lease が適用されます。
+
+入力不正は 400。存在しない端末、他 owner、legacy 観測だけの端末、および存在しない／他 owner の移動先は 404 `not_found` です。無効なグループへの移動は 409 `group_disabled`。取り消し済み、再参加が必要、または認証情報が消去済みの記録は 409 `device_rejoin_required` で、過去の認証情報を復活させません。管理認証／CSRF エラーは 401／403、保存失敗は 500 で元の認可ファイルを保持し、破損した認可データは 503 `access_not_ready` です。改名は従来の PATCH `/api/v1/devices/<id>` に分け、複数ファイルの一括更新にはしません。
+
+自用モードは信頼できる LAN の共通管理を維持し、managed モードは管理 session を要求します。Origin/CSRF は認証ではありません。外部公開には HTTPS と適切なプロキシ設定が必要です。
 
 管理用 POST／PUT／PATCH／DELETE はすべて CSRF token と同じセッションの `webclock_csrf` cookie が必要です。設定、リマインダー、バックアップ読み込み、プレビュー、端末への同期要求も含みます。管理画面は自動で送信します。外部 client は GET `/api/csrf` の cookie を保持し、応答の `csrf_token` を `X-CSRF-Token` で送信してください。HTML フォームでは hidden の `csrf_token` を使います。managed では HTTPS の `/login` でログインし、成功後に更新された CSRF token を使います。Origin を省略しても token は必要です。CSRF token の不足・不一致は 403 `csrf_failed`、管理 session の不足・失効は API/JSON 要求の管理書き込み前に 401 `authentication_required` です。クロスオリジン情報は 403 で拒否し、managed の権限チェックでは `cross_origin_forbidden`、CSRF チェックでは `csrf_failed` を返します。[要求例](server-api.md#管理-api)を参照してください。
 
@@ -284,7 +291,7 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 
 ### 今後の拡張
 
-有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B2–B3 はブラウザー参加、端末別の認証情報、グループ表示を提供します。ESP の新契約への対応と、本番用の完全なモード切り替えは今後の対象です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
+有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B2–B4 はブラウザー参加、端末別の認証情報、グループ表示、個別の認可ライフサイクル操作を提供します。ホストで `--enable-managed` を指定して明示的に切り替えられ、旧 `--enable-managed-test` は互換エイリアスです。ESP の新契約への対応は今後の対象です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
 
 ## 旧データと保存
 

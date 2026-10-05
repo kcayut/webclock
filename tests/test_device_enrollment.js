@@ -108,6 +108,37 @@ denial.reply(old, denial.snapshot());
 assert.equal(denial.session.getState().identity, null);
 assert.ok(!denial.requests.some(request => request.url.includes('/api/status')));
 
+// Host-managed moves and temporary suspension keep the credential, while each
+// assignment revision partitions all private responses and cached snapshots.
+const moved = browser(); moved.activate();
+moved.session.fetchDisplay(() => true); moved.respond('/display', moved.snapshot());
+moved.session.fetchAlarms(() => true); moved.respond('/browser-alarms', moved.snapshot());
+moved.session.fetchAlarms(() => assert.fail('the former group cannot reappear'));
+const oldGroupAlarms = moved.pending('/browser-alarms');
+const movedIdentity = {...moved.identity, group_id: 'group-b', assignment_revision: 2, identity_revision: 'scope-b'};
+moved.session.fetchDisplay(() => assert.fail('new group content waits for identity confirmation'));
+moved.respond('/display', moved.snapshot({}, movedIdentity));
+assert.equal(moved.session.hasLease('display'), false); assert.equal(moved.session.hasLease('alarms'), false);
+moved.respond('/identity', {status: 'active', identity: movedIdentity, group: {id: 'group-b', name: 'New room'}});
+assert.equal(moved.session.getState().group.name, 'New room');
+moved.reply(oldGroupAlarms, moved.snapshot());
+assert.equal(moved.session.hasLease('alarms'), false);
+let restoredDisplays = 0;
+moved.session.fetchDisplay(() => { restoredDisplays++; return true; }); moved.respond('/display', moved.snapshot({}, movedIdentity));
+moved.session.fetchAlarms(() => true); moved.respond('/browser-alarms', moved.snapshot({}, movedIdentity));
+moved.session.fetchDisplay(() => assert.fail('disabled content is not accepted'));
+moved.respond('/display', {code: 'device_disabled'}, 403);
+assert.equal(moved.session.hasLease('display'), false); assert.equal(moved.session.hasLease('alarms'), false);
+assert.equal(moved.session.getState().shared, false, 'Temporary suspension never falls back to shared content');
+const resumedIdentity = {...movedIdentity, assignment_revision: 4, identity_revision: 'scope-restored'};
+moved.advance(15000);
+moved.session.fetchDisplay(() => { restoredDisplays++; return true; });
+moved.respond('/identity', {status: 'active', identity: resumedIdentity, group: {id: 'group-b', name: 'New room'}});
+moved.respond('/display', moved.snapshot({}, resumedIdentity));
+assert.equal(restoredDisplays, 2, 'A restored authorization resumes with the existing cookie on the identity poll');
+assert.equal(moved.session.getState().identity.credential_generation, 1);
+assert.ok(!moved.requests.some(request => /\/join(?:\/prepare)?$/.test(request.url)), 'Moving and resuming never create a join attempt');
+
 const renewal = browser(); renewal.activate();
 renewal.session.fetchAlarms(() => true); renewal.respond('/browser-alarms', renewal.snapshot(), 200, {ETag: '"alarm-a"'});
 renewal.advance(250000); renewal.session.fetchAlarms(() => true);
