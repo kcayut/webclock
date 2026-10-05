@@ -43,9 +43,9 @@
             word-wrap: break-word;
         }
         #alarm-prompt { font-size: 18px; color: #ffcaca; }
-        #alarm-help { font-size: 12px; line-height: 1.5; }
+        #alarm-help { font-size: 18px; line-height: 1.5; }
         #alarm-manage { color: #9cc7ff; }
-        #connection-panel #alarm-motion { width: auto; }
+        #connection-panel #alarm-motion { width: 24px; min-height: 24px; height: 24px; vertical-align: middle; }
         #list-container {
             display: none;
             width: 95%;
@@ -142,14 +142,14 @@
             position: fixed;
             right: 10px;
             bottom: 10px;
-            width: 28px;
-            height: 28px;
+            width: 44px;
+            height: 44px;
             border: 1px solid rgba(255, 255, 255, 0.28);
             border-radius: 50%;
             background: rgba(0, 0, 0, 0.45);
             color: rgba(255, 255, 255, 0.7);
-            font-size: 14px;
-            line-height: 26px;
+            font-size: 20px;
+            line-height: 42px;
             text-align: center;
             z-index: 130;
             opacity: 0.35;
@@ -165,20 +165,22 @@
         #connection-panel {
             position: fixed;
             right: 10px;
-            bottom: 46px;
-            width: 340px;
+            bottom: 64px;
+            width: 560px;
             max-width: calc(100vw - 20px);
             color: #ddd;
             background: rgba(12, 12, 12, 0.94);
             border: 1px solid #333;
             border-radius: 8px;
-            padding: 10px;
-            font-size: 13px;
-            line-height: 1.35;
+            padding: 20px;
+            font-size: 20px;
+            line-height: 1.5;
             z-index: 125;
             display: none;
-            max-height: calc(100vh - 65px);
+            max-height: calc(100vh - 80px);
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            word-wrap: break-word;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
         }
 
@@ -188,19 +190,19 @@
 
         #connection-panel label {
             display: block;
-            margin: 8px 0 4px;
+            margin: 16px 0 8px;
             color: #aaa;
         }
 
         #connection-panel input {
             width: 100%;
-            min-height: 34px;
+            min-height: 48px;
             border: 1px solid #444;
             border-radius: 5px;
             background: #111;
             color: #eee;
-            padding: 7px 8px;
-            font-size: 14px;
+            padding: 10px 12px;
+            font-size: 20px;
         }
 
         #connection-panel .time-input-control {
@@ -216,7 +218,8 @@
         }
 
         #connection-panel .time-input-period {
-            min-height: 34px;
+            min-height: 48px;
+            font-size: 20px;
             margin-left: 5px;
             border: 1px solid #444;
             border-radius: 5px;
@@ -225,13 +228,13 @@
         }
 
         #connection-panel button {
-            min-height: 34px;
+            min-height: 48px;
             border: 1px solid #555;
             border-radius: 5px;
             background: #1d1d1d;
             color: #eee;
-            padding: 7px 9px;
-            font-size: 13px;
+            padding: 10px 12px;
+            font-size: 20px;
             cursor: pointer;
         }
 
@@ -242,12 +245,16 @@
         }
 
         .connection-row {
+            display: -webkit-flex;
             display: flex;
+            -webkit-flex-wrap: wrap;
+            flex-wrap: wrap;
             gap: 8px;
-            margin-top: 8px;
+            margin-top: 12px;
         }
 
         .connection-row button {
+            -webkit-flex: 1;
             flex: 1;
         }
 
@@ -257,7 +264,7 @@
         }
 
         #local-events-list {
-            max-height: 110px;
+            max-height: 180px;
             overflow: auto;
             margin-top: 8px;
         }
@@ -276,8 +283,6 @@
         }
 
         .local-event-item button {
-            min-height: 26px;
-            padding: 3px 7px;
             color: #ffb4af;
         }
     </style>
