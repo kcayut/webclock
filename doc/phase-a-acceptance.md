@@ -1,6 +1,6 @@
 # A 批次：時鐘保底與裝置管理驗收
 
-驗收日期：2026-10-05（Asia/Taipei）。程式基線為 `c1c3e6d06b877a49a40f0512686ea61e0476256b` 加目前 A3–A5 工作樹及本次 A6 回歸測試。這是未提交工作樹的驗收，不能用舊提交的 CI 結果代替。B 批次的登入、六碼加入、群組與逐台授權尚未實作。
+驗收日期：2026-10-05（Asia/Taipei）。A3–A6 程式與回歸測試已於 `60b239878cd788b5774d42b2fc3f9f28674cc9d0` 提交並推送至 Gitea、GitHub，該提交的 Linux CI 亦已通過；兩個遠端已獨立讀回相同 SHA。本文件的後續更新僅補驗收紀錄，未改動已測程式。B 批次的登入、六碼加入、群組與逐台授權尚未實作。
 
 ## 最高原則
 
@@ -21,8 +21,8 @@
 | A6：真實瀏覽器 | **14 組通過** | Chrome 154.0.8037.93／Playwright 1.62.1；768×1024、1440×1000、390×844 |
 | 舊時鐘路徑語法 | **9 段通過 ES5 解析** | 既有 Acorn 8.15.0、`ecmaVersion: 5`；不等於 iOS 9 實機通過 |
 | Shell 語法、差異空白檢查 | 通過 | `bash -n` 與 `git diff --check` |
-| 本次工作樹 Linux CI／真實 systemd 演練 | **待執行** | 尚未發布本次程式；開發 Mac 無可用的隔離 Linux runtime |
-| commit／push | **未執行** | 目前驗收對象仍為工作樹；TODO 是 Git 忽略的本機計劃，正式紀錄保存於本文件 |
+| 本批次 Linux CI／真實 systemd 演練 | **通過** | `60b2398` 的 [執行 37313452583](https://github.com/kcayut/webclock/actions/runs/37313452583)：129 項 Python、8 組 JS、真實升級／備份／還原／故障回復 |
+| commit／push | **程式已提交並同步雙遠端** | `60b2398`；TODO 是 Git 忽略的本機計劃，正式紀錄保存於本文件 |
 | 實際主機部署 | **未執行** | 沒有修改使用中服務或正式資料 |
 | iPad mini 1／iOS 9 Safari | **待實機驗收** | 現代瀏覽器及視窗大小模擬均不能代替實機 |
 
@@ -63,15 +63,24 @@ ES5 解析涵蓋 `static/clock.js`、`time-format.js`、`time-inputs.js`、`offl
 
 本次原始結果與截圖保存在執行機的 `/tmp/webclock-a6-browser-results.json`、`/tmp/webclock-a6-browser-supplement.json`、`/tmp/webclock-a6-*.png`；它們是本機驗收附件，不是 repository 內的長期測試或已發布產物。驗收使用的獨立服務、暫存資料及瀏覽器 profiles 已清理。
 
-## Linux CI 的剩餘檢查
+## Linux CI 與真實 systemd 演練
 
 既有 [workflow](../.github/workflows/linux-rehearsal.yml) 在 `ubuntu-24.04` 執行 Python／JavaScript／shell 回歸，再用 [rehearse_linux.py](../tests/rehearse_linux.py) 驗證真實 systemd 升級、完整備份／還原與注入故障後回復。演練取 Git HEAD，未提交的修改不會自動納入。
 
-2026-10-05 唯讀核對的最新成功紀錄為 [執行 37221795294](https://github.com/kcayut/webclock/actions/runs/37221795294)，對應 `c1c3e6d`。它是歷史基線，不涵蓋本次 A3–A6 工作樹。不得假設相同腳本在舊提交成功就代表本次已通過，也不得繞過演練腳本對隔離 GitHub-hosted runner 的保護。
+2026-10-05 20:59:59–21:01:58（Asia/Taipei），[執行 37313452583](https://github.com/kcayut/webclock/actions/runs/37313452583) **成功**，測試提交為 `60b239878cd788b5774d42b2fc3f9f28674cc9d0`。環境為標準 `ubuntu-24.04` runner、systemd 255；演練由 `1ad7868ff7b51e581421f85fefccfef4e7520ddd` 升級至本次提交。舊 `c1c3e6d` 的成功紀錄不再代替本批次證據。
 
-- [ ] 提交並推送本次程式後，等待該提交的 workflow 完成，記錄 SHA、run URL、結論與失敗原因（若有）。
-- [ ] 確認 Python／JS 及真實 systemd 演練均通過，才補上本批次 Linux 驗收結果。
-- [ ] Linux 通過仍不代表 Raspberry Pi／ARM、Docker、主機重開／斷電或 iOS 9 實機通過。
+| 驗證 | 實際結果 |
+| --- | --- |
+| 完整回歸 | 129 項 Python、8 組 JavaScript、shell 語法及 diff 檢查通過 |
+| 正常升級 | 真實 Git／pip／systemd 流程保留所有資料 bytes；schema 2 與 ETag／304 正常 |
+| 部署設定與 CSRF | 非 root 服務、systemd 資料／port 覆寫正常；拒絕缺少 CSRF，GET 刪除為 405；合法管理寫入重啟後保留 |
+| 完整備份／還原 | 停機備份完整性通過；還原恢復原資料 hash、重映射 `.env` 路徑並保留還原前備份 |
+| 注入啟動失敗 | 測試副本故障後回復精確的 Git revision、venv 與資料，保留 failed-data／venv／manifest；再次重啟及 API 操作通過 |
+| 測試清理 | 最終服務 active；隨後移除演練 service，暫存合成資料隨一次性 runner 清理 |
+
+- [x] 本次程式已提交並推送，CI 的 SHA、run URL 與 success 結果已核對。
+- [x] Python／JS 與真實 systemd 演練均通過。
+- Linux 通過仍不代表 Raspberry Pi／ARM、Docker、主機重開／斷電或 iOS 9 實機通過；沒有部署至使用中的主機。
 
 ## 可重現的本機檢查
 
