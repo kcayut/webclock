@@ -72,7 +72,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             raise ValueError('Select an existing calendar source')
         start = taipei_now().replace(hour=0, minute=0, second=0, microsecond=0)
         events = calendar_events(start=start, end=start + timedelta(days=366),
-                                 source_ids=sorted(set(source_ids))) if calendar_events else []
+                                 source_ids=sorted(set(source_ids)), strict=True) if calendar_events else []
         fields = ('source_id', 'uid', 'text', 'starts_at', 'ends_at', 'all_day', 'recurring', 'recurrence_id')
         return jsonify(events=[{key: event[key] for key in fields if key in event}
                                for event in events if event.get('source_id') in source_ids],

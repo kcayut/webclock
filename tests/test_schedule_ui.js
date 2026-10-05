@@ -70,6 +70,7 @@ const englishLabels = {
     capability_display: "Display", capability_audio: "Audio", capability_notifications: "Notifications", capability_background: "Background", capability_calendar: "Calendar",
     yes: "Supported", no: "Not supported", sync_status: "Sync confirmation", sync_idle: "Not requested", sync_pending: "Awaiting confirmation",
     sync_confirmed: "Confirmed", sync_timed_out: "Timed out", sync_requested_at: "Requested", sync_acknowledged_at: "Confirmed at",
+    legacy_devices_title: "Legacy devices / history ({count})", no_authorized_devices: "No authorized devices; expand history below",
     device_data_stale: "Device data stale", device_revoke: "Revoke access",
     device_revoke_confirm: "Revoke {name}? A new join code is required.", device_revoked: "Device access revoked"
 };
@@ -179,7 +180,7 @@ function pauseReply(request, skipped = row.next_occurrence, next = nextDate) {
 }
 function descendants(root) { return root.children.flatMap(child => [child, ...descendants(child)]); }
 function calendarInput(id) { return descendants($("schedule-calendar-sources")).find(input => input.name === 'calendar-source' && input.value === id); }
-function deviceNameInput(id) { return descendants($("device-list")).find(input => input.tag === "input" && input.getAttribute("data-device-name") === id); }
+function deviceNameInput(id) { return [...descendants($("device-list")), ...descendants($("legacy-device-list"))].find(input => input.tag === "input" && input.getAttribute("data-device-name") === id); }
 function button(list, label) {
     const result = descendants($(list)).find(child => child.tag === "button" && child.textContent === label);
     assert.ok(result, "Expected button " + label);
@@ -1126,6 +1127,12 @@ const completionTimeout = setTimeout(() => {
     assert.equal(descendants($("device-list")).filter(item => item.textContent === "Revoke access").length, 2,
         "Only explicit independent authorizations, including unreported members, can be revoked");
     assert.equal(deviceButton("legacy", "Revoke access"), undefined);
+    assert.doesNotMatch(content($("device-list")), /Legacy observation/);
+    assert.match(content($("legacy-device-list")), /Legacy observation/);
+    assert.equal($("legacy-devices").hidden, false);
+    assert.equal($("legacy-devices").open, false, "Historical device details start collapsed");
+    assert.equal($("legacy-devices-summary").textContent, "Legacy devices / history (1)");
+    $("legacy-devices").open = true;
     assert.ok(deviceNameInput("waiting").disabled && deviceButton("waiting", "Save name").disabled &&
         deviceButton("waiting", "sync").disabled && !deviceButton("waiting", "Revoke access").disabled,
         "Unreported authorizations can be revoked but cannot rename or sync before a device report");
@@ -1161,6 +1168,7 @@ const completionTimeout = setTimeout(() => {
     const duringRevokeRead = qa.loadDevices(), duringRevokeRequest = take("/devices");
     context.document.documentElement.lang = "ja"; context.window.applyManagementLanguage("ja");
     assert.equal(deviceButton("desk", "Revoke access").disabled, true, "Language redraw retains pending state");
+    assert.equal($("legacy-devices").open, true, "Language redraw preserves expanded device history");
     context.document.documentElement.lang = "en"; context.window.applyManagementLanguage("en");
     reply(revokeRequest, {status: "revoked"}); await flush();
     assert.equal(deviceNameInput("desk"), undefined, "Success immediately removes the authorized device");
@@ -1172,14 +1180,21 @@ const completionTimeout = setTimeout(() => {
     assert.equal(deviceNameInput("legacy").value, "Other device draft");
     assert.equal(activeElement, deviceNameInput("legacy"), "Removing a different device preserves rename focus");
     assert.equal(deviceNameInput("legacy").value, "Other device draft");
+    assert.equal($("legacy-devices").open, true, "Successful refresh preserves expanded history and its draft");
 
     const revokeWaiting = deviceButton("waiting", "Revoke access").trigger("click");
     reply(take("/devices/waiting", "DELETE"), {status: "revoked"}); await flush();
     reply(take("/devices"), {error: "offline"}, false); await revokeWaiting;
     assert.equal(deviceNameInput("waiting"), undefined, "Refresh failure does not undo a successful revoke");
     assert.match($("status").textContent, /Device access revoked.*Device data stale/);
+    assert.equal(content($("device-list")).trim(), "No authorized devices; expand history below");
+    assert.equal($("legacy-devices").hidden, false, "History remains available when no independent authorizations remain");
+    $("legacy-devices").open = false;
+    const historyRefresh = qa.loadDevices(); reply(take("/devices"), {devices: [legacyDevice]}); await historyRefresh;
+    assert.equal($("legacy-devices").open, false, "Polling also preserves a collapsed history section");
     const selfLeave = qa.loadDevices(); reply(take("/devices"), {devices: []}); await selfLeave;
     assert.equal(content($("device-list")).trim(), "no_devices", "Polling removes devices that left elsewhere");
+    assert.equal($("legacy-devices").hidden, true, "An empty historical section is hidden");
 
     const emptyPost = qa.api("/schedules/alarm/skip-next", {method: "POST"});
     const emptyPostRequest = take("/schedules/alarm/skip-next", "POST");

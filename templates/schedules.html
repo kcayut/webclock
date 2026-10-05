@@ -118,8 +118,8 @@
                 <form id="group-form" hidden>
                     <div class="group-identity"><div class="field"><label for="group-name" data-group-i18n="group_name">{{ t.group_name }}</label><input id="group-name" maxlength="100" required autocomplete="off"></div><label class="check"><input id="group-enabled" type="checkbox"><span data-group-i18n="group_enabled">{{ t.group_enabled }}</span></label></div>
                     <details class="group-section"><summary data-group-i18n="group_display">{{ t.group_display }}</summary><p class="help" data-group-i18n="group_inherit_hint">{{ t.group_inherit_hint }}</p><div id="group-settings"></div></details>
-                    <details class="group-section" open><summary data-group-i18n="group_content">{{ t.group_content }}</summary><p class="help" data-group-i18n="group_content_hint">{{ t.group_content_hint }}</p><div class="group-content-lists">
-                        {% for field, label in [('calendar_source_ids', 'group_calendars'), ('manual_note_ids', 'group_notes'), ('schedule_ids', 'group_schedules')] %}<fieldset><legend data-group-i18n="{{ label }}">{{ t[label] }}</legend><div id="group-{{ field }}" class="group-content-options"></div><p id="group-{{ field }}-empty" class="help" data-group-i18n="group_content_empty">{{ t.group_content_empty }}</p></fieldset>{% endfor %}
+                    <details class="group-section" open><summary data-group-i18n="group_content">{{ t.group_content }}</summary><p class="help" data-group-i18n="group_content_hint">{{ t.group_content_hint }}</p><p id="group-range-hint" class="help group-range-hint" data-group-i18n="group_range_hint">{{ t.group_range_hint }}</p><div class="group-content-lists">
+                        {% for field, label in [('calendar_source_ids', 'group_calendars'), ('manual_note_ids', 'group_notes'), ('schedule_ids', 'group_schedules')] %}<fieldset{% if field == 'calendar_source_ids' %} class="group-calendar-field"{% endif %}><legend data-group-i18n="{{ label }}">{{ t[label] }}</legend>{% if field == 'calendar_source_ids' %}<p class="help" data-group-i18n="group_calendar_parent_hint">{{ t.group_calendar_parent_hint }}</p><p class="help" data-group-i18n="group_calendar_window">{{ t.group_calendar_window }}</p>{% endif %}<div id="group-{{ field }}" class="group-content-options" aria-describedby="group-range-hint"></div><p id="group-{{ field }}-empty" class="help" data-group-i18n="group_content_empty">{{ t.group_content_empty }}</p></fieldset>{% endfor %}
                     </div></details>
                     <p id="group-form-status" class="help" role="status" aria-live="polite"></p>
                     <div class="actions group-save-actions"><button id="group-save" class="primary" type="submit" data-group-i18n="group_save">{{ t.group_save }}</button><button id="group-delete" class="danger" type="button" data-group-i18n="group_delete">{{ t.group_delete }}</button></div>
@@ -136,6 +136,11 @@
                 <p class="help"><span data-schedule-i18n="other_hint">{{ t.other_hint }}</span> <a href="/admin#calendar-title" data-schedule-i18n="calendar_settings">{{ t.calendar_settings }}</a></p>
                 <ul id="other-schedule-list" class="schedule-list" data-schedule-aria-label="other_schedules" aria-label="{{ t.other_schedules }}"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
             </section>
+            <details id="legacy-devices" class="panel legacy-devices" hidden>
+                <summary id="legacy-devices-summary"></summary>
+                <p class="help" data-schedule-i18n="legacy_devices_hint">{{ t.legacy_devices_hint }}</p>
+                <ul id="legacy-device-list" class="device-list"></ul>
+            </details>
         </section>
     </main>
     <dialog id="pause-dialog" aria-labelledby="pause-title" aria-describedby="pause-hint">

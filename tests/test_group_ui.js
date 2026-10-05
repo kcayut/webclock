@@ -11,14 +11,15 @@ const elements = new Map();
 let active = null;
 function element(tag = 'div') {
     const el = {tag, children: [], attributes: {}, listeners: {}, value: '', checked: false, hidden: false,
-        disabled: false, textContent: '', selectionStart: 0, selectionEnd: 0,
+        disabled: false, open: false, textContent: '', selectionStart: 0, selectionEnd: 0,
         setAttribute(key, value) { this.attributes[key] = value; },
         getAttribute(key) { return this.attributes[key]; },
         append(...children) { children.forEach(child => { if (child.parentNode) child.remove(); child.parentNode = this; this.children.push(child); }); },
+        insertBefore(child, before) { if (child.parentNode) child.remove(); child.parentNode = this; this.children.splice(before ? this.children.indexOf(before) : this.children.length, 0, child); },
         replaceChildren(...children) { this.children.forEach(child => { child.parentNode = null; }); this.children = []; this.append(...children); },
         remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); this.parentNode = null; },
         addEventListener(event, callback) { (this.listeners[event] ||= []).push(callback); },
-        trigger(event) { return Promise.all((this.listeners[event] || []).map(callback => callback.call(this, {preventDefault() {}}))); },
+        trigger(event, details = {}) { return Promise.all((this.listeners[event] || []).map(callback => callback.call(this, {preventDefault() {}, ...details}))); },
         focus() { active = this; },
         contains(child) { return this === child || this.children.some(item => item.contains(child)); },
         reportValidity() { return true; }
@@ -40,7 +41,9 @@ const labels = {
  group_invite_none: 'No code', group_members_empty: 'No members', group_new: 'New group',
  group_choose: 'Choose', group_invite_closed: 'Closed', group_capacity_error: 'Invalid capacity',
  group_initialize_confirm: 'Import current content?', group_default_name: 'Default',
- group_delete_confirm: 'Delete {name}?', group_has_members: 'Members remain'
+ group_delete_confirm: 'Delete {name}?', group_has_members: 'Members remain',
+ group_calendar_unlisted: 'Outside current list: {id} (selection retained)', group_calendar_failed: 'Calendar failed; selection retained',
+ group_calendar_all: 'All events including future events', group_calendar_series: 'Whole series including future occurrences'
 };
 $('schedule-i18n').textContent = JSON.stringify({en: labels, 'zh-TW': {...labels, group_unsaved: '未儲存'}, ja: {...labels, group_unsaved: '未保存'}});
 const defaultSettings = {brightness: 80, mode: 'normal', timezone_offset: 8, time_format: '24h', language: 'zh-TW',
@@ -82,8 +85,124 @@ async function load(rows = [rowA, rowB], selected = 'a') {
 }
 function trigger(id, event, value) { if (value !== undefined) $(id).value = value; return $(id).trigger(event); }
 function choice(key) {
-    const parent = $('group-' + key.split(':')[0]);
-    return parent.children.map(child => child.children[0]).find(input => input.getAttribute('data-group-content') === key);
+    const parent = $('group-' + (key.startsWith('calendar_targets:') ? 'calendar_source_ids' : key.split(':')[0]));
+    return descendants(parent).find(input => input.getAttribute('data-group-content') === key);
+}
+function descendants(parent) { return parent.children.flatMap(child => [child, ...descendants(child)]); }
+const targetChoice = (uid, scope, recurrence = '') => choice('calendar_targets:' + JSON.stringify(['cal', uid, scope, recurrence]));
+const detailsOf = input => input.parentNode.parentNode.parentNode;
+async function clickChoice(input, checked, shiftKey = false) {
+    assert.ok(input, 'Expected an available choice');
+    input.checked = checked; await input.trigger('click', {shiftKey}); await input.trigger('change');
+}
+function calendarReply(events, ok = true) {
+    const pending = requests.find(item => !item.done && item.url === '/api/v1/calendar-events?source_id=cal');
+    assert.ok(pending, 'Expected lazy calendar request'); pending.done = true;
+    pending.resolve({ok, json: async () => ok ? {events} : {code: 'calendar_not_ready'}});
+}
+async function calendarSelection() {
+    catalog.calendar_sources.push({id: 'other', name: 'Other calendar'});
+    catalog.manual_notes = [7, 8, 9, 10].map(id => ({id, text: 'Reminder ' + id}));
+    catalog.schedules = ['alarm', 'alarm2', 'alarm3'].map(id => ({id, name: id}));
+    const row = makeRow('calendar-test', 'Calendar test');
+    row.content.calendar_source_ids = ['other'];
+    row.content.calendar_targets = [{source_id: 'cal', uid: 'weekly', scope: 'occurrence', recurrence_id: 'outside-window', title: 'Previously selected'}];
+    intervals[0].callback(); await load([row, makeRow('new', 'New group')], 'new');
+    await trigger('group-select', 'change', row.id); await access(row.id);
+    const sourceInput = choice('calendar_source_ids:cal'), sourceTree = detailsOf(sourceInput);
+    assert.equal(choice('calendar_source_ids:other').checked, true, 'Old whole-source selections retain their meaning');
+    assert.equal(sourceInput.indeterminate, true);
+    assert.equal(requests.filter(item => item.url.includes('/calendar-events')).length, 0, 'Collapsed trees do not fetch calendars');
+    sourceTree.open = true; await sourceTree.trigger('toggle');
+    const event = (uid, recurrence_id, starts_at, recurring = true) => ({source_id: 'cal', uid, recurrence_id, starts_at, recurring, text: uid});
+    const events = [event('weekly', 'original-1', '2030-01-01T10:00:00Z'),
+        event('weekly', 'original-2', '2030-01-09T10:00:00Z'), event('weekly', 'original-3', '2030-01-15T10:00:00Z'),
+        event('single-a', '', '2030-01-20T10:00:00Z', false), event('single-b', '', '2030-01-21T10:00:00Z', false)];
+    calendarReply(events); await flush();
+    const seriesInput = targetChoice('weekly', 'series'), seriesTree = detailsOf(seriesInput);
+    seriesTree.open = true; await seriesTree.trigger('toggle');
+    const first = targetChoice('weekly', 'occurrence', 'original-1'), middle = targetChoice('weekly', 'occurrence', 'original-2');
+    const last = targetChoice('weekly', 'occurrence', 'original-3'), outside = targetChoice('weekly', 'occurrence', 'outside-window');
+    assert.equal(outside.checked, true);
+    assert.match(outside.parentNode.children[1].textContent, /Outside current list/);
+    await clickChoice(first, true); await clickChoice(last, true, true);
+    assert.equal(middle.checked, true, 'Shift-click selects the visible occurrence interval');
+    await clickChoice(first, false); middle.parentNode.hidden = true; await clickChoice(last, false, true);
+    assert.equal(middle.checked, true, 'Hidden choices are excluded from deselection ranges');
+    assert.equal(last.checked, false); middle.parentNode.hidden = false;
+    await clickChoice(last, true); middle.disabled = true; await clickChoice(first, true, true);
+    assert.equal(first.checked, true); assert.equal(middle.checked, true);
+    assert.equal(outside.checked, true, 'Range never drops saved occurrences outside the loaded window');
+    // A range anchored inside a now-collapsed series cannot select its hidden children.
+    await clickChoice(first, false); seriesTree.open = false; await seriesTree.trigger('toggle');
+    await clickChoice(targetChoice('single-a', 'occurrence'), true, true);
+    assert.equal(last.checked, true); assert.equal(first.checked, false);
+    seriesTree.open = true; await seriesTree.trigger('toggle');
+    await clickChoice(seriesInput, true);
+    assert.equal(first.checked, true); assert.equal(first.disabled, true);
+    assert.equal(targetChoice('weekly', 'occurrence', 'outside-window'), undefined, 'A series replaces its explicit occurrence selections');
+    await clickChoice(sourceInput, true);
+    assert.equal(seriesInput.disabled, true); assert.equal(targetChoice('single-a', 'occurrence').disabled, true);
+    await clickChoice(sourceInput, false);
+    assert.equal(first.checked, false); assert.equal(first.disabled, false);
+    assert.equal(targetChoice('single-a', 'occurrence').checked, false, 'Unchecking all does not materialize a window snapshot');
+    await clickChoice(sourceInput, true); await clickChoice(choice('calendar_source_ids:other'), false, true);
+    assert.equal(sourceInput.checked, false, 'Source interval uses the endpoint new state to deselect');
+    await clickChoice(seriesInput, true); await clickChoice(targetChoice('single-b', 'occurrence'), true, true);
+    assert.equal(targetChoice('single-a', 'occurrence').checked, true, 'Series and one-off events share their source level');
+    assert.equal(first.disabled, true, 'Selected series children inherit and remain unavailable to ranges');
+    const note = id => choice('manual_note_ids:' + id);
+    await clickChoice(note(7), true); await clickChoice(note(10), true, true);
+    assert.equal(note(8).checked, true); assert.equal(note(9).checked, true);
+    await clickChoice(note(7), false); note(8).parentNode.hidden = true; note(9).disabled = true;
+    await clickChoice(note(10), false, true);
+    assert.equal(note(8).checked, true); assert.equal(note(9).checked, true);
+    assert.equal(note(7).checked, false); assert.equal(note(10).checked, false);
+    note(8).parentNode.hidden = false;
+    await clickChoice(choice('schedule_ids:alarm3'), true); await clickChoice(choice('schedule_ids:alarm'), true, true);
+    assert.equal(choice('schedule_ids:alarm2').checked, true, 'Reverse ranges work for alarms too');
+    // change-only activation remains supported, without a mouse click handler.
+    choice('schedule_ids:alarm2').checked = false; await choice('schedule_ids:alarm2').trigger('change');
+    assert.equal(choice('schedule_ids:alarm2').checked, false);
+    const focused = targetChoice('single-a', 'occurrence'); focused.focus();
+    document.documentElement.lang = 'en'; window.WebClockGroups.applyLanguage();
+    assert.equal(active, focused); assert.equal(sourceTree.open, true); assert.equal(seriesTree.open, true);
+    intervals[0].callback(); await load([row, makeRow('new', 'New group')], row.id);
+    assert.equal(detailsOf(choice('calendar_source_ids:cal')), sourceTree);
+    assert.equal(sourceTree.open, true); assert.equal(seriesTree.open, true); assert.equal(active, focused);
+    const refresh = descendants(sourceTree).find(item => item.tag === 'button');
+    refresh.trigger('click'); calendarReply([], false); await flush();
+    assert.equal(targetChoice('single-a', 'occurrence'), focused, 'Calendar failure preserves nodes and selection');
+    assert.equal(focused.checked, true); assert.equal(sourceTree.open, true);
+    assert.ok(descendants(sourceTree).some(item => item.textContent === labels.group_calendar_failed));
+    await trigger('group-select', 'change', 'new'); await access('new');
+    assert.equal(detailsOf(choice('calendar_source_ids:cal')).open, false, 'Expansion belongs to each group draft');
+    await trigger('group-select', 'change', row.id); await access(row.id);
+    assert.equal(sourceTree.open, true); assert.equal(seriesTree.open, true);
+    trigger('group-form', 'submit');
+    const saved = JSON.parse(next('/' + row.id, 'PATCH').options.body);
+    assert.deepEqual(saved.content.calendar_source_ids, []);
+    assert.deepEqual(saved.content.calendar_targets.map(({uid, scope, recurrence_id}) => ({uid, scope, recurrence_id})), [
+        {uid: 'weekly', scope: 'series', recurrence_id: ''}, {uid: 'single-a', scope: 'occurrence', recurrence_id: ''},
+        {uid: 'single-b', scope: 'occurrence', recurrence_id: ''}]);
+    assert.deepEqual(saved.content.manual_note_ids, [8, 9]);
+    assert.deepEqual(new Set(saved.content.schedule_ids), new Set(['alarm', 'alarm3']));
+    respond('/' + row.id, {code: 'storage_failure'}, 'PATCH', false); await flush(); await access(row.id);
+    assert.equal(sourceTree.open, true); assert.equal(seriesTree.open, true); assert.equal(focused.checked, true);
+    // A late calendar refresh can update its cache but cannot change the current group or its draft.
+    refresh.trigger('click'); await trigger('group-select', 'change', 'new'); await access('new');
+    calendarReply(events); await flush();
+    assert.equal($('group-select').value, 'new');
+    assert.equal($('group-name').value, 'Unsaved group after revoke');
+    assert.equal(choice('calendar_source_ids:cal').checked, false);
+    await trigger('group-select', 'change', row.id); await access(row.id);
+    await clickChoice(seriesInput, false);
+    await clickChoice(targetChoice('single-a', 'occurrence'), false);
+    await clickChoice(targetChoice('single-b', 'occurrence'), false);
+    trigger('group-form', 'submit');
+    const cleared = JSON.parse(next('/' + row.id, 'PATCH').options.body);
+    assert.deepEqual(cleared.content.calendar_targets, [], 'PATCH explicitly clears prior targets instead of retaining omitted fields');
+    respond('/' + row.id, {...row, ...cleared}, 'PATCH'); await flush(); await access(row.id);
 }
 async function main() {
     vm.runInContext(source, context);
@@ -185,7 +304,8 @@ async function main() {
     window.WebClockGroups.memberRemoved('kept');
     assert.equal($('group-members').children[0].textContent, 'No members');
     await access('new');
+    await calendarSelection();
     assert.doesNotMatch(source, /localStorage|sessionStorage/);
-    console.log('Group UI: inheritance, isolated drafts, focus, polling, failures, slow saves, code secrecy and member state passed.');
+    console.log('Group UI: drafts, focus, failures, calendar source/series/occurrence trees and visible same-level Shift ranges passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

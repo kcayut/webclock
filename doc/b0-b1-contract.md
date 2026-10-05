@@ -44,9 +44,9 @@
 
 `device-access.json` version 1 頂層為 `groups`、`invites`、`devices`、`attempts` 四個 map。B2 加入在這**同一檔**原子提交扣額、身份、群組與憑證。`devices.json` 僅保留既有名稱/能力/ACK 觀察，缺少時由授權 status 補建，不成為加入交易第二個必要提交。
 
-群組記錄：`id`、`owner_id`、`name`、`enabled`、`display_overrides`、`content`、`content_version`、`created_at`、`updated_at`、`is_default`。`content` 僅存 `calendar_source_ids`（字串）、`manual_note_ids`（既有正整數 ID）、`schedule_ids`（字串）。沒有 ICS URL 副本。既有 JSON fixture 在 `tests/fixtures/legacy-b0-state.json`；遷移測試證明舊檔位元內容保留、隱藏來源不自動公開、自報裝置不自動認證。
+群組記錄：`id`、`owner_id`、`name`、`enabled`、`display_overrides`、`content`、`content_version`、`created_at`、`updated_at`、`is_default`。`content` 存 `calendar_source_ids`（字串）、`manual_note_ids`（既有正整數 ID）、`schedule_ids`（字串），以及可選 `calendar_targets`（行程目標物件陣列）；舊三欄資料缺少 targets 或為空陣列均相容。沒有 ICS URL 副本。既有 JSON fixture 在 `tests/fixtures/legacy-b0-state.json`；遷移測試證明舊檔位元內容保留、隱藏來源不自動公開、自報裝置不自動認證。
 
-`POST /api/v1/groups/initialize {}` 是明確、可重試的預設群組遷移：沿用目前有效設定，引用既有可見來源/本機提醒及排程；重送仍回同一群組。一般讀取不初始化；一般新建群組的三種內容清單預設皆空。
+`POST /api/v1/groups/initialize {}` 是明確、可重試的預設群組遷移：沿用目前有效設定，引用既有可見來源/本機提醒及排程；重送仍回同一群組。一般讀取不初始化；一般新建群組的內容清單預設皆空。
 
 ## 群組 API
 
@@ -61,7 +61,9 @@
 | `GET /api/v1/groups/:id/invite` | `{invite: metadata|null}`，沒有 code/digest |
 | `DELETE /api/v1/groups/:id/invite` | 關閉並回 metadata，不變更成員 |
 
-設定沿用目前顯示驗證，逐欄繼承 owner 共用值，包括 night 子欄位。`display_overrides` 一次替換該物件；缺欄位繼承，`{}` 清除全部覆寫，false/0 保留原意。`content` PATCH 只替換傳入的清單，未傳清單保持，`[]` 明確清空。事件與鬧鐘在 Server 依群組過濾。內容引用必須存在；聯動鬧鐘依賴來源必須合法，來源未選來顯示不會自動停用該鬧鐘。來源消失則不下發該鬧鐘，不退回固定時間規則；顯示時區與 Asia/Taipei 排程語意分開。
+設定沿用目前顯示驗證，逐欄繼承 owner 共用值，包括 night 子欄位。`display_overrides` 一次替換該物件；缺欄位繼承，`{}` 清除全部覆寫，false/0 保留原意。`content` PATCH 只替換傳入的清單，未傳清單保持，`[]` 明確清空。事件與鬧鐘在 Server 依群組過濾。來源／文字提醒／鬧鐘引用必須存在；聯動鬧鐘依賴來源必須合法，來源未選來顯示不會自動停用該鬧鐘。來源消失則不下發該鬧鐘，不退回固定時間規則；顯示時區與 Asia/Taipei 排程語意分開。
+
+`calendar_targets` 每筆為 `{source_id, uid, scope, recurrence_id}`，可選 `title` 只作顯示；`scope` 為 `series|occurrence`。系列及非週期行程的 `recurrence_id` 為空字串；週期單次以原始 `RECURRENCE-ID` 追蹤改期。來源全選沿用 `calendar_source_ids`，正規化依來源全選、系列、單次的優先順序去除被涵蓋選取；來源／系列全選包括未來行程。`GET /api/v1/calendar-events` 提供未來 366 天目錄，範圍外已選目標保留；任一指定來源讀取失敗回 503 `calendar_not_ready`，不回部分或空成功目錄，管理 UI 保留選取。
 
 群組最多 100 組；跨 owner 存取回 404。非法值回 400，儲存失敗回 500 並保留原資料；損壞授權 JSON 回 503 `access_not_ready`，不自動修補或覆寫。
 

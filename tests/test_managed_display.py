@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import app as clock
@@ -71,7 +72,7 @@ class ManagedDisplayTest(unittest.TestCase):
 
         def events(start, end, source_ids):
             queries.append(source_ids)
-            return [dict(text='calendar-' + key, time='09:00', starts_at=0) for key in source_ids]
+            return [dict(source_id=key, uid=key, text='calendar-' + key, time='09:00', starts_at=0) for key in source_ids]
 
         with patch.object(clock, 'get_calendar_events', side_effect=events):
             for client, suffix in ((a, 'a'), (b, 'b')):
@@ -123,7 +124,8 @@ class ManagedDisplayTest(unittest.TestCase):
         from webclock.services.schedule_service import validate_schedule
         linked = validate_schedule(linked)
         clock.save_json(self.root / 'schedules.json', [linked])
-        group = self.group('A', content={'schedule_ids': ['a']})
+        group = self.group('A', content={'schedule_ids': ['a'], 'calendar_targets': [
+            dict(source_id='a', uid='display-only', scope='occurrence', recurrence_id='')]})
         client, _ = self.device(group)
         stamp = int(self.instant.replace(hour=9).timestamp() * 1000)
 
@@ -161,6 +163,79 @@ class ManagedDisplayTest(unittest.TestCase):
             response = self.get(client)
             self.assertEqual(response.status_code, 409)
             self.assertNotIn('must not escape', response.text)
+
+    def test_calendar_target_filter_uses_source_uid_and_recurrence_not_labels(self):
+        once = dict(source_id='a', uid='weekly', scope='occurrence', recurrence_id='original-slot', title='Old title')
+        group = self.group('Selective', content={'calendar_targets': [once]})
+        client, _ = self.device(group)
+        def event(source, uid, slot, text, hour):
+            return dict(source_id=source, uid=uid, recurrence_id=slot, text=text, time=str(hour) + ':00',
+                        starts_at=int(self.instant.replace(hour=hour).timestamp() * 1000))
+        rows = [event('a', 'other', '', 'Old title', 7), event('b', 'weekly', 'original-slot', 'Other source', 8),
+                event('a', 'weekly', 'original-slot', 'Moved and renamed', 11),
+                event('a', 'weekly', 'next-slot', 'Next weekly', 12)]
+        with patch.object(clock, 'get_calendar_events', return_value=rows) as lookup:
+            first = self.get(client)
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual([row['text'] for row in first.json['events']], ['Moved and renamed'])
+            self.assertEqual(first.json['next_event']['text'], 'Moved and renamed')
+            self.assertNotIn('Other source', first.text)
+            self.assertNotIn('Old title', first.text)
+            self.assertEqual(lookup.call_args.kwargs['source_ids'], ['a'])
+            self.service().update_group(self.owner, group['id'], {'content': {'calendar_targets': [dict(once, scope='series')]}})
+            series = self.get(client, headers={'If-None-Match': first.headers['ETag']})
+            self.assertEqual(series.status_code, 200)
+            self.assertEqual([row['text'] for row in series.json['events']], ['Moved and renamed', 'Next weekly'])
+            self.assertNotEqual(series.headers['ETag'], first.headers['ETag'])
+            self.service().update_group(self.owner, group['id'], {'content': {
+                'calendar_source_ids': ['b'], 'calendar_targets': [once]}})
+            union = self.get(client)
+            self.assertEqual({row['text'] for row in union.json['events']}, {'Other source', 'Moved and renamed'})
+            self.assertEqual(lookup.call_args.kwargs['source_ids'], ['a', 'b'])
+        # A cancelled/missing target never falls back to another event with the same label.
+        with patch.object(clock, 'get_calendar_events', return_value=rows[:1]):
+            payload = self.get(client).json
+            self.assertEqual(payload['events'], [])
+            self.assertIsNone(payload['next_event'])
+
+    def test_real_feed_target_survives_move_and_rename_then_cancellation_hides_it(self):
+        class FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, zone=None):
+                return cls(2026, 10, 5, 6, tzinfo=clock.TAIPEI).astimezone(zone)
+        target = dict(source_id='a', uid='weekly', scope='occurrence',
+                      recurrence_id='2026-10-05T02:00:00+00:00', title='Same label')
+        group = self.group('Real feed', content={'calendar_targets': [target]})
+        client, _ = self.device(group)
+        master = 'BEGIN:VEVENT\nUID:weekly\nDTSTART:20261005T020000Z\nRRULE:FREQ=WEEKLY;COUNT=3\nSUMMARY:Same label\nEND:VEVENT\n'
+        other = 'BEGIN:VEVENT\nUID:other\nDTSTART:20261005T010000Z\nSUMMARY:Same label\nEND:VEVENT\n'
+        moved = 'BEGIN:VEVENT\nUID:weekly\nRECURRENCE-ID:20261005T020000Z\nDTSTART:20261005T030000Z\nSUMMARY:Moved title\nEND:VEVENT\n'
+        cancelled = 'BEGIN:VEVENT\nUID:weekly\nRECURRENCE-ID:20261005T020000Z\nSTATUS:CANCELLED\nEND:VEVENT\n'
+        for override, expected in ((moved, ['Moved title']), (cancelled, [])):
+            content = ('BEGIN:VCALENDAR\nVERSION:2.0\n' + master + other + override + 'END:VCALENDAR\n').replace('\n', '\r\n').encode()
+            with patch.object(clock, 'datetime', FrozenDateTime), patch.object(clock, 'calendar_feed_cache', {}), \
+                    patch.object(clock.requests, 'get', return_value=SimpleNamespace(content=content, raise_for_status=lambda: None)):
+                response = self.get(client)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual([row['text'] for row in response.json['events']], expected)
+            if not expected:
+                self.assertIsNone(response.json['next_event'])
+
+    def test_target_source_deletion_during_io_rejects_old_etag_and_payload(self):
+        target = dict(source_id='a', uid='weekly', scope='series')
+        group = self.group('A', content={'calendar_targets': [target]})
+        client, _ = self.device(group)
+        row = dict(source_id='a', uid='weekly', text='private old event', time='', starts_at=0)
+        with patch.object(clock, 'get_calendar_events', return_value=[row]):
+            first = self.get(client)
+        def remove(**kwargs):
+            clock.save_json(self.root / 'calendar.json', {'sources': [], 'local_display_enabled': False})
+            return [row]
+        with patch.object(clock, 'get_calendar_events', side_effect=remove):
+            response = self.get(client, headers={'If-None-Match': first.headers['ETag']})
+        self.assertEqual(response.status_code, 409)
+        self.assertNotIn('ETag', response.headers)
+        self.assertNotIn(row['text'], response.text)
 
     def test_management_language_changes_session_only(self):
         client = clock.app.test_client()

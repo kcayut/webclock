@@ -739,13 +739,13 @@
     }
     function renderDevices() {
         renderDeviceRefreshStatus();
-        const list = $("device-list");
+        const list = $("device-list"), legacyList = $("legacy-device-list");
         const active = document.activeElement;
         const activeDevice = active && active.getAttribute ? active.getAttribute("data-device-name") : null;
         const selectionStart = activeDevice && typeof active.selectionStart === "number" ? active.selectionStart : null;
         const selectionEnd = activeDevice && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
-        let refocus = null;
-        list.replaceChildren();
+        let refocus = null, legacyCount = 0;
+        list.replaceChildren(); legacyList.replaceChildren();
         devices.forEach(device => {
             const card = node("li", undefined, "panel card"), heading = node("div", undefined, "card-heading");
             const status = device.status || device;
@@ -822,9 +822,12 @@
                 actions.append(revoke);
             }
             card.append(actions);
-            list.append(card);
+            if (device.can_revoke === false) { legacyList.append(card); legacyCount++; }
+            else list.append(card);
         });
-        if (!devices.length) list.append(node("li", t("no_devices"), "empty"));
+        $("legacy-devices").hidden = legacyCount === 0;
+        $("legacy-devices-summary").textContent = format("legacy_devices_title", {count: legacyCount});
+        if (devices.length === legacyCount) list.append(node("li", t(legacyCount ? "no_authorized_devices" : "no_devices"), "empty"));
         if (refocus) {
             refocus.focus({preventScroll: true});
             if (selectionStart !== null && refocus.setSelectionRange) refocus.setSelectionRange(selectionStart, selectionEnd);

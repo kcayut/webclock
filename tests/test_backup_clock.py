@@ -342,6 +342,23 @@ class HostBackupTest(unittest.TestCase):
             backup.validate_settings, lambda: {'night': dict(backup.DEFAULT_NIGHT)}, lambda: {})
         self.assertEqual(restarted._load(), device_data)
 
+    def test_restore_preserves_optional_calendar_targets_and_legacy_group_content(self):
+        project, values, roots = self.installation('calendar-selection')
+        state, auth, access = self.protect(project, values)
+        legacy = next(iter(access['groups'].values()))
+        selective = dict(legacy, id='selective', name='Selective', content=dict(legacy['content'],
+            calendar_targets=[dict(source_id='unavailable-source', uid='weekly', scope='occurrence',
+                                   recurrence_id='2026-10-05T01:00:00+00:00', title='Saved selection')]))
+        access['groups']['selective'] = selective
+        (state / 'device-access.json').write_text(json.dumps(access))
+        directory, rollback = self.root / 'calendar-backup', self.root / 'calendar-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        backup.restore_backup(directory, roots, rollback, project, values)
+        restarted = backup.DeviceAccessService(state / 'device-access.json', auth['invite_secret'],
+            backup.validate_settings, lambda: {'night': dict(backup.DEFAULT_NIGHT)}, lambda: {})
+        self.assertEqual(restarted._load()['groups'], access['groups'])
+        self.assertNotIn('calendar_targets', restarted._load()['groups'][legacy['id']]['content'])
+
     def test_protected_target_rejects_legacy_backup_before_staging(self):
         project, values, roots = self.installation('legacy-source')
         target, target_values, target_roots = self.installation('managed-target')

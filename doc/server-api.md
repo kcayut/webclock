@@ -20,7 +20,9 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 | `/api/v1/groups/<id>/invite` | POST 產生或重產；GET 狀態；DELETE 關閉 |
 | `/api/management/language` | POST `{"language":"zh-TW"}`，只改瀏覽器 session 的後台語言 |
 
-群組 `display_overrides` 未提供的欄位繼承全域設定，含 `night` 內的逐欄繼承；`false` 與 `0` 是有效覆寫。`content` 包含 `calendar_source_ids`、`manual_note_ids`、`schedule_ids`，空陣列代表不選取，文字提醒 ID 保留正整數。群組的顯示語言與後台語言分開。全域顯示語言仍由 `/api/control` 的 `language` 更新。
+群組 `display_overrides` 未提供的欄位繼承全域設定，含 `night` 內的逐欄繼承；`false` 與 `0` 是有效覆寫。`content` 包含 `calendar_source_ids`、`manual_note_ids`、`schedule_ids`，並可選填 `calendar_targets`；空陣列代表不選取，文字提醒 ID 保留正整數。群組的顯示語言與後台語言分開。全域顯示語言仍由 `/api/control` 的 `language` 更新。
+
+`calendar_targets` 是 `{source_id, uid, scope, recurrence_id}` 物件的陣列，可選 `title` 作顯示標籤；`scope` 為 `series` 或 `occurrence`。系列及非週期行程的 `recurrence_id` 為空字串；週期單次使用原始 `RECURRENCE-ID` 追蹤改期。整個來源仍以 `calendar_source_ids` 選取，正規化時來源全選優先於系列、系列優先於單次，移除被涵蓋的重複選取；來源／系列全選包括未來行程。舊資料缺少 `calendar_targets` 或值為 `[]` 均相容；PATCH 未傳的清單保持原值。已選目標不因超出目錄的 366 天範圍而清除。
 
 每群一組六碼，600 秒有效、預設 5 台（1–100），全站最多 100 台裝置。明文只在產碼 POST 回一次；GET、持久檔及成員列表不回明文。重產／關閉不改成員。過期、額滿、關閉或停用群組不能加入。加入相關限制為每來源 10 次／60 秒、全站 100 次／60 秒，429 附 `Retry-After`。
 
@@ -183,7 +185,7 @@ rm -f "$cookie_file"
 
 `GET /api/v1/schedules` 的 `calendar_sources` 提供含本地提醒的來源目錄，每筆僅有 `id`、`name`、`provider`，供鬧鐘選擇使用。
 
-`GET /api/v1/calendar-events` 必須指定既存來源，回傳 `events` 與 `server_time`。每筆行程只有 `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id`；時間戳為 Unix 毫秒，不包含訂閱網址。取消或刪除的行程不會出現在目錄；已保存的指定行程鬧鐘不會因此改成跟隨其他行程。
+`GET /api/v1/calendar-events` 必須指定既存來源，回傳 `events` 與 `server_time`。每筆行程只有 `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id`；時間戳為 Unix 毫秒，不包含訂閱網址。取消或刪除的行程不會出現在目錄；已保存的指定行程鬧鐘不會因此改成跟隨其他行程。 任一指定來源讀取失敗時回 503 `calendar_not_ready`，不以部分或空目錄冒充成功；管理介面保留目前選取。
 
 `POST /api/v1/schedules/preview` 回 `server_time`、`timezone`、`next_occurrence`；附 `skip_next: true` 時另回 `skipped_occurrence`。管理頁編輯器以 Server 時間顯示下一次響鈴倒數；恢復倒數則計至略過的原定時刻，不是下一次實際響鈴時刻。`PUT /api/v1/schedules/<id>` 可將修改與 `skip_next: "預覽所得完整時間"` 一起儲存；`POST /api/v1/schedules/<id>/skip-next` 可附 `expected_occurrence` 防止預覽過期。時間已改變時回 400 `Occurrence changed; preview again`。永久停用設 `enabled=false`；提前恢復則保留已過期略過記錄、移除未到期記錄並設 `enabled=true`。
 

@@ -174,7 +174,7 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .group-setting-values { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(90px, 1fr); gap: 10px; }
 .group-setting-values select, .group-setting-values input { width: 100%; min-width: 0; }
 .group-setting-values input:disabled, .group-setting-values select:disabled { opacity: .7; }
-.group-content-lists { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.group-content-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .group-content-lists fieldset { min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
 .group-content-lists legend { padding: 0 5px; font-weight: 600; }
 .group-content-options { max-height: 240px; overflow-y: auto; }
@@ -202,3 +202,18 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
     .group-save-actions > button { flex: 1; }
     .group-identity .check { width: 100%; padding-bottom: 0; }
 }
+
+.legacy-devices > summary { cursor: pointer; font-weight: 600; font-size: 17px; }
+.legacy-devices > .device-list { margin-bottom: 0; }
+
+.group-calendar-field { grid-column: 1 / -1; }
+.group-calendar-field > .group-content-options { max-height: 480px; }
+.group-range-hint { border-left: 3px solid var(--accent); background: var(--tint); color: var(--tint-ink); padding: 12px 14px; }
+.group-calendar-node { padding: 4px 0; }
+.group-calendar-node > summary { cursor: pointer; font-size: 15px; font-weight: 500; }
+.group-calendar-node > summary .group-choice { display: inline-flex; vertical-align: middle; max-width: calc(100% - 24px); margin: 0; }
+.group-calendar-children { margin-left: 9px; padding-left: 18px; border-left: 1px solid var(--line); }
+.group-calendar-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
+.group-calendar-tools button { font-size: 14px; }
+.group-calendar-items .group-choice { min-height: 44px; box-sizing: border-box; }
+.group-calendar-items input:disabled + span { color: var(--muted); }

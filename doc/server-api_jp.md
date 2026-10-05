@@ -20,7 +20,9 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 | `/api/v1/groups/<id>/invite` | POST 生成・再生成、GET 状態、DELETE 終了 |
 | `/api/management/language` | POST `{"language":"ja"}`。ブラウザー session の管理言語だけを変更 |
 
-`display_overrides` で省略した項目は共通設定を継承し、`night` 内も項目ごとに継承します。`false` と `0` は有効な指定値です。`content` は `calendar_source_ids`、`manual_note_ids`、`schedule_ids` を含み、空配列は選択なし、メモ ID は正の整数です。グループの表示言語は管理画面言語と独立し、共通の表示 `language` は引き続き `/api/control` で更新します。
+`display_overrides` で省略した項目は共通設定を継承し、`night` 内も項目ごとに継承します。`false` と `0` は有効な指定値です。`content` は `calendar_source_ids`、`manual_note_ids`、`schedule_ids` と任意の `calendar_targets` を含み、空配列は選択なし、メモ ID は正の整数です。グループの表示言語は管理画面言語と独立し、共通の表示 `language` は引き続き `/api/control` で更新します。
+
+`calendar_targets` は `{source_id, uid, scope, recurrence_id}` の配列で、表示専用の `title` は任意です。`scope` は `series` または `occurrence`。`recurrence_id` は系列・繰り返さない予定では空文字列、繰り返しの個別予定では元の `RECURRENCE-ID` を使い、日時変更後も追跡します。参照元全体は引き続き `calendar_source_ids` で指定します。正規化では参照元全体、系列、個別予定の順に優先し、包含される重複選択を除きます。参照元・系列の全選択は今後の予定も含みます。`calendar_targets` がない旧データや `[]` は互換で、PATCH は省略したリストを維持します。一覧の 366 日の範囲外でも選択済みの対象は保持します。
 
 各グループの招待は 6 文字、600 秒有効、既定 5 台（1–100）、全体で最大 100 台です。平文は生成 POST の応答だけに含み、GET・永続状態・メンバー一覧には含めません。終了・再生成は参加済みメンバーを変更しません。期限切れ・満員・終了済み・グループ無効時は参加できません。参加関連の制限は送信元ごとに 60 秒 10 回、全体で 100 回で、429 に `Retry-After` を付けます。
 
@@ -155,7 +157,7 @@ managed の `GET /api/v1/devices` は現在の owner の認可済み端末を、
 
 `/api/calendar` の各参照元は `id`、`name`、`provider`、`url`、`display_enabled` を持ち、`local_display_enabled` がローカルリマインダーを制御します。アラームが参照するため、更新時は ID を維持してください。POST は参照元全体を保存し、PATCH は ID と表示フラグだけを受け付けます。URL は専用管理応答にだけ現れ、時計、予定、端末、バックアップ、オフラインキャッシュには出力しません。
 
-`GET /api/v1/calendar-events` は既存の参照元 ID を受け取り、`events` と `server_time` を返します。予定項目は `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id` です。時刻は Unix ミリ秒で、購読 URL は含みません。取り消し・削除された予定は一覧から消えますが、保存済みの指定先が別の予定へ変わることはありません。
+`GET /api/v1/calendar-events` は既存の参照元 ID を受け取り、`events` と `server_time` を返します。予定項目は `source_id`、`uid`、`text`、`starts_at`、`ends_at`、`all_day`、`recurring`、`recurrence_id` です。時刻は Unix ミリ秒で、購読 URL は含みません。取り消し・削除された予定は一覧から消えますが、保存済みの指定先が別の予定へ変わることはありません。 指定した参照元の読み込みが一つでも失敗すると 503 `calendar_not_ready` を返し、一部または空の一覧を成功として返しません。管理画面は現在の選択を保持します。
 
 `POST /api/v1/schedules/preview` は `server_time`、`timezone`、`next_occurrence` を返し、`skip_next: true` では `skipped_occurrence` も返します。編集画面の次回までの残り時間は Server 時刻を使用します。再開カウントダウンはスキップ時刻までで、その次の発音時刻までではありません。`PUT /api/v1/schedules/<id>` は編集内容と `skip_next: "プレビューの完全な日時"` を保存できます。`POST /api/v1/schedules/<id>/skip-next` の `expected_occurrence` と異なる場合は 400 `Occurrence changed; preview again` を返します。無期限の無効化は `enabled=false`、早めの再開は過去のスキップを維持して未来のスキップを除き、`enabled=true` にします。
 

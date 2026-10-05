@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .device_service import DeviceService, _identifier
 from .storage import load_json, revision, save_json, storage_lock
+from .schedule_service import validate_calendar_target
 
 
 CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -62,6 +63,21 @@ def _reference_ids(key, values):
     return values
 
 
+def _calendar_targets(values, sources, whole_sources):
+    if not isinstance(values, list) or len(values) > 1000:
+        raise ValueError('Invalid calendar targets')
+    targets = [validate_calendar_target(value, sources) for value in values]
+    series = {(row['source_id'], row['uid']) for row in targets if row['scope'] == 'series'}
+    unique = {}
+    for row in targets:
+        if (row['source_id'] in whole_sources
+                or (row['scope'] == 'occurrence' and (row['source_id'], row['uid']) in series)):
+            continue
+        key = (row['source_id'], row['uid'], row['scope'], row['recurrence_id'])
+        unique[key] = row
+    return [unique[key] for key in sorted(unique)]
+
+
 class DeviceAccessService:
     def __init__(self, state_path, invite_secret, validate_settings, default_settings,
                  content_catalog, clock=None):
@@ -90,12 +106,21 @@ class DeviceAccessService:
                         or not isinstance(row['owner_id'], str) or not row['owner_id'] or len(row['owner_id']) > 128
                         or type(row['enabled']) is not bool or type(row['is_default']) is not bool
                         or type(row['content_version']) is not int or row['content_version'] < 1
-                        or not isinstance(row['content'], dict) or set(row['content']) != CONTENT_FIELDS):
+                        or not isinstance(row['content'], dict)
+                        or not CONTENT_FIELDS <= set(row['content'])
+                        or set(row['content']) - (CONTENT_FIELDS | {'calendar_targets'})):
                     raise ValueError('Invalid stored group')
                 _name(row['name'])
                 self._settings(row['display_overrides'])
-                for key, values in row['content'].items():
-                    _reference_ids(key, values)
+                for key in CONTENT_FIELDS:
+                    _reference_ids(key, row['content'][key])
+                # Stored selections may outlive a source or the catalog's time window.
+                targets = row['content'].get('calendar_targets', [])
+                sources = {value.get('source_id') for value in targets
+                           if isinstance(value, dict) and isinstance(value.get('source_id'), str)} if isinstance(targets, list) else set()
+                for source in sources:
+                    _reference_ids('calendar_source_ids', [source])
+                _calendar_targets(targets, sources, row['content']['calendar_source_ids'])
                 _epoch(row['created_at'])
                 _epoch(row['updated_at'])
                 if row['is_default']:
@@ -208,7 +233,7 @@ class DeviceAccessService:
         return patch, validated
 
     def _content(self, value):
-        if not isinstance(value, dict) or set(value) - CONTENT_FIELDS:
+        if not isinstance(value, dict) or set(value) - (CONTENT_FIELDS | {'calendar_targets'}):
             raise ValueError('Invalid content selections')
         catalog = self.content_catalog()
         schedules = {row['id']: row for row in catalog.get('schedules', [])}
@@ -220,6 +245,10 @@ class DeviceAccessService:
             if set(ids) - available[key]:
                 raise ValueError('Select existing content IDs: ' + key)
             result[key] = sorted(set(ids))
+        targets = _calendar_targets(value.get('calendar_targets', []), available['calendar_source_ids'],
+                                    result['calendar_source_ids'])
+        if targets:
+            result['calendar_targets'] = targets
         for schedule_id in result['schedule_ids']:
             link = schedules[schedule_id].get('calendar_link')
             if link and set(link['source_ids']) - (available['calendar_source_ids'] | {'local'}):

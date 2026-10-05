@@ -115,6 +115,45 @@ class DeviceAccessTest(unittest.TestCase):
         self.catalog['schedules'][1]['calendar_link']['source_ids'] = ['local']
         self.create(content={'schedule_ids': ['alarm2']})
 
+    def test_calendar_targets_canonicalize_and_preserve_legacy_content_on_restart(self):
+        old = self.create(content={'calendar_source_ids': ['cal1']})
+        self.assertEqual(set(old['content']), {'calendar_source_ids', 'manual_note_ids', 'schedule_ids'})
+        self.assertEqual(self.make_service().get_group('owner1', old['id'])['content'], old['content'])
+        once = dict(source_id='cal2', uid='weekly', scope='occurrence', recurrence_id='2026-10-05T01:00:00+00:00')
+        series = dict(once, scope='series', title='only a label')
+        targets = [once, once, series, dict(once, source_id='cal1'),
+                   dict(once, uid='standalone', recurrence_id='')]
+        selected = self.service.update_group('owner1', old['id'], {'content': {
+            'calendar_source_ids': ['cal1'], 'calendar_targets': targets}})
+        expected = [dict(once, uid='standalone', recurrence_id=''), dict(series, recurrence_id='')]
+        self.assertEqual(selected['content']['calendar_targets'], expected)
+        self.assertEqual(self.make_service().get_group('owner1', old['id'])['content'], selected['content'])
+        # A removed source or an event beyond the one-year catalog must not erase saved selections.
+        self.catalog['calendar_source_ids'].remove('cal2')
+        renamed = self.make_service().update_group('owner1', old['id'], {'name': 'Renamed'})
+        self.assertEqual(renamed['content'], selected['content'])
+        cleared = self.service.update_group('owner1', old['id'], {'content': {'calendar_targets': []}})
+        self.assertEqual(cleared['content'], old['content'])  # Other PATCH fields remain selected.
+
+    def test_calendar_target_validation_never_writes_bad_references_or_private_fields(self):
+        group = self.create()
+        before = self.path.read_bytes()
+        target = dict(source_id='cal1', uid='meeting', scope='occurrence', recurrence_id='')
+        invalid = [None, {}, [None], [dict(target, source_id='missing')], [dict(target, source_id=[])],
+                   [dict(target, uid='')], [dict(target, uid=' ' * 2)], [dict(target, scope='title')],
+                   [dict(target, recurrence_id=None)], [dict(target, title='x' * 501)],
+                   [dict(target, url='https://private.invalid/secret')], [target] * 1001]
+        for targets in invalid:
+            with self.subTest(targets=str(targets)[:100]), self.assertRaises(ValueError):
+                self.service.update_group('owner1', group['id'], {'content': {'calendar_targets': targets}})
+            self.assertEqual(self.path.read_bytes(), before)
+        state = load_json(self.path, {})
+        state['groups'][group['id']]['content']['calendar_targets'] = [dict(target, source_id=None)]
+        save_json(self.path, state)
+        with self.assertRaises(AccessError) as error:
+            self.make_service().list_groups('owner1')
+        self.assertEqual(error.exception.code, 'access_not_ready')
+
     def test_invitation_is_keyed_independently_secret_only_once_and_survives_restart(self):
         group = self.create()
         invitation = self.service.create_invite('owner1', group['id'])

@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from webclock.services.storage import load_json, save_json, revision, storage_lock
 from webclock.services.holiday_service import HolidayService
-from webclock.services.schedule_service import TAIPEI, next_event, read_schedules
+from webclock.services.schedule_service import TAIPEI, next_event, read_schedules, calendar_target_matches
 from webclock.services.display_service import browser_alarm_payload
 from webclock.services.device_service import DeviceService
 from webclock.api.device import conditional
@@ -513,13 +513,13 @@ def fetch_calendar_source(url):
     return cached
 
 
-def get_calendar_events(start=None, end=None, source_ids=None):
+def get_calendar_events(start=None, end=None, source_ids=None, strict=False):
     # Serialize source edits and fetches so an in-flight removed feed cannot reappear.
     with settings_lock:
-        return fetch_calendar_events(start, end, source_ids)
+        return fetch_calendar_events(start, end, source_ids, strict=strict)
 
 
-def fetch_calendar_events(start=None, end=None, source_ids=None):
+def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False):
     if start is None:
         start = get_local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     if not isinstance(start, datetime) or start.utcoffset() is None:
@@ -536,7 +536,9 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
         raise ValueError('Invalid calendar source selection')
     try:
         sources = get_calendar_sources()
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError) as error:
+        if strict:
+            raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready') from error
         app.logger.warning('Could not read calendar settings')
         sources = []
     active_keys = {(str(Path(SETTINGS_FILE).parent), source['url']) for source in sources}
@@ -545,6 +547,8 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
             del calendar_feed_cache[key]
     selected = set(source_ids) if source_ids is not None else {
         source['id'] for source in sources if source['display_enabled']}
+    if strict and selected - {source['id'] for source in sources} - {'local'}:
+        raise AccessError('Calendar source is unavailable; retry later', 503, 'calendar_not_ready')
     events = local_calendar_events(start, end) if 'local' in selected else []
     selected_urls = {source['url'] for source in sources if source['id'] in selected}
     pending = [url for url in selected_urls if time.time() - calendar_feed_cache.get(
@@ -558,20 +562,27 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
             continue
         cached = fetch_calendar_source(source['url'])
         if cached['calendar'] is None:
+            if strict:
+                raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready')
             continue
         query_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end = end.replace(hour=0, minute=0, second=0, microsecond=0)
         if query_end < end:
             query_end += timedelta(days=1)
-        query_key = (query_start.isoformat(), query_end.isoformat(), str(start.tzinfo))
+        query_key = (query_start.isoformat(), query_end.isoformat(), str(start.tzinfo), strict)
+        if query_key in cached['queries'] and cached['queries'][query_key] is None:
+            # Preserve the original failure kind without repeating expansion or logging.
+            if strict:
+                raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready')
+            continue
         try:
             if query_key not in cached['queries']:
                 if len(cached['queries']) >= MAX_CALENDAR_QUERY_CACHE:
                     cached['queries'].pop(next(iter(cached['queries'])))
                 # Cache failures too; a frequent poll must not repeat expensive bad queries.
-                cached['queries'][query_key] = []
+                cached['queries'][query_key] = None
                 check_calendar_expansion(cached['calendar'], query_start, query_end)
-                components = recurring_ical_events.of(cached['calendar'], skip_bad_series=True).between(query_start, query_end)
+                components = recurring_ical_events.of(cached['calendar'], skip_bad_series=not strict).between(query_start, query_end)
                 if len(components) > MAX_CALENDAR_EVENTS:
                     raise OverflowError('Calendar occurrence limit exceeded')
                 cached['queries'][query_key] = components
@@ -596,7 +607,10 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
                 if calendar_event_overlaps(event, start, end):
                     events.append(event)
         except Exception as error:
+            cached['queries'][query_key] = None
             cached['error'] = 'event_limit' if isinstance(error, OverflowError) else 'invalid_feed'
+            if strict:
+                raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready') from error
             app.logger.warning('Calendar events failed (%s)', type(error).__name__)
     return sorted(events, key=lambda event: (event['starts_at'], event['source_id'], event['uid']))
 
@@ -943,6 +957,7 @@ def managed_content(identity):
                      if row['id'] in content['schedule_ids']
                      and not set((row.get('calendar_link') or {}).get('source_ids', [])) - (sources | {'local'})]
         needed = set(content['calendar_source_ids']) | {
+            target['source_id'] for target in content.get('calendar_targets', [])} | {
             source for row in schedules for source in (row.get('calendar_link') or {}).get('source_ids', [])}
         # This server-only digest detects deletion/replacement during calendar I/O.
         source_revision = revision([[row for row in source_rows if row['id'] in needed],
@@ -988,8 +1003,12 @@ def managed_display(identity):
     settings = group['effective_settings']
     now = datetime.now(timezone(timedelta(hours=settings['timezone_offset'])))
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    sources = group['content']['calendar_source_ids']
+    whole_sources = set(group['content']['calendar_source_ids'])
+    targets = group['content'].get('calendar_targets', [])
+    sources = sorted(whole_sources | {target['source_id'] for target in targets})
     calendar = get_calendar_events(start=start, end=start + timedelta(days=1), source_ids=sources) if sources else []
+    calendar = [event for event in calendar if event.get('source_id') in whole_sources
+                or any(calendar_target_matches(event, target) for target in targets)]
     payload = display_snapshot(now, notes, schedules, calendar, managed_calendar_events)
     payload['settings'] = settings
     return managed_response(identity, group, notes, schedules, source_revision, payload)

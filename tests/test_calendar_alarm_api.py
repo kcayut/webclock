@@ -179,6 +179,51 @@ END:VCALENDAR
             with self.subTest(query=query):
                 self.assertEqual(self.client.get('/api/v1/calendar-events' + query).status_code, 400)
 
+    def test_catalog_failures_are_not_successful_empty_lists_and_never_expose_url(self):
+        route = '/api/v1/calendar-events?source_id=work'
+        failures = [('fetch', clock.requests.RequestException('https://calendar.example/private-token.ics')),
+                    ('parse', b'not a calendar'), ('limit', b'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n')]
+        for kind, value in failures:
+            with self.subTest(kind=kind):
+                clock.calendar_feed_cache.clear()
+                self.download.side_effect = value if isinstance(value, Exception) else None
+                if isinstance(value, bytes):
+                    self.download.return_value.content = value
+                with patch.object(clock, 'check_calendar_expansion', side_effect=OverflowError('private-token') if kind == 'limit' else None) as expansion:
+                    for _ in range(2):
+                        response = self.client.get(route)
+                        self.assertEqual(response.status_code, 503, response.text)
+                        self.assertEqual(response.json['code'], 'calendar_not_ready')
+                        self.assertNotIn('events', response.json)
+                        self.assertNotIn('private-token', response.text)
+                        expected_error = {'fetch': 'fetch_failed', 'parse': 'invalid_feed', 'limit': 'event_limit'}[kind]
+                        self.assertEqual(next(iter(clock.calendar_feed_cache.values()))['error'], expected_error)
+                    self.assertEqual(expansion.call_count, 1 if kind == 'limit' else 0)
+                self.assertEqual(self.client.get('/api/status').status_code, 200)
+        # A genuinely empty, readable calendar is distinct from a failure.
+        clock.calendar_feed_cache.clear()
+        self.download.side_effect = None
+        self.download.return_value.content = b'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n'
+        response = self.client.get(route)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['events'], [])
+
+    def test_strict_catalog_does_not_reuse_tolerant_query_cache(self):
+        calls = []
+        def reader(calendar, skip_bad_series):
+            calls.append(skip_bad_series)
+            if not skip_bad_series:
+                raise ValueError('invalid series at private-token')
+            return SimpleNamespace(between=lambda start, end: [])
+        start = self.now.replace(hour=0, minute=0, second=0, microsecond=0)
+        with patch.object(clock.recurring_ical_events, 'of', side_effect=reader):
+            self.assertEqual(clock.get_calendar_events(start, start + timedelta(days=366), ['work']), [])
+            for _ in range(2):
+                response = self.client.get('/api/v1/calendar-events?source_id=work')
+                self.assertEqual(response.status_code, 503)
+                self.assertNotIn('private-token', response.text)
+        self.assertEqual(calls, [True, False])
+
     def test_selected_occurrence_and_series_follow_reschedule_and_cancellation(self):
         master = '''BEGIN:VEVENT
 UID:weekly
