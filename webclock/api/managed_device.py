@@ -163,7 +163,8 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
             device_id = identity['device_id']
             existing = next((row for row in devices.list() if row['id'] == device_id), None)
             if existing is None or 'name' in value:
-                devices.register({'id': device_id, 'name': value.get('name', 'Browser display')})
+                authorized_ids = access_provider().device_ids() if auth_provider().mode() == 'managed' else None
+                devices.register({'id': device_id, 'name': value.get('name', 'Browser display')}, authorized_ids)
             report = devices.report(dict({key: val for key, val in value.items() if key != 'name'}, id=device_id))
             allowed = REPORT_FIELDS | {'id', 'reported_name', 'device_type', 'capabilities',
                                        'capabilities_reported_at', 'registered_at', 'last_seen', 'online', 'sync_status'}

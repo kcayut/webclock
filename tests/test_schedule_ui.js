@@ -70,7 +70,8 @@ const englishLabels = {
     capability_display: "Display", capability_audio: "Audio", capability_notifications: "Notifications", capability_background: "Background", capability_calendar: "Calendar",
     yes: "Supported", no: "Not supported", sync_status: "Sync confirmation", sync_idle: "Not requested", sync_pending: "Awaiting confirmation",
     sync_confirmed: "Confirmed", sync_timed_out: "Timed out", sync_requested_at: "Requested", sync_acknowledged_at: "Confirmed at",
-    device_data_stale: "Device data stale"
+    device_data_stale: "Device data stale", device_revoke: "Revoke access",
+    device_revoke_confirm: "Revoke {name}? A new join code is required.", device_revoked: "Device access revoked"
 };
 $("schedule-i18n").textContent = JSON.stringify({
     en: englishLabels,
@@ -1115,6 +1116,71 @@ const completionTimeout = setTimeout(() => {
     reply(oldDevicesRequest, {devices: [{id: "stale"}]});
     await oldDevices;
     assert.equal(content($("device-list")).trim(), "no_devices");
+    const member = {...savedDevice, can_revoke: true};
+    const waitingMember = {id: "waiting", name: "Not yet reported", can_revoke: true, reported: false, online: null};
+    const legacyDevice = {id: "legacy", name: "Legacy observation", can_revoke: false};
+    const deviceRows = [member, waitingMember, legacyDevice];
+    const memberLoad = qa.loadDevices(); reply(take("/devices"), {devices: deviceRows}); await memberLoad;
+    const deviceButton = (id, label) => descendants(deviceNameInput(id).parentNode.parentNode.parentNode)
+        .find(item => item.tag === "button" && item.textContent === label);
+    assert.equal(descendants($("device-list")).filter(item => item.textContent === "Revoke access").length, 2,
+        "Only explicit independent authorizations, including unreported members, can be revoked");
+    assert.equal(deviceButton("legacy", "Revoke access"), undefined);
+    assert.ok(deviceNameInput("waiting").disabled && deviceButton("waiting", "Save name").disabled &&
+        deviceButton("waiting", "sync").disabled && !deviceButton("waiting", "Revoke access").disabled,
+        "Unreported authorizations can be revoked but cannot rename or sync before a device report");
+    const beforeUnreportedAction = requests.length;
+    await deviceButton("waiting", "Save name").trigger("click"); await deviceButton("waiting", "sync").trigger("click");
+    assert.equal(requests.length, beforeUnreportedAction, "Handlers also reject unreported-device actions");
+    nameInput = deviceNameInput("legacy"); nameInput.value = "Other device draft"; nameInput.focus(); await nameInput.trigger("input");
+    let confirmation = "";
+    context.window.confirm = text => { confirmation = text; return false; };
+    const beforeCancel = requests.length;
+    await deviceButton("desk", "Revoke access").trigger("click");
+    assert.equal(requests.length, beforeCancel, "Canceling never sends a revoke request");
+    assert.equal(confirmation, "Revoke Managed desk? A new join code is required.");
+    context.window.confirm = () => true;
+    const failedRevoke = deviceButton("desk", "Revoke access").trigger("click");
+    reply(take("/devices/desk", "DELETE"), {error: "storage failed"}, false); await failedRevoke;
+    assert.ok(deviceNameInput("desk"), "A failed revoke retains its card");
+    assert.equal(deviceNameInput("legacy").value, "Other device draft");
+    assert.equal(deviceButton("desk", "Revoke access").disabled, false);
+    assert.match($("status").textContent, /storage failed/);
+
+    const memberRemovals = [];
+    context.window.WebClockGroups = {memberRemoved(id) { memberRemovals.push(id); }};
+    const preRevokeRead = qa.loadDevices(), preRevokeRequest = take("/devices");
+    const revoke = deviceButton("desk", "Revoke access").trigger("click");
+    const revokeRequest = take("/devices/desk", "DELETE");
+    assert.equal(deviceButton("desk", "Revoke access").disabled, true);
+    assert.equal(deviceButton("desk", "Save name").disabled, true);
+    assert.equal(deviceButton("desk", "sync").disabled, true);
+    const beforeDuplicate = requests.length;
+    await deviceButton("desk", "Revoke access").trigger("click");
+    assert.equal(requests.length, beforeDuplicate, "A duplicate handler cannot send another revoke");
+    const duringRevokeRead = qa.loadDevices(), duringRevokeRequest = take("/devices");
+    context.document.documentElement.lang = "ja"; context.window.applyManagementLanguage("ja");
+    assert.equal(deviceButton("desk", "Revoke access").disabled, true, "Language redraw retains pending state");
+    context.document.documentElement.lang = "en"; context.window.applyManagementLanguage("en");
+    reply(revokeRequest, {status: "revoked"}); await flush();
+    assert.equal(deviceNameInput("desk"), undefined, "Success immediately removes the authorized device");
+    assert.deepEqual(memberRemovals, ["desk"], "Group membership is updated without replacing group drafts");
+    reply(preRevokeRequest, {devices: deviceRows}); await preRevokeRead;
+    reply(duringRevokeRequest, {devices: deviceRows}); await duringRevokeRead;
+    assert.equal(deviceNameInput("desk"), undefined, "Older reads cannot restore a revoked member");
+    reply(take("/devices"), {devices: [waitingMember, legacyDevice]}); await revoke;
+    assert.equal(deviceNameInput("legacy").value, "Other device draft");
+    assert.equal(activeElement, deviceNameInput("legacy"), "Removing a different device preserves rename focus");
+    assert.equal(deviceNameInput("legacy").value, "Other device draft");
+
+    const revokeWaiting = deviceButton("waiting", "Revoke access").trigger("click");
+    reply(take("/devices/waiting", "DELETE"), {status: "revoked"}); await flush();
+    reply(take("/devices"), {error: "offline"}, false); await revokeWaiting;
+    assert.equal(deviceNameInput("waiting"), undefined, "Refresh failure does not undo a successful revoke");
+    assert.match($("status").textContent, /Device access revoked.*Device data stale/);
+    const selfLeave = qa.loadDevices(); reply(take("/devices"), {devices: []}); await selfLeave;
+    assert.equal(content($("device-list")).trim(), "no_devices", "Polling removes devices that left elsewhere");
+
     const emptyPost = qa.api("/schedules/alarm/skip-next", {method: "POST"});
     const emptyPostRequest = take("/schedules/alarm/skip-next", "POST");
     assert.equal(emptyPostRequest.options.body, undefined);

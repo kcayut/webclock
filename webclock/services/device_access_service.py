@@ -10,6 +10,7 @@ import secrets
 import time
 from uuid import uuid4
 
+from .device_service import DeviceService, _identifier
 from .storage import load_json, revision, save_json, storage_lock
 
 
@@ -501,16 +502,57 @@ class DeviceAccessService:
             self._leave_device(self._load(), token, owner_id)
 
     def leave(self, token, owner_id):
-        """Remove only this device's authorization and release its global slot."""
+        """Remove this device's authorization and observations together."""
         with storage_lock:
             state = self._load()
             row = self._leave_device(state, token, owner_id)
-            del state['devices'][row['id']]
-            # Removing this completed attempt also permits prepare with the old
-            # cookie if the successful leave response (and cookie deletion) is lost.
-            state['attempts'] = {key: attempt for key, attempt in state['attempts'].items()
-                                 if attempt['device_id'] != row['id']}
-            save_json(self.path, state)
+            self._remove_device(state, row['id'])
+
+    def _owned_device(self, state, owner_id, device_id):
+        self._owner(owner_id)
+        _identifier(device_id)
+        row = state['devices'].get(device_id)
+        if row is None or row['owner_id'] != owner_id:
+            raise AccessError('Device not found', 404, 'not_found')
+        return row
+
+    def authorize_management_device(self, owner_id, device_id):
+        with storage_lock:
+            self._owned_device(self._load(), owner_id, device_id)
+
+    def _remove_device(self, state, device_id):
+        # All callers hold storage_lock. Remove observations first: if the final
+        # access write fails, the still-authorized device can report them again.
+        DeviceService(self.path.with_name('devices.json')).remove(device_id)
+        del state['devices'][device_id]
+        # Also permit prepare with the stale cookie if the success reply is lost.
+        state['attempts'] = {key: attempt for key, attempt in state['attempts'].items()
+                             if attempt['device_id'] != device_id}
+        save_json(self.path, state)
+
+    def revoke(self, owner_id, device_id):
+        with storage_lock:
+            state = self._load()
+            self._owned_device(state, owner_id, device_id)
+            self._remove_device(state, device_id)
+
+    def device_ids(self):
+        """Internal snapshot for pruning observations; includes every owner."""
+        with storage_lock:
+            return set(self._load()['devices'])
+
+    def list_devices(self, owner_id, include_legacy=False):
+        with storage_lock:
+            self._owner(owner_id)
+            state = self._load()
+            observed = {row['id']: row for row in DeviceService(self.path.with_name('devices.json')).list()}
+            result = [dict(observed.get(row['id'], dict(DeviceService._public({'id': row['id']}), online=None)),
+                           can_revoke=True, reported=row['id'] in observed)
+                      for row in state['devices'].values() if row['owner_id'] == owner_id]
+            if include_legacy:
+                result.extend(dict(row, can_revoke=False, reported=True) for key, row in observed.items()
+                              if key not in state['devices'])
+            return result
 
     def prepare(self, owner_id, source, token=None):
         """Return attempt metadata and a token only when a new cookie is needed."""

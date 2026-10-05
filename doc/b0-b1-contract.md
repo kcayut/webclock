@@ -1,6 +1,6 @@
 # B0–B1：管理身份、群組與邀請契約
 
-2026-10-05。B0–B3 已提供管理登入、入口隔離、復原相容、群組與邀請、原子加入、受管顯示與輸碼/群組管理畫面。`/api/health` 的 `managed_devices_ready` 為 `true`，顯示契約為 schema 3。B4 的逐台移組/停用/撤銷操作與正式安裝切換仍待交辦；既有安裝維持 self，managed 仍只供明確啟用的隔離測試。
+2026-10-05。B0–B3 已提供管理登入、入口隔離、復原相容、群組與邀請、原子加入、受管顯示與輸碼/群組管理畫面。`/api/health` 的 `managed_devices_ready` 為 `true`，顯示契約為 schema 3。逐台撤銷與退出後移除管理記錄已於 2026-10-06 補齊；B4 的移組/停用與正式安裝切換仍待交辦；既有安裝維持 self，managed 仍只供明確啟用的隔離測試。
 
 ## 部署與管理者
 
@@ -77,7 +77,7 @@ metadata 回 `remaining` 與 `status` (`active|closed|disabled|expired|full`)。
 
 端點 namespace `/api/v2/device/*`、顯示 schema 3：`join/prepare` 建立 10 分鐘 attempt 與未啟用 HttpOnly cookie；往返確認後 `join` 在單檔交易啟用原憑證、生成 Server ID、綁組並扣額。成功回應遺失後，原 attempt/cookie 重送回同一有效身份，不再次扣額；撤銷不得重送復活。`display`/`browser-alarms`/`status` 使用獨立裝置憑證，不接受 body id/group_id 代替身份。
 
-device record 固定：`id`、`owner_id`、`group_id`、`enabled`、`status` (`active|disabled|revoked`)、`credential_digest`（字串或 null）、`credential_generation`、`created_at`、`assignment_revision`、`rejoin_required`。憑證至少 256-bit，伺服器只存摘要。快照帶 identity/assignment 與三類內容 revision、授權期限；私人內容租約為 300 秒。先驗權限再處理 ETag/304，304 續期明確回租約；失權停止伺服器私人資料與待響鬧鐘，保留本機提醒和有效非私密設定。裝置可自行退出，管理員的逐台生命週期管理操作仍留 B4。
+device record 固定：`id`、`owner_id`、`group_id`、`enabled`、`status` (`active|disabled|revoked`)、`credential_digest`（字串或 null）、`credential_generation`、`created_at`、`assignment_revision`、`rejoin_required`。憑證至少 256-bit，伺服器只存摘要。快照帶 identity/assignment 與三類內容 revision、授權期限；私人內容租約為 300 秒。先驗權限再處理 ETag/304，304 續期明確回租約；失權停止伺服器私人資料與待響鬧鐘，保留本機提醒和有效非私密設定。裝置可自行退出，管理員可刪除個別裝置授權；移組與停用/恢復仍留 B4。
 
 已實作的 wire 格式：
 
@@ -86,14 +86,18 @@ device record 固定：`id`、`owner_id`、`group_id`、`enabled`、`status` (`a
 | `POST /join/prepare` | 同源 CSRF，body `{}`；201 回 `{attempt_id, expires_at}` 並設定待用 `webclock_device` HttpOnly cookie；重用未到期嘗試可回 200 |
 | `GET /identity` | cookie 往返確認；待加入回 `{status: "pending", attempt_id, expires_at}`，不含 group；已認證回 `{status: "active", identity, group: {id, name}}` |
 | `POST /join` | 同源 CSRF，body `{attempt_id, code}`；新加入 201、同一有效身份重試 200，皆回 `{schema_version: 3, identity, server_timestamp}`；不得再 Set-Cookie 輪換憑證 |
-| `POST /leave` | 同源 cookie+CSRF，body `{}`；原子撤銷自身憑證後，200 回 `{status: "left"}` 並清除同路徑 Cookie；與 prepare/join 一樣拒絕 Bearer |
+| `POST /leave` | 同源 cookie+CSRF，body `{}`；移除自身授權與觀察記錄後，200 回 `{status: "left"}` 並清除同路徑 Cookie；與 prepare/join 一樣拒絕 Bearer |
 | `GET /display` | 回 `{schema_version: 3, identity, server_timestamp, lease, config_revision, schedule_revision, holiday_revision, settings, events, next_event}` |
 | `GET /browser-alarms` | 同一授權範圍，回 schema/identity/server_timestamp/lease，加既有 `enabled_count`, `enabled_ids`, `alarms`；alarms 沿用既有 occurrence ID、時間、音色/音量語意 |
 | `POST /status` | 同源 cookie+CSRF，或獨立 Bearer；接受既有自報名稱/類型/能力/revision/ACK 欄位但拒絕 body `id`, `owner_id`, `group_id`, `admin_name`；Server 從憑證補 ID，再沿用 DeviceService 回報與 commands 契約 |
 
 `identity` 固定為 `{device_id, owner_id, group_id, credential_generation, assignment_revision, identity_revision}`，後三者用來隔離請求與快取；identity_revision 為這個身份/指派範圍的摘要。`server_timestamp`、attempt 的 `expires_at` 與 `lease: {issued_at, expires_at}` 均用 Unix 毫秒數；持久檔的 created_at/expires_at 則使用含時區 ISO 8601 字串。config revision 包含實際繼承後設定；schedule revision 包含該組允許內容。心跳或改名不改內容 revision。
 
-`leave` 原子刪除自身授權記錄與已完成加入嘗試，永久使舊憑證與舊加入重試失效，並釋放全站 100 台上限中的名額。其他裝置、群組、`devices.json` 觀察記錄與本機提醒保留；原邀請已用額度不退還。群組停用後仍可自行退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 `storage_failure`，不清 Cookie，也不宣稱成功。此退出功能不代表 B4 的完整管理操作已交付。
+`leave` 與管理端 `DELETE /api/v1/devices/<id>` 共用移除流程：刪除指定裝置的授權、加入嘗試與 `devices.json` 觀察記錄，管理列表不再顯示該裝置，並釋放全站 100 台上限中的名額。其他裝置、群組與本機提醒保留；原邀請已用額度不退還。成功後舊憑證與舊加入重試永久失效，API 立即拒絕；離線端仍依最長 300 秒租約清除私人內容。群組停用後仍可自行退出；重新加入需新邀請並取得新身份。
+
+管理 DELETE 只處理目前 owner 的獨立授權，成功回 200 `{status: "revoked"}`；不存在、其他 owner 或只有 legacy 共用 token 的裝置回 404，不能逐台撤銷共用 token。managed 的 `GET /api/v1/devices` 以 owner 目前授權為主，尚未回報也列出，`can_revoke: true`；`reported: false` 時改名與同步停用。self 仍列舊觀察記錄，其 `can_revoke: false`；既存未標來源的觀察無法判定是否為歷史退出殘留，因此保留、不猜測刪除。
+
+移除時在同一 lock 內先保存觀察記錄、再保存授權/嘗試。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若後一檔寫入失敗，原授權仍有效，但觀察記錄可能須由下次 status 重建。此流程不保證跨檔原子回復。移組、停用/恢復與正式部署遷移仍待 B4。
 
 304 只可在當前憑證與指派仍有效時回傳，附 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`（Unix 毫秒）及 `X-WebClock-Identity-Revision`。缺少續租欄位的 304 不延長租約。v2 私人資料禁止 CORS `*`，使用 private/no-cache 且不進 SW。Bearer 與管理 session 永遠不互換；首版 browser 加入只支援同源自架頁。
 

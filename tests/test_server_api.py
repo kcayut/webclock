@@ -325,7 +325,7 @@ class ServerApiTest(unittest.TestCase):
         self.assertEqual(reported['capabilities'], {'background': False})
         self.assertTrue(reported['capabilities_reported_at'])
         listed = self.client.get('/api/v1/devices').json['devices'][0]
-        self.assertEqual(listed, reported)
+        self.assertEqual(listed, dict(reported, can_revoke=False, reported=True))
         for payload in ({'name': ''}, {'name': 'x' * 101}, {'name': 'Name', 'extra': True}):
             self.assertEqual(self.client.patch('/api/v1/devices/bedroom', json=payload).status_code, 400)
         self.assertEqual(self.client.patch('/api/v1/devices/missing', json={'name': 'Name'}).status_code, 404)

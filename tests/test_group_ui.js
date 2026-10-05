@@ -165,6 +165,26 @@ async function main() {
     assert.deepEqual(JSON.parse(next('', 'POST').options.body).content, content);
     respond('', makeRow('new', 'New room'), 'POST'); await flush(); await access('new');
     assert.equal($('group-select').value, 'new'); assert.equal($('group-name').value, 'New room');
+    await trigger('group-name', 'input', 'Unsaved group after revoke');
+    $('group-name').focus(); $('group-name').selectionStart = 1; $('group-name').selectionEnd = 4;
+    await trigger('group-select', 'change', 'new');
+    await access('new', null, [{id: 'revoked', name: 'Revoked member'}, {device_id: 'kept', name: 'Kept member'}]);
+    await trigger('group-select', 'change', 'new');
+    const oldInvite = next('/new/invite'), oldMembers = next('/new/members');
+    window.WebClockGroups.memberRemoved('revoked');
+    assert.equal($('group-members').children.length, 1);
+    assert.equal($('group-members').children[0].children[0].textContent, 'Kept member');
+    oldInvite.done = oldMembers.done = true;
+    oldInvite.resolve({ok: true, json: async () => ({invite: null})});
+    oldMembers.resolve({ok: true, json: async () => ({members: [{id: 'revoked', name: 'Stale revoked member'}]})});
+    await flush();
+    assert.equal($('group-members').children[0].children[0].textContent, 'Kept member', 'Late member reads cannot restore revoked access');
+    await access('new', null, [{device_id: 'kept', name: 'Kept member'}]);
+    assert.equal($('group-name').value, 'Unsaved group after revoke');
+    assert.equal(active, $('group-name')); assert.equal(active.selectionStart, 1); assert.equal(active.selectionEnd, 4);
+    window.WebClockGroups.memberRemoved('kept');
+    assert.equal($('group-members').children[0].textContent, 'No members');
+    await access('new');
     assert.doesNotMatch(source, /localStorage|sessionStorage/);
     console.log('Group UI: inheritance, isolated drafts, focus, polling, failures, slow saves, code secrecy and member state passed.');
 }

@@ -11,6 +11,7 @@
     let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
     const deviceNameDrafts = new Map();
     const deviceNamesSaving = new Set();
+    const deviceRevoking = new Set();
     let deviceDataStale = false;
     const capabilityFields = ["display", "audio", "notifications", "background", "calendar"];
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
@@ -713,6 +714,29 @@
         return capabilityFields.map(key => t("capability_" + key) + ": " +
             (Object.prototype.hasOwnProperty.call(capabilities, key) ? t(capabilities[key] ? "yes" : "no") : t("unknown"))).join(" · ");
     }
+    async function revokeDevice(device) {
+        if (deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id) ||
+                !devices.some(item => item.id === device.id && item.can_revoke === true) ||
+                !window.confirm(format("device_revoke_confirm", {name: device.name || device.id}))) return;
+        deviceRevoking.add(device.id);
+        ++deviceRequest;
+        renderDevices();
+        try {
+            const result = await api("/devices/" + encodeURIComponent(device.id), {method: "DELETE"});
+            if (result.status !== "revoked") throw new Error(t("request_failed"));
+            ++deviceRequest;
+            devices = devices.filter(item => item.id !== device.id);
+            deviceNameDrafts.delete(device.id);
+            renderDevices();
+            if (window.WebClockGroups) window.WebClockGroups.memberRemoved(device.id);
+            notice(t("device_revoked"));
+            try { await loadDevices(); }
+            catch (error) { notice(t("device_revoked") + " · " + t("device_data_stale"), true); }
+        } finally {
+            deviceRevoking.delete(device.id);
+            renderDevices();
+        }
+    }
     function renderDevices() {
         renderDeviceRefreshStatus();
         const list = $("device-list");
@@ -728,6 +752,7 @@
             const connection = typeof device.online === "boolean" ? (device.online ? "online" : "offline") : "unknown";
             heading.append(node("h3", device.name || device.id), node("span", t(connection), "badge" + (device.online ? "" : " offline")));
             card.append(heading);
+            if (device.reported === false) card.append(node("p", t("device_not_reported"), "help"));
             const details = node("dl");
             const values = {
                 reported_name: device.reported_name, device_type: device.device_type,
@@ -755,12 +780,13 @@
             const input = node("input");
             input.value = deviceNameDrafts.has(device.id) ? deviceNameDrafts.get(device.id) : (device.admin_name || device.name || device.id);
             input.maxLength = 100;
+            input.disabled = device.reported === false || deviceRevoking.has(device.id);
             input.setAttribute("data-device-name", device.id);
             input.setAttribute("aria-label", t("admin_name"));
             input.addEventListener("input", () => deviceNameDrafts.set(device.id, input.value));
             label.append(input);
             const saveName = action(t("save_name"), async () => {
-                if (deviceNamesSaving.has(device.id)) return;
+                if (device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id)) return;
                 const submittedName = input.value;
                 deviceNamesSaving.add(device.id);
                 ++deviceRequest;
@@ -777,16 +803,24 @@
                     renderDevices();
                 }
             }, "primary");
-            saveName.disabled = deviceNamesSaving.has(device.id);
+            saveName.disabled = device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id);
             rename.append(label, saveName);
             card.append(rename);
             if (activeDevice === device.id) refocus = input;
             const actions = node("div", undefined, "actions");
-            actions.append(action(t("sync"), async () => {
+            const syncButton = action(t("sync"), async () => {
+                if (device.reported === false || deviceRevoking.has(device.id)) return;
                 await api("/devices/" + encodeURIComponent(device.id) + "/commands", json("POST", {action: "sync"}));
                 notice(t("pending"));
                 await loadDevices();
-            }));
+            });
+            syncButton.disabled = device.reported === false || deviceRevoking.has(device.id);
+            actions.append(syncButton);
+            if (device.can_revoke === true) {
+                const revoke = action(t("device_revoke"), () => revokeDevice(device), "danger");
+                revoke.disabled = deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id);
+                actions.append(revoke);
+            }
             card.append(actions);
             list.append(card);
         });

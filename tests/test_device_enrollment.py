@@ -563,7 +563,6 @@ class EnrollmentTransportTest(unittest.TestCase):
         joined = self.join().json['identity']
         token = self.cookie().value
         self.devices.register({'id': joined['device_id'], 'name': 'Observed device'})
-        observations = self.devices.path.read_bytes()
         peer = self.service.prepare(self.auth.owner_id(), 'peer')
         peer_identity = self.service.join(self.auth.owner_id(), peer['token'], peer['attempt_id'],
                                           self.invitation['code'], 'peer')['identity']
@@ -572,7 +571,7 @@ class EnrollmentTransportTest(unittest.TestCase):
         self.assertEqual(response.json, {'status': 'left'})
         self.assertEqual(response.headers['Cache-Control'], 'no-store')
         self.assertIsNone(self.cookie())
-        self.assertEqual(self.devices.path.read_bytes(), observations)
+        self.assertNotIn(joined['device_id'], {row['id'] for row in self.devices.list()})
         deleted = response.headers['Set-Cookie']
         for marker in ('webclock_device=', 'Max-Age=0', 'Path=/api/v2/device', 'Secure', 'HttpOnly', 'SameSite=Lax'):
             self.assertIn(marker, deleted)

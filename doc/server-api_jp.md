@@ -2,7 +2,7 @@
 
 ## B0–B3 管理・グループ・受管端末（2026-10-05）
 
-管理者 session、owner ごとのグループ、招待、原子的な参加処理、認証に基づく表示・アラーム配信、グループ管理画面を実装しました。既存環境は `self` を維持し、`managed` は明示的な隔離テストのみです。本番モード移行と個別端末の移動・無効化・失効操作は B4 の対象です。操作は[ガイド](guide_jp.md)、保存と更新・復元の境界は [B0–B1 契約](b0-b1-contract.md)を参照してください。
+管理者 session、owner ごとのグループ、招待、原子的な参加処理、認証に基づく表示・アラーム配信、グループ管理画面を実装しました。既存環境は `self` を維持し、`managed` は明示的な隔離テストのみです。端末の退出と管理者による個別アクセスの取り消しに対応しています。本番モード移行と個別端末の移動・無効化は B4 の対象です。操作は[ガイド](guide_jp.md)、保存と更新・復元の境界は [B0–B1 契約](b0-b1-contract.md)を参照してください。
 
 公開 `GET /api/time` は時刻のみを返します。managed の `/api/status` は時刻と空の予定、旧 `/api/v1/device/*` は 403、`/api/v1/browser-alarms` は 401 を返します。管理 session は端末認証を代替しません。非公開情報を含まない `/api/health` の `managed_device_schema: 3` と `managed_devices_ready: true` は endpoint の実装を示し、本番移行や実機検収の完了ではありません。以下の旧 schema 2 API は self が前提です。旧 ESP codec が自動的に schema 3 に対応するわけではありません。
 
@@ -31,14 +31,14 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 | `/api/v2/device/join/prepare` | POST `{}`。10 分の試行を作成・再利用し、`attempt_id`・`expires_at` と待機 Cookie を返す |
 | `/api/v2/device/identity` | GET Cookie 往復確認。`pending` 試行は group を含まず、`active` は `{status: "active", identity, group: {id, name}}` を返す |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`。枠消費と参加を原子的に保存。初回 201、同じ確定済み試行の再送は 200 |
-| `/api/v2/device/leave` | POST `{}`。Cookie と同一オリジンの CSRF のみ。この端末の認証情報を原子的に失効させ、200 `{status: "left"}` を返して同じパスの Cookie を削除する |
+| `/api/v2/device/leave` | POST `{}`。Cookie と同一オリジンの CSRF のみ。この端末の認可と観測記録を削除し、200 `{status: "left"}` を返して同じパスの Cookie を削除する |
 | `/api/v2/device/display` | GET グループの有効設定、選択済み予定、次の予定 |
 | `/api/v2/device/browser-alarms` | GET 選択済みアラームと計算結果 |
 | `/api/v2/device/status` | POST 名前・能力・revision・指令 ACK。認証情報から端末を決定し、`id`・`group_id` の自己指定は不可 |
 
 ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed は HTTPS と Secure Cookie を要求します。prepare・join・leave は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
 
-退出はこの端末の認証レコードと完了済み参加試行を原子的に削除します。旧認証情報と旧参加試行の再送は永久に無効となり、全体の上限 100 台の枠を解放します。他のメンバー、グループ、`devices.json` の観測記録、ローカルのリマインダーは保持し、元の招待の使用済み枠は戻しません。無効化されたグループからも退出できます。成功後は再度 prepare し、新しい招待で新しい端末 ID として参加できます。保存失敗は `storage_failure` を返し、Cookie を削除せず、成功とも報告しません。B4 の個別端末管理機能全体は未実装です。
+退出と管理者による個別アクセスの取り消しは、対象端末の認可、完了済み参加試行、`devices.json` の観測記録を削除します。管理一覧からも消え、全体の上限 100 台の枠を解放します。旧認証情報と旧参加試行の再送は永久に無効となり、API は直ちに拒否します。オフライン端末には既存の最大 300 秒のリースが適用されます。他のメンバー、グループ、ローカルのリマインダーは保持し、元の招待の使用済み枠は戻しません。無効化されたグループからも退出できます。成功後は再度 prepare し、新しい招待で新しい端末 ID として参加できます。保存失敗は 500（端末の退出は `storage_failure`）を返し、Cookie を削除せず、成功とも報告しません。観測記録の削除後に認可の保存が失敗した場合、元の認可は有効なままで、観測記録は次回の status で再作成されます。複数ファイルの原子的なロールバックは保証しません。移動・無効化／復帰・本番移行は B4 の対象です。
 
 display・alarms は `schema_version: 3`、`identity`、config・schedule・holiday revision、ミリ秒 `server_timestamp`、最大 300 秒の `lease` を返します。identity は owner・device・group ID、認証世代、割り当て revision、`identity_revision` を含みます。304 を含む応答の直前に現在の認証と内容範囲を再確認し、I/O 中の範囲変更は古い内容ではなく 409 `display_scope_changed` を返します。ETag 応答は `private, no-cache` と `Vary: Cookie, Authorization` を使い、304 は `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` で期限を更新します。参加・identity 応答は `no-store` です。
 
@@ -129,7 +129,7 @@ webclock_state/              非公開の実行データ。Git に追加しな�
 
 ## 管理 API
 
-API は JSON を受け取ります。一致した API ルートのエラーは `{"error":"..."}` で返し、データ検証は 400、存在しない項目は 404、保存失敗は以前のデータを保持して 500 です。その他の HTTP エラーは後述します。不明な URL、非対応メソッド、プロキシの応答は JSON とは限りません。本文の上限は 1 MiB です。
+API は JSON を受け取ります。一致した API ルートのエラーは `{"error":"..."}` で返し、データ検証は 400、存在しない項目は 404、保存失敗は該当ファイルの以前のデータを保持して 500 です。退出・アクセス取り消しの複数ファイル保存時の制限は前述のとおりです。その他の HTTP エラーは後述します。不明な URL、非対応メソッド、プロキシの応答は JSON とは限りません。本文の上限は 1 MiB です。
 
 | パス | メソッドと用途 |
 | --- | --- |
@@ -142,8 +142,10 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 | `/api/v1/browser-alarms` | GET 次のブラウザーアラームと休日データ状態 |
 | `/api/v1/holidays?date=2026-09-30` | GET 日付分類。省略時は台湾の今日 |
 | `/api/v1/devices` | GET 登録端末と未確認指令 |
-| `/api/v1/devices/<id>` | PATCH `{"name":"リビングの時計"}`、200 と `device` を返す |
+| `/api/v1/devices/<id>` | PATCH `{"name":"リビングの時計"}`、200 と `device` を返す。DELETE は現在の owner の独立した端末認可を取り消し、200 `{status: "revoked"}` を返す |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`、202 を返す |
+
+managed の `GET /api/v1/devices` は現在の owner の認可済み端末を、未報告でも `can_revoke: true` として表示します。`reported: false` では管理画面の改名・同期操作を無効にします。self は旧観測一覧を維持し、legacy 端末は `can_revoke: false` です。既存の出所不明な観測記録は過去の退出による残存か判定できないため、推測で削除せず保持します。DELETE は存在しない端末、他の owner、共有 token のみの旧端末に 404 を返します。共有 token は端末ごとに失効できません。
 
 自用モードは信頼できる LAN の共通管理を維持し、帳密テストモードは管理 session を要求します。Origin/CSRF は認証ではありません。外部公開には HTTPS と適切なプロキシ設定が必要です。
 

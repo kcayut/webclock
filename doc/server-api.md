@@ -2,7 +2,7 @@
 
 ## B0–B3 管理、群組與受管裝置（2026-10-05）
 
-已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 目前只供明確啟用的隔離測試。正式模式切換與個別裝置移動／停用／撤銷的管理操作仍待 B4。操作方式見[使用指南](guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](b0-b1-contract.md)。
+已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 目前只供明確啟用的隔離測試。已支援裝置自行退出及管理員個別刪除授權；正式模式切換與個別裝置移動／停用仍待 B4。操作方式見[使用指南](guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](b0-b1-contract.md)。
 
 `GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403，`/api/v1/browser-alarms` 回 401。管理登入不能替代裝置憑證。非私人 `/api/health` 提供 `managed_device_schema: 3`、`managed_devices_ready: true`，表示新端點已實作，不表示正式模式切換或實機驗收已完成。以下舊 schema 2 裝置 API 均以 self 模式為前提，現有 ESP codec 不會自動支援 schema 3。
 
@@ -31,14 +31,14 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 | `/api/v2/device/join/prepare` | POST `{}`，建立或重用 10 分鐘加入嘗試；回 `attempt_id`／`expires_at`，並設定待加入 Cookie |
 | `/api/v2/device/identity` | GET 確認 Cookie 往返；`pending` 嘗試不含 group，`active` 回 `{status: "active", identity, group: {id, name}}` |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`；原子扣額並加入，首次 201、同一已提交嘗試重試 200 |
-| `/api/v2/device/leave` | POST `{}`，僅限 Cookie 與同源 CSRF；原子撤銷自身憑證，200 回 `{status: "left"}` 並清除同路徑 Cookie |
+| `/api/v2/device/leave` | POST `{}`，僅限 Cookie 與同源 CSRF；移除自身授權與觀察記錄，200 回 `{status: "left"}` 並清除同路徑 Cookie |
 | `/api/v2/device/display` | GET 群組有效設定、已選事件與下一個事件 |
 | `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
 | `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
 
 瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
 
-自行退出原子刪除自身授權記錄與已完成加入嘗試，舊憑證與舊加入重試永久失效，並釋放全站 100 台上限中的名額。其他成員、群組、`devices.json` 觀察記錄與本機提醒保留；原邀請已用額度不退還。群組停用後仍可退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 `storage_failure`，不清 Cookie，也不宣稱成功。B4 的完整逐台管理操作仍未交付。
+自行退出與管理端個別刪除授權會移除指定裝置的授權、已完成加入嘗試與 `devices.json` 觀察記錄，管理列表不再顯示該裝置，並釋放全站 100 台上限中的名額。舊憑證與舊加入重試永久失效；API 立即拒絕，離線端仍依最長 300 秒租約處理。其他成員、群組與本機提醒保留；原邀請已用額度不退還。群組停用後仍可退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若觀察記錄已刪除而授權保存失敗，原授權仍有效，觀察記錄由下次 status 重建，不保證跨檔原子回復。移組、停用／恢復與正式遷移仍待 B4。
 
 display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision`、`schedule_revision`、`holiday_revision`、Unix 毫秒 `server_timestamp` 與最長 300 秒的 `lease`。身份含 owner／device／group、憑證世代、指派 revision 與 `identity_revision`。每次回應（含 304）前重新確認目前授權與內容範圍；I/O 期間範圍變更回 409 `display_scope_changed`，不送出舊內容。ETag 回應使用 `private, no-cache`、`Vary: Cookie, Authorization`，304 以 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` 續期；加入／身份回應為 `no-store`。
 
@@ -142,7 +142,7 @@ webclock_state/              私人執行資料，不進 Git
 
 ## 管理 API
 
-API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API 路由）。資料驗證錯誤為 400、不存在為 404、儲存 I/O 失敗為 500；失敗寫入不會覆蓋已保存的資料。另有認證、Content-Type、大小及 HTTP 方法錯誤，見下方錯誤表。請求上限 1 MiB。
+API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API 路由）。資料驗證錯誤為 400、不存在為 404、儲存 I/O 失敗為 500；單檔寫入失敗不覆蓋該檔原資料；裝置退出／撤權的跨檔失敗邊界見上文。另有認證、Content-Type、大小及 HTTP 方法錯誤，見下方錯誤表。請求上限 1 MiB。
 
 本文件涵蓋排程、行事曆聯動及裝置同步；舊時鐘的設定／提醒 API 另依[使用指南](guide.md)操作。以下 URL 均相對於自行架設的 Server，不是公開 GitHub Pages 時鐘。
 
@@ -157,8 +157,10 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 | `/api/v1/browser-alarms` | GET 時鐘頁的下次鬧鐘、Server 時間及假日資料狀態 |
 | `/api/v1/holidays?date=2026-09-30` | GET 日期類型；省略日期時查台灣今天 |
 | `/api/v1/devices` | GET 裝置列表、最後回報與待確認同步指令 |
-| `/api/v1/devices/<id>` | PATCH `{"name":"客廳時鐘"}` 修改管理名稱，回 200 與 `device` |
+| `/api/v1/devices/<id>` | PATCH `{"name":"客廳時鐘"}` 修改管理名稱，回 200 與 `device`；DELETE 撤銷自身 owner 的獨立裝置授權，回 200 `{status: "revoked"}` |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`，回 202 與 `command` |
+
+managed 的 `GET /api/v1/devices` 列出目前 owner 的授權裝置，尚未回報也會出現，`can_revoke: true`；`reported: false` 時管理頁停用改名及同步。self 保留舊觀察列表，legacy 裝置的 `can_revoke: false`；既存未標來源的觀察無法判定是否為歷史退出殘留，因此保留、不猜測刪除。DELETE 對不存在、其他 owner 或只有共用 token 的裝置回 404；不能用它逐台撤銷 legacy 共用 token。
 
 自用模式的管理 API 保留可信任區網共用規則；帳密測試模式則要求管理 session。Origin/CSRF 不等於身份驗證，遠端部署仍需 HTTPS 與正確代理設定。
 

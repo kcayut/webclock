@@ -378,7 +378,13 @@
         document.querySelectorAll('[data-group-i18n]').forEach(element => { element.textContent = t(element.getAttribute('data-group-i18n')); });
         renderSelector(); renderValues(); renderAccess();
     }
-    window.WebClockGroups = {applyLanguage, refresh};
+    function memberRemoved(id) {
+        ++mutationVersion; ++panelVersion;
+        members.forEach((rows, groupId) => members.set(groupId, rows.filter(member => (member.id || member.device_id) !== id)));
+        renderAccess();
+        loadAccess();
+    }
+    window.WebClockGroups = {applyLanguage, refresh, memberRemoved};
     buildFields(); applyLanguage(); refresh();
     setInterval(refresh, 15000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

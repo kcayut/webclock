@@ -18,7 +18,7 @@ Turn an iPad, tablet, or spare screen into a large clock. Use the public clock d
 
 The self-hosted UI supports Traditional Chinese, English, and Japanese. It can subscribe to Google, Apple iCloud, and other ICS calendars. Calendar URLs stay on your server and are excluded from the public clock, status responses, and admin-page JSON exports; complete host backups still contain private data.
 
-The clock renders time, date, and weekday first; connection, browser-storage, or optional-feature failures should not stop an already loaded page running in the foreground. Device management supports naming, reported capabilities, and sync confirmation. Groups, six-character enrollment codes, and per-device authorization remain unimplemented. See the [guide](doc/guide_en.md#device-sync-status) for operation and limits, and the [phase-A acceptance record](doc/phase-a-acceptance.md) for current evidence and pending checks (Traditional Chinese). CI and iPad mini 1 / iOS 9 physical acceptance are tracked separately.
+The clock renders time, date, and weekday first; connection, browser-storage, or optional-feature failures should not stop an already loaded page running in the foreground. Device management supports naming, reported capabilities, and sync confirmation. Groups, six-character enrollment, per-device authorization and revocation are available for isolated managed-mode testing; production mode migration, moving and disabling devices remain pending. See the [guide](doc/guide_en.md#device-sync-status) for operation and limits, and the [phase-A acceptance record](doc/phase-a-acceptance.md) for current evidence and pending checks (Traditional Chinese). CI and iPad mini 1 / iOS 9 physical acceptance are tracked separately.
 
 ## Quick installation
 

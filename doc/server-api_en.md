@@ -2,7 +2,7 @@
 
 ## B0–B3 administration, groups and managed devices (2026-10-05)
 
-Administrator sessions, owner-scoped groups, invitations, atomic enrollment, authenticated group display/alarms, and group management UI are implemented. Existing installations remain in `self`; `managed` is still an explicit isolated-test opt-in. Production mode migration and individual device move/disable/revoke controls remain B4 work. See the [guide](guide_en.md) for operation and the [B0–B1 contract](b0-b1-contract.md) for storage and update/restore boundaries.
+Administrator sessions, owner-scoped groups, invitations, atomic enrollment, authenticated group display/alarms, and group management UI are implemented. Existing installations remain in `self`; `managed` is still an explicit isolated-test opt-in. Devices can leave, and administrators can revoke individual device access. Production mode migration and individual move/disable controls remain B4 work. See the [guide](guide_en.md) for operation and the [B0–B1 contract](b0-b1-contract.md) for storage and update/restore boundaries.
 
 Public `GET /api/time` returns only time. Managed `/api/status` returns time and empty events; old `/api/v1/device/*` returns 403 and `/api/v1/browser-alarms` returns 401. An admin session cannot grant device access. Non-private `/api/health` reports `managed_device_schema: 3` and `managed_devices_ready: true`: the endpoints exist, but production migration and hardware acceptance are not complete. The legacy schema 2 descriptions below assume self mode. Existing ESP codecs do not automatically support schema 3.
 
@@ -31,14 +31,14 @@ Each group has one six-character invitation, valid for 600 seconds with 5 slots 
 | `/api/v2/device/join/prepare` | POST `{}`; create/reuse a 10-minute attempt, return `attempt_id`/`expires_at`, and set the pending cookie |
 | `/api/v2/device/identity` | GET cookie round-trip confirmation; `pending` attempts omit group, while `active` returns `{status: "active", identity, group: {id, name}}` |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`; atomically consume capacity and enroll, returning 201 initially or 200 for the same committed attempt |
-| `/api/v2/device/leave` | POST `{}` with a cookie and same-origin CSRF only; atomically revoke this device's credential, return 200 `{status: "left"}`, and clear the cookie at the same path |
+| `/api/v2/device/leave` | POST `{}` with a cookie and same-origin CSRF only; remove this device's authorization and observations, return 200 `{status: "left"}`, and clear the cookie at the same path |
 | `/api/v2/device/display` | GET effective group settings, selected events and next event |
 | `/api/v2/device/browser-alarms` | GET selected alarms and computed occurrences |
 | `/api/v2/device/status` | POST name, capabilities, revisions and command ACKs; credential determines identity, with no caller-supplied `id`/`group_id` |
 
 Browsers perform prepare → identity cookie confirmation → join. The pending secret becomes the same device credential after commit, allowing retries after a lost success response without consuming another slot. Codes never enter URLs or browser storage. `webclock_device` is a host-only, HttpOnly, SameSite=Lax cookie scoped to `/api/v2/device`; managed mode requires HTTPS and Secure cookies. Prepare/join/leave reject Bearer; other device endpoints accept a dedicated device Bearer, not an admin session or legacy shared `DEVICE_API_TOKEN`. Cookie writes require same-origin CSRF. An authenticated device Bearer bypasses cookie CSRF but still undergoes Origin checks; cross-origin reads are not enabled.
 
-Leaving atomically deletes this device's authorization record and completed enrollment attempt, permanently invalidating its old credential and enrollment retries while freeing a slot under the installation's 100-device limit. Other members, groups, `devices.json` observations and local reminders remain; the original invitation's used slot is not refunded. Devices in disabled groups can still leave. After success, the device can prepare again and enroll with a new invitation as a new identity. A save failure returns `storage_failure` without clearing the cookie or reporting success. Full B4 per-device administration remains unimplemented.
+Leaving and individual administrative revocation remove the selected device's authorization, completed enrollment attempt and `devices.json` observations. The device disappears from management lists and frees a slot under the installation's 100-device limit. Its old credential and enrollment retries become permanently invalid: APIs reject them immediately, while offline devices remain subject to the existing lease of at most 300 seconds. Other members, groups and local reminders remain; the original invitation's used slot is not refunded. Devices in disabled groups can still leave. After success, the device can prepare again and enroll with a new invitation as a new identity. A save failure returns 500 (`storage_failure` for device leave) without clearing the cookie or reporting success. If observations were removed but saving authorization fails, the original authorization remains valid and a later status report rebuilds observations; cross-file atomic rollback is not guaranteed. Moving, disabling/restoring and production migration remain B4 work.
 
 Display and alarms return `schema_version: 3`, `identity`, config/schedule/holiday revisions, millisecond `server_timestamp` and a `lease` of at most 300 seconds. Identity includes owner/device/group IDs, credential generation, assignment revision and `identity_revision`. Current authorization and content scope are rechecked before every response, including 304; a scope change during I/O returns 409 `display_scope_changed` instead of old content. ETag responses use `private, no-cache` and `Vary: Cookie, Authorization`; 304 renews through `X-WebClock-Server-Timestamp`, `X-WebClock-Lease-Expires-At` and `X-WebClock-Identity-Revision`. Enrollment/identity responses use `no-store`.
 
@@ -129,7 +129,7 @@ The bundled Taiwan calendar covers **2023-01-01 through 2027-12-31**. It follows
 
 ## Management API
 
-APIs accept JSON. Matched API routes return errors as `{"error":"..."}`: data validation returns 400, missing items 404, and failed storage writes 500 while retaining previous data. Other HTTP errors are listed below; unknown routes, unsupported methods, and proxy responses need not be JSON. Request bodies are limited to 1 MiB.
+APIs accept JSON. Matched API routes return errors as `{"error":"..."}`: data validation returns 400, missing items 404, and failed storage writes 500 while retaining that file’s previous data. Device leave/revocation spans files; its failure boundary is described above. Other HTTP errors are listed below; unknown routes, unsupported methods, and proxy responses need not be JSON. Request bodies are limited to 1 MiB.
 
 | Path | Method and purpose |
 | --- | --- |
@@ -142,8 +142,10 @@ APIs accept JSON. Matched API routes return errors as `{"error":"..."}`: data va
 | `/api/v1/browser-alarms` | GET upcoming browser alarms and holiday-data state |
 | `/api/v1/holidays?date=2026-09-30` | GET the date classification; defaults to today in Taiwan |
 | `/api/v1/devices` | GET registered devices and pending commands |
-| `/api/v1/devices/<id>` | PATCH `{"name":"Living-room clock"}`; returns 200 with `device` |
+| `/api/v1/devices/<id>` | PATCH `{"name":"Living-room clock"}`; returns 200 with `device`; DELETE revokes an independently authorized device belonging to the current owner, returning 200 `{status: "revoked"}` |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`; returns 202 |
+
+Managed `GET /api/v1/devices` lists the current owner’s authorized devices, including those without reports, with `can_revoke: true`. The management UI disables naming and sync when `reported: false`. Self mode retains legacy observations with `can_revoke: false`; existing observations without a source marker cannot be identified as remnants of a past leave, so they are retained rather than deleted by guesswork. DELETE returns 404 for missing devices, another owner’s devices, or legacy shared-token-only devices; it cannot revoke a shared token per device.
 
 Self-mode management keeps the trusted-LAN shared-access behavior; managed test mode requires an admin session. Origin and CSRF checks are not authentication. Remote deployments still need HTTPS and correct proxy configuration.
 

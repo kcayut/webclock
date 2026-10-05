@@ -91,7 +91,7 @@ class DeviceService:
         result["online"] = age is not None and 0 <= age < 120
         return result
 
-    def register(self, data):
+    def register(self, data, authorized_ids=None):
         fields = {"id", "name", "device_type", "capabilities"}
         if not isinstance(data, dict) or set(data) - fields:
             raise ValueError("Invalid registration fields")
@@ -101,6 +101,10 @@ class DeviceService:
         capabilities = _capabilities(data["capabilities"]) if "capabilities" in data else None
         with storage_lock:
             devices = self._load()
+            if device_id not in devices and len(devices) >= 100 and authorized_ids is not None:
+                # Managed mode cannot use legacy observations as authority.
+                # Prune only at capacity, in the same write as the new report.
+                devices = {key: row for key, row in devices.items() if key in authorized_ids}
             if device_id not in devices and len(devices) >= 100:
                 raise ValueError("Device limit reached (100)")
             device = devices.get(device_id, {"id": device_id, "registered_at": _now(), "commands": []})
@@ -171,6 +175,14 @@ class DeviceService:
     def list(self):
         with storage_lock:
             return [self._public(device) for device in self._load().values()]
+
+    def remove(self, device_id):
+        device_id = _identifier(device_id)
+        with storage_lock:
+            devices = self._load()
+            if device_id in devices:
+                del devices[device_id]
+                save_json(self.path, devices)
 
     def command(self, device_id, action):
         device_id = _identifier(device_id)

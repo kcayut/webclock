@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
 
-from flask import Blueprint, abort, jsonify, render_template, request
+from flask import Blueprint, abort, g, jsonify, render_template, request
 
 from webclock.services.device_service import DeviceService
 from webclock.services.display_service import browser_alarm_payload
@@ -16,7 +16,8 @@ def taipei_now():
     return datetime.now(TAIPEI)
 
 
-def management_api(state_directory, holidays, template_context, calendar_events=None, calendar_sources=None):
+def management_api(state_directory, holidays, template_context, calendar_events=None, calendar_sources=None,
+                   device_access=None, owner_id=None):
     api = Blueprint('management', __name__)
 
     def schedules():
@@ -27,6 +28,12 @@ def management_api(state_directory, holidays, template_context, calendar_events=
 
     def devices():
         return DeviceService(Path(state_directory()) / 'devices.json')
+
+    def check_device(device_id):
+        if device_access:
+            access = device_access()
+            if getattr(g, 'deployment_mode', 'self') != 'self' or device_id in access.device_ids():
+                access.authorize_management_device(owner_id(), device_id)
 
     def source_catalog():
         sources = calendar_sources() if calendar_sources else []
@@ -180,17 +187,32 @@ def management_api(state_directory, holidays, template_context, calendar_events=
 
     @api.route('/api/v1/devices')
     def list_devices():
-        return jsonify(devices=devices().list())
+        if device_access:
+            access = device_access()
+            rows = access.list_devices(owner_id(), include_legacy=getattr(g, 'deployment_mode', 'self') == 'self')
+        else:
+            rows = [dict(row, can_revoke=False, reported=True) for row in devices().list()]
+        return jsonify(devices=rows)
 
-    @api.route('/api/v1/devices/<device_id>', methods=['PATCH'])
+    @api.route('/api/v1/devices/<device_id>', methods=['PATCH', 'DELETE'])
     def rename_device(device_id):
-        return jsonify(device=devices().rename(device_id, request.get_json()))
+        with storage_lock:
+            if request.method == 'DELETE':
+                if device_access is None:
+                    abort(503, description='Device authorization is unavailable')
+                access = device_access()
+                access.revoke(owner_id(), device_id)
+                return jsonify(status='revoked')
+            check_device(device_id)
+            return jsonify(device=devices().rename(device_id, request.get_json()))
 
     @api.route('/api/v1/devices/<device_id>/commands', methods=['POST'])
     def device_command(device_id):
         data = request.get_json()
         if not isinstance(data, dict) or set(data) != {'action'}:
             raise ValueError('Expected one command action')
-        return jsonify(command=devices().command(device_id, data['action'])), 202
+        with storage_lock:
+            check_device(device_id)
+            return jsonify(command=devices().command(device_id, data['action'])), 202
 
     return api

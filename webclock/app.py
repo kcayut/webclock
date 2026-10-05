@@ -1003,7 +1003,7 @@ def managed_alarms(identity):
 
 register_api(app, lambda: Path(SETTINGS_FILE).parent, holiday_service, template_context,
              calendar_events=lambda **query: get_calendar_events(**query),
-             calendar_sources=lambda: get_calendar_sources())
+             calendar_sources=lambda: get_calendar_sources(), device_access=group_service, owner_id=group_owner)
 app.register_blueprint(groups_api(group_service, group_owner, group_ui_catalog, lambda: device_service().list()))
 app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms))
 

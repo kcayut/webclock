@@ -7,9 +7,11 @@ from werkzeug.exceptions import HTTPException
 
 from .management import management_api
 from .device import device_api
+from webclock.services.device_access_service import AccessError
 
 
-def register_api(app, state_directory, holidays, template_context, calendar_events=None, calendar_sources=None):
+def register_api(app, state_directory, holidays, template_context, calendar_events=None, calendar_sources=None,
+                 device_access=None, owner_id=None):
     api = Blueprint('server_api', __name__)
     app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
 
@@ -35,6 +37,10 @@ def register_api(app, state_directory, holidays, template_context, calendar_even
     def invalid(error):
         return jsonify(error=str(error)), 400
 
+    @api.errorhandler(AccessError)
+    def access_error(error):
+        return jsonify(error=str(error), code=error.code), error.status
+
     @api.errorhandler(FileNotFoundError)
     @api.errorhandler(KeyError)
     def missing(error):
@@ -43,12 +49,13 @@ def register_api(app, state_directory, holidays, template_context, calendar_even
     @api.errorhandler(OSError)
     def failed_write(error):
         app.logger.exception('Management storage failed')
-        return jsonify(error='Storage failed; previous data has been retained'), 500
+        return jsonify(error='Storage failed; retry the request'), 500
 
     @api.errorhandler(HTTPException)
     def http_error(error):
         return jsonify(error=error.description), error.code
 
-    api.register_blueprint(management_api(state_directory, holidays, template_context, calendar_events, calendar_sources))
+    api.register_blueprint(management_api(state_directory, holidays, template_context, calendar_events, calendar_sources,
+                                         device_access, owner_id))
     api.register_blueprint(device_api(state_directory, holidays))
     app.register_blueprint(api)
