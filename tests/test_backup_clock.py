@@ -459,6 +459,16 @@ class HostBackupTest(unittest.TestCase):
         self.assertIsNone(final['devices'][identity['device_id']]['credential_digest'])
         self.assertTrue(final['invites'][group_id]['closed'])
         self.assertEqual(final['groups'], access['groups'])
+        self.assertGreater(invitation['remaining'], 1, 'The old code must have spare capacity before restore')
+        replacement = restored.prepare('owner', 'fresh-browser')
+        with self.assertRaises(AccessError) as rejected:
+            restored.join('owner', replacement['token'], replacement['attempt_id'], invitation['code'], 'fresh-browser')
+        self.assertEqual(rejected.exception.code, 'invalid_invitation')
+        new_invitation = restored.create_invite('owner', group_id)
+        new_identity = restored.join('owner', replacement['token'], replacement['attempt_id'],
+                                     new_invitation['code'], 'fresh-browser')['identity']
+        self.assertNotEqual(new_identity['device_id'], identity['device_id'])
+        self.assertEqual(restored.authenticate(replacement['token'], 'owner'), new_identity)
 
     def test_custom_restore_also_invalidates_dormant_default_authorization(self):
         project, values, roots = self.installation('dormant', True)

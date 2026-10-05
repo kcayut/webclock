@@ -382,7 +382,7 @@ def main():
         assert json.loads((state / 'devices.json').read_text())['fixture']['name'] == 'Managed migration desk'
         admin, _ = browser()
         login(admin)
-        invitation = management('/api/v1/groups/' + group['id'] + '/invite', {'capacity': 2}, expected=201, client=admin, base=tls_url)
+        invitation = management('/api/v1/groups/' + group['id'] + '/invite', {'capacity': 3}, expected=201, client=admin, base=tls_url)
         assert len(invitation['code']) == 6
         display, display_cookies = browser()
         denied(display)
@@ -438,6 +438,8 @@ def main():
 
         managed_backup, managed_rollback = root / 'managed-backup', root / 'managed-before-restore'
         run('systemctl', 'stop', 'webclock')
+        saved_invite = json.loads((state / 'device-access.json').read_text())['invites'][group['id']]
+        assert not saved_invite['closed'] and saved_invite['capacity'] - saved_invite['used'] == 1
         backup('create', managed_backup, '--stopped')
         backup('verify', managed_backup)
         run('systemctl', 'start', 'webclock')
@@ -454,15 +456,25 @@ def main():
         restored = json.loads((state / 'device-access.json').read_text())
         member = restored['devices'][identity['device_id']]
         assert member['credential_digest'] is None and member['rejoin_required'] is True
-        assert member['status'] == 'revoked' and restored['invites'] == {} and restored['attempts'] == {}
+        assert member['status'] == 'revoked' and restored['attempts'] == {}
+        assert restored['invites'][group['id']]['closed'] is True
+        assert all(invite['closed'] for invite in restored['invites'].values())
         assert json.loads((state / 'auth.json').read_text())['owner_id'] == original_auth['owner_id']
+        # The old invitation had spare capacity. A fresh attempt still cannot
+        # use it: restore closes retained invitation history and rotates its secret.
+        old_code_client, _ = browser()
+        attempt = management('/api/v2/device/join/prepare', {}, expected=201, client=old_code_client, base=tls_url)
+        rejected = management('/api/v2/device/join', {'attempt_id': attempt['attempt_id'], 'code': invitation['code']},
+                              expected=400, client=old_code_client, base=tls_url)
+        assert rejected['code'] == 'invalid_invitation'
+        request('/api/v2/device/display', expected=401, client=old_code_client, base=tls_url)
         login(admin)
         invitation = management('/api/v1/groups/' + group['id'] + '/invite', {'capacity': 1}, expected=201, client=admin, base=tls_url)
         replacement, _ = browser()
         replacement_identity = enroll(replacement, invitation['code'])
         assert replacement_identity['device_id'] != identity['device_id']
         assert request('/api/v2/device/display', client=replacement, base=tls_url)[0]['events'] == payload['events']
-        passed('Managed backup → revoke → restore never revives old device/admin cookies; a new code and new identity are required')
+        passed('Managed backup → revoke → restore rejects old device/admin cookies and an old code with spare capacity; new code and identity required')
         print('Final service: ' + run('systemctl', 'is-active', 'webclock').stdout.strip(), flush=True)
         summary = os.environ.get('GITHUB_STEP_SUMMARY')
         if summary:
