@@ -283,7 +283,7 @@
     </style>
 </head>
 
-<body>
+<body data-deployment-mode="{{ deployment_mode }}">
     <button id="alarm-bell" type="button" aria-label="{{ translations[language].alarm_set }}">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4M12 2v2"/></svg>
     </button>
@@ -312,6 +312,20 @@
             <button type="button" onclick="saveServerUrl()" data-clock-i18n="save">{{ translations[language].save }}</button>
             <button type="button" onclick="reconnectNow()" data-clock-i18n="connection_reconnect">{{ translations[language].connection_reconnect }}</button>
         </div>
+        <button id="device-join-open" type="button" data-enrollment-i18n="join_open"></button>
+        <section id="device-join-panel" style="display:none" role="region" aria-labelledby="device-join-title">
+            <h2 id="device-join-title" data-enrollment-i18n="join_title"></h2>
+            <p id="device-join-status" role="status" aria-live="polite"></p>
+            <form id="device-join-form" autocomplete="off">
+                <label for="device-join-code" data-enrollment-i18n="join_code"></label>
+                <input id="device-join-code" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                <div class="connection-row">
+                    <button id="device-join-submit" type="submit" data-enrollment-i18n="join_submit" disabled></button>
+                    <button id="device-join-retry" type="button" data-enrollment-i18n="join_retry"></button>
+                    <button id="device-join-cancel" type="button" data-enrollment-i18n="join_cancel"></button>
+                </div>
+            </form>
+        </section>
         <form id="local-event-form" onsubmit="addLocalEvent(); return false;">
             <label for="local-event-text" data-clock-i18n="local_reminder">{{ translations[language].local_reminder }}</label>
             <input id="local-event-text" type="text" data-clock-i18n="local_reminder_placeholder" data-clock-attribute="placeholder" placeholder="{{ translations[language].local_reminder_placeholder }}">
@@ -333,6 +347,8 @@
             language: {{ language | tojson }}
         });
     </script>
+    <script src="{{ url_for('static', filename='device-session.js') }}"></script>
+    <script>window.WebClockEnrollmentTranslations = {{ device_enrollment_translations | tojson }};</script>
     <script src="{{ url_for('static', filename='time-format.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
@@ -341,6 +357,8 @@
         var STORAGE_SETTINGS = 'webclock.settings';
         var STORAGE_LOCAL_EVENTS = 'webclock.localEvents';
         var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
+        var deploymentMode = document.body.getAttribute('data-deployment-mode');
+        var deviceSession = window.WebClockDeviceSession;
         var connectionMode = 'server';
         var activeSettings = {};
         var lastServerStatus = 'connection_connecting';
@@ -374,6 +392,7 @@
             var state = offline.getAttribute('data-state');
             if (state) offline.textContent = t('offline_' + state);
             updateClock();
+            if (window.WebClockEnrollmentRefresh) window.WebClockEnrollmentRefresh();
         }
 
         function readStoredValue(key, fallback) {
@@ -417,7 +436,11 @@
             if (!/^https?:\/\//i.test(trimmed)) {
                 trimmed = "http://" + trimmed;
             }
-            return trimmed.replace(/\/+$/, "");
+            trimmed = trimmed.replace(/\/+$/, "");
+            // Only an origin is accepted: URL user-info could otherwise send
+            // credentials even when cross-origin XHR credentials are disabled.
+            if (!/^https?:\/\/[A-Za-z0-9.\-:\[\]]+$/i.test(trimmed)) return "";
+            return trimmed.toLowerCase();
         }
 
         function getStatusUrl(sourceUrl) {
@@ -543,9 +566,15 @@
             return base;
         }
 
+        function settingsStorageKey() {
+            if (deviceSession && deviceSession.getState().identity) return STORAGE_SETTINGS + '.' + encodeURIComponent(deviceSession.getState().scope);
+            if (serverUrl !== window.location.origin) return STORAGE_SETTINGS + '.public.' + encodeURIComponent(serverUrl);
+            return STORAGE_SETTINGS;
+        }
+
         function getStoredSettings() {
             var base = defaultDisplaySettings();
-            var stored = readStoredJson(STORAGE_SETTINGS, null);
+            var stored = readStoredJson(settingsStorageKey(), null);
             return normalizeDisplaySettings(stored, base) || base;
         }
 
@@ -553,7 +582,7 @@
             var normalized = normalizeDisplaySettings(settings,
                 activeSettings && activeSettings.night ? activeSettings : defaultDisplaySettings());
             if (!normalized) return false;
-            return writeStoredJson(STORAGE_SETTINGS, normalized);
+            return writeStoredJson(settingsStorageKey(), normalized);
         }
 
         function applySettings(settings) {
@@ -628,15 +657,30 @@
         }
 
         function enterStandaloneMode(message) {
+            // Remove private content before reading optional local reminders.
+            if (connectionMode !== 'standalone') renderList([]);
             connectionMode = 'standalone';
             // Keep the latest live settings, even if saving them failed. The cache
             // is only restored at startup, when no valid in-memory state exists.
             renderList(getLocalEventsForToday());
             updateClock();
             setConnectionStatus(message || 'connection_standalone', true);
+            if (window.WebClockEnrollmentRefresh) window.WebClockEnrollmentRefresh();
         }
 
-        function enterServerMode(data) {
+        function enterServerMode(data, privateSnapshot) {
+            if (data && data.public_time_only) { setClockBase(data.server_timestamp); enterStandaloneMode('connection_connected'); return true; }
+            if (!data || !Array.isArray(data.events) ||
+                    (privateSnapshot && (typeof data.server_timestamp !== 'number' || !isFinite(data.server_timestamp)))) return false;
+            for (var index = 0; index < data.events.length; index++) {
+                var event = data.events[index];
+                if (!event || typeof event !== 'object' || typeof event.text !== 'string' ||
+                        (event.time !== undefined && typeof event.time !== 'string')) return false;
+            }
+            if (privateSnapshot && (!data.settings || ['mode', 'brightness', 'timezone_offset', 'language', 'time_format'].some(function (key) {
+                return !owns(data.settings, key);
+            }))) return false;
+            if (privateSnapshot && data.settings && !normalizeDisplaySettings(data.settings, activeSettings)) return false;
             connectionMode = 'server';
             if (data.settings && applySettings(data.settings)) {
                 saveSettings(activeSettings);
@@ -649,6 +693,8 @@
             renderList(data.events);
             updateClock();
             setConnectionStatus('connection_connected', false);
+            if (window.WebClockEnrollmentRefresh) window.WebClockEnrollmentRefresh();
+            return true;
         }
 
         function beginConnectionGeneration() {
@@ -668,6 +714,17 @@
         }
 
         function fetchStatus() {
+            if (deviceSession) {
+                deviceSession.setSource(serverUrl, deploymentMode);
+                deviceSession.fetchDisplay(function (data, privateSnapshot) {
+                    return enterServerMode(data, privateSnapshot);
+                }, function (error) {
+                    if (!deviceSession.hasLease('display')) enterStandaloneMode('connection_unavailable');
+                    else setConnectionStatus(error && error.code === 'timeout' ? 'connection_timeout' : 'connection_unavailable', false);
+                });
+                return;
+            }
+            var safeShared = deploymentMode === 'self' && serverUrl === window.location.origin;
             var xhr = new XMLHttpRequest();
             var request = {
                 sourceUrl: serverUrl,
@@ -675,7 +732,8 @@
                 sequence: statusRequestSequence += 1,
                 finished: false
             };
-            xhr.open('GET', getStatusUrl(request.sourceUrl), true);
+            xhr.open('GET', safeShared ? getStatusUrl(request.sourceUrl) : request.sourceUrl + '/api/time', true);
+            xhr.withCredentials = false;
             xhr.onreadystatechange = function () {
                 if (xhr.readyState !== 4) return;
                 // Network errors and timeouts first report DONE with status 0.
@@ -685,7 +743,8 @@
                     if (xhr.status === 200) {
                         try {
                             var data = JSON.parse(xhr.responseText);
-                            enterServerMode(data);
+                            if (!safeShared) { setClockBase(data.server_timestamp); enterStandaloneMode('connection_connected'); }
+                            else if (!enterServerMode(data, false)) enterStandaloneMode('connection_unreadable');
                         } catch (e) {
                             enterStandaloneMode('connection_unreadable');
                         }
@@ -716,7 +775,12 @@
 
         function getLocalEvents() {
             var events = readStoredJson(STORAGE_LOCAL_EVENTS, []);
-            return Array.isArray(events) ? events : [];
+            if (!Array.isArray(events)) return [];
+            return events.filter(function (event) {
+                return event && typeof event === 'object' && typeof event.text === 'string' &&
+                    (event.time === undefined || typeof event.time === 'string') &&
+                    (event.date === undefined || typeof event.date === 'string');
+            });
         }
 
         function saveLocalEvents(events) {
@@ -826,7 +890,11 @@
             if (!nextUrl) return false;
             var changed = nextUrl !== serverUrl;
             serverUrl = nextUrl;
-            if (changed) beginConnectionGeneration();
+            if (changed) {
+                beginConnectionGeneration();
+                if (deviceSession) deviceSession.setSource(serverUrl, deploymentMode);
+                else enterStandaloneMode('connection_connecting');
+            }
             writeStoredValue(STORAGE_SERVER_URL, serverUrl);
             setConnectionStatus('connection_saved', connectionMode === 'standalone');
             return changed;
@@ -925,6 +993,16 @@
 
         // Upgrade the already-running basic clock without creating another timer.
         window.WebClockCore.useUpdater(updateClock);
+        if (deviceSession) {
+            deviceSession.setSource(serverUrl, deploymentMode);
+            deviceSession.subscribe(function (event) {
+                if (event.type === 'sync' || event.type === 'joined') { fetchStatus(); return; }
+                if (event.resource === 'display' || event.resource === 'all') {
+                    enterStandaloneMode('connection_standalone');
+                    document.getElementById('day-part').classList.remove('holiday-highlight');
+                }
+            });
+        }
         applySettings(getStoredSettings());
         renderLocalEventsEditor();
         setConnectionStatus('connection_connecting', false);
@@ -934,6 +1012,7 @@
     <script src="{{ url_for('static', filename='time-inputs.js') }}"></script>
     <script>refreshLocalTimeInput();</script>
     <script src="{{ url_for('static', filename='offline.js') }}"></script>
+    <script src="{{ url_for('static', filename='device-enrollment.js') }}"></script>
     <script defer src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
     <script defer src="{{ url_for('static', filename='alarms.js') }}"></script>
 </body>

@@ -293,8 +293,8 @@ class HostBackupTest(unittest.TestCase):
             lambda value: value, lambda: {}, lambda: {'schedules': [{'id': 'private'}]})
         group = service.create_group('owner', {'name': 'keep group', 'content': {'schedule_ids': ['private']}})
         service.create_invite('owner', group['id'])
+        service.prepare('owner', 'backup-fixture')
         access = service._load()
-        access['attempts'] = {'pending': {'credential_digest': 'pending-secret-digest'}}
         access['devices'] = {'device': dict(id='device', owner_id='owner', group_id=group['id'], enabled=True,
             status='active', credential_digest='d' * 64, credential_generation=3,
             created_at='2026-10-05T00:00:00+00:00', assignment_revision=1, rejoin_required=False)}
@@ -406,6 +406,41 @@ class HostBackupTest(unittest.TestCase):
         self.assertEqual(restarted.mode(), 'managed')
         self.assertIsNone(restarted.authenticate(token))
         self.assertNotEqual(restarted.session_secret(), previous_secret)
+
+    def test_real_join_then_backup_revoke_restore_never_revives_device_or_attempt(self):
+        from webclock.services.auth_service import AuthService
+        from webclock.services.device_access_service import AccessError, DeviceAccessService
+        project, values, roots = self.installation('real-enrollment')
+        state, auth, access = self.protect(project, values)
+        service = DeviceAccessService(state / 'device-access.json', auth['invite_secret'],
+            lambda data: data, lambda: {}, lambda: {'schedules': [{'id': 'private'}]})
+        group_id = next(iter(access['groups']))
+        invitation = service.create_invite('owner', group_id)
+        prepared = service.prepare('owner', 'browser')
+        identity = service.join('owner', prepared['token'], prepared['attempt_id'],
+                                invitation['code'], 'browser')['identity']
+        self.assertEqual(service.authenticate(prepared['token'], 'owner'), identity)
+        directory, rollback = self.root / 'enrollment-backup', self.root / 'enrollment-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        current = service._load()
+        current['devices'][identity['device_id']].update(enabled=False, status='revoked',
+            credential_digest=None, credential_generation=2, rejoin_required=True)
+        backup.write_private_json(state / 'device-access.json', current)
+        backup.restore_backup(directory, roots, rollback, project, values)
+        restored_auth = AuthService(state / 'auth.json')
+        restored = DeviceAccessService(state / 'device-access.json', restored_auth.invite_secret,
+            lambda data: data, lambda: {}, lambda: {'schedules': [{'id': 'private'}]})
+        with self.assertRaises(AccessError) as rejected:
+            restored.authenticate(prepared['token'], 'owner')
+        self.assertEqual(rejected.exception.code, 'device_authentication_required')
+        with self.assertRaises(AccessError):
+            restored.join('owner', prepared['token'], prepared['attempt_id'], invitation['code'], 'browser')
+        final = restored._load()
+        self.assertEqual(final['attempts'], {})
+        self.assertEqual(final['devices'][identity['device_id']]['status'], 'revoked')
+        self.assertIsNone(final['devices'][identity['device_id']]['credential_digest'])
+        self.assertTrue(final['invites'][group_id]['closed'])
+        self.assertEqual(final['groups'], access['groups'])
 
     def test_custom_restore_also_invalidates_dormant_default_authorization(self):
         project, values, roots = self.installation('dormant', True)

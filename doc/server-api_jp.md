@@ -1,24 +1,55 @@
 # WebClock Server：集中管理と端末 API
 
-## B0–B1 管理とグループ（2026-10-05）
+## B0–B3 管理・グループ・受管端末（2026-10-05）
 
-ホスト上で初期化する管理者ログイン/ログアウト、固定 owner、入口の権限制御、グループ CRUD、6 文字の招待コード、更新/復元の保護を実装しました。既存インストールは `self` を維持します。`managed` は B3/B4 検証前のため、明示的な隔離テストのみ使用します。端末の参加/表示（B2）とグループ管理画面（B3）は未実装です。
+管理者 session、owner ごとのグループ、招待、原子的な参加処理、認証に基づく表示・アラーム配信、グループ管理画面を実装しました。既存環境は `self` を維持し、`managed` は明示的な隔離テストのみです。本番モード移行と個別端末の移動・無効化・失効操作は B4 の対象です。操作は[ガイド](guide_jp.md)、保存と更新・復元の境界は [B0–B1 契約](b0-b1-contract.md)を参照してください。
 
-保存 schema、旧 JSON fixture、API 項目と今後の契約は [B0–B1 契約](b0-b1-contract.md)を参照してください。公開 `GET /api/time` はミリ秒時刻だけを返します。managed の `/api/status` は管理者 cookie があっても時刻と空の予定のみ、旧 `/api/v1/device/*` は 403、browser-alarms は 401 です。非公開データを含まない `/api/health` は `managed_devices_ready: false` を返します。
+公開 `GET /api/time` は時刻のみを返します。managed の `/api/status` は時刻と空の予定、旧 `/api/v1/device/*` は 403、`/api/v1/browser-alarms` は 401 を返します。管理 session は端末認証を代替しません。非公開情報を含まない `/api/health` の `managed_device_schema: 3` と `managed_devices_ready: true` は endpoint の実装を示し、本番移行や実機検収の完了ではありません。以下の旧 schema 2 API は self が前提です。旧 ESP codec が自動的に schema 3 に対応するわけではありません。
 
-API は `/api/v1/groups`、`/api/v1/groups/:id`、明示的な移行 `/api/v1/groups/initialize`、`/api/v1/groups/:id/invite` です。managed は管理 session、両モードの書き込みは CSRF が必要です。招待は 600 秒有効、既定 5 台（1–100）、平文は生成 POST の応答に一度だけ含まれます。再生成しても参加済み端末は変更しません。招待検証サービスは送信元ごとに 60 秒 10 回、全体で 100 回に制限し、超過時は制限エラーと再試行までの秒数を返します。B1 では公開検証・参加 endpoint や枠消費の transaction はありません。今後の endpoint の 429 契約には `Retry-After` を含めます。
+### グループ管理 API
 
-今後の `/api/v2/device/*` と表示 schema 3 は確定した設計のみで、現在これらのルートは 404 を返します。schema 2 は self の互換動作を維持し、旧 ESP codec の schema 3 対応を意味しません。以下の旧端末 API は self モードを前提とします。
+managed は管理 session、両モードの書き込みは CSRF が必要です。`/schedules#devices` で同じ操作を行えます。
+
+| パス | メソッドと用途 |
+| --- | --- |
+| `/api/v1/groups` | GET 一覧、POST 新規作成。内容選択は既定で空 |
+| `/api/v1/groups/initialize` | POST 既存内容を取り込む既定グループの明示的な初期化 |
+| `/api/v1/groups/<id>` | GET、PATCH 名前・有効状態・表示設定・内容、DELETE メンバーのないグループ |
+| `/api/v1/groups/catalog` | GET 表示既定値と内容の ID・ラベル。参照元 URL は含めない |
+| `/api/v1/groups/<id>/members` | GET メンバーの認証状態と安全な観察項目。認証情報は含めない |
+| `/api/v1/groups/<id>/invite` | POST 生成・再生成、GET 状態、DELETE 終了 |
+| `/api/management/language` | POST `{"language":"ja"}`。ブラウザー session の管理言語だけを変更 |
+
+`display_overrides` で省略した項目は共通設定を継承し、`night` 内も項目ごとに継承します。`false` と `0` は有効な指定値です。`content` は `calendar_source_ids`、`manual_note_ids`、`schedule_ids` を含み、空配列は選択なし、メモ ID は正の整数です。グループの表示言語は管理画面言語と独立し、共通の表示 `language` は引き続き `/api/control` で更新します。
+
+各グループの招待は 6 文字、600 秒有効、既定 5 台（1–100）、全体で最大 100 台です。平文は生成 POST の応答だけに含み、GET・永続状態・メンバー一覧には含めません。終了・再生成は参加済みメンバーを変更しません。期限切れ・満員・終了済み・グループ無効時は参加できません。参加関連の制限は送信元ごとに 60 秒 10 回、全体で 100 回で、429 に `Retry-After` を付けます。
+
+### Schema 3 端末 API
+
+| パス | メソッドと用途 |
+| --- | --- |
+| `/api/v2/device/join/prepare` | POST `{}`。10 分の試行を作成・再利用し、`attempt_id`・`expires_at` と待機 Cookie を返す |
+| `/api/v2/device/identity` | GET Cookie 往復確認。`pending` 試行または `active` な認証情報を返す |
+| `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`。枠消費と参加を原子的に保存。初回 201、同じ確定済み試行の再送は 200 |
+| `/api/v2/device/display` | GET グループの有効設定、選択済み予定、次の予定 |
+| `/api/v2/device/browser-alarms` | GET 選択済みアラームと計算結果 |
+| `/api/v2/device/status` | POST 名前・能力・revision・指令 ACK。認証情報から端末を決定し、`id`・`group_id` の自己指定は不可 |
+
+ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed は HTTPS と Secure Cookie を要求します。prepare・join は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
+
+display・alarms は `schema_version: 3`、`identity`、config・schedule・holiday revision、ミリ秒 `server_timestamp`、最大 300 秒の `lease` を返します。identity は owner・device・group ID、認証世代、割り当て revision、`identity_revision` を含みます。304 を含む応答の直前に現在の認証と内容範囲を再確認し、I/O 中の範囲変更は古い内容ではなく 409 `display_scope_changed` を返します。ETag 応答は `private, no-cache` と `Vary: Cookie, Authorization` を使い、304 は `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` で期限を更新します。参加・identity 応答は `no-store` です。
+
+非公開キャッシュは端末認証の範囲で分離します。401・403、認証の変更、期限切れで非公開予定とブラウザーアラームを消去し、通信エラー時はその実行中の期限内データだけを維持できます。アラームはグループの表示タイムゾーンと独立して `Asia/Taipei` で計算します。連動参照元が欠ける場合は該当アラームを除外し、毎日発音へ戻しません。ESP の 7 日間オフライン発生一覧や、旧 iPad・ロック画面音声・実機検収を意味する機能ではありません。
 
 [繁體中文](server-api.md) · [English](server-api_en.md) · **日本語** · [README](../README_jp.md)
 
-このプロジェクトは、予定、台湾の勤務日データ、端末登録、同期リビジョン、端末状態を管理します。self モードのセルフホスト時計ではブラウザーアラームも実行します。`/schedules` でアラームを編集・プレビューし、`/` で内蔵音と赤い枠の通知を表示します。`/admin` は表示設定、購読カレンダー、文字リマインダーを別に管理します。managed の時計への非公開アラーム配信は B2 の端末認証・表示フローの実装待ちです。
+このプロジェクトは、予定、台湾の勤務日データ、端末登録、同期リビジョン、端末状態を管理します。self モードのセルフホスト時計ではブラウザーアラームも実行します。`/schedules` でアラームを編集・プレビューし、`/` で内蔵音と赤い枠の通知を表示します。`/admin` は表示設定、購読カレンダー、文字リマインダーを別に管理します。参加済みの schema 3 時計は所属グループの非公開内容だけを取得します。
 
 端末での実行はファームウェアが担当します。[`firmware/`](../firmware/README.md) にはクロスコンパイル済みの ESP32-S3／ESPHome 試作版があり、OLED、固定ルールのアラーム同期、永続キャッシュ、圧電ブザー、停止ボタンを実装しています。実機は未検証です。カレンダー連動、ブラウザー音色の忠実な再現／音声ファイル、スヌーズ、電池バックアップ RTC、OTA、汎用の公開ファームウェアは未提供です。端末は HTTP/JSON API を使用し、このプロジェクトの Python モジュールを読み込む必要はありません。
 
 現在の試作版の使用手順と制限は [ESPHome 端末ガイド](esp-home.md)、完全な応答例は [API 詳細](server-api.md#裝置-api)を参照してください。どちらも繁体字中国語です。起動のたびに時刻の取得と Server 設定の検証が成功してからアラームを有効にします。その後の通信断ではキャッシュで動作しますが、オフライン再起動時に自動で有効にはしません。
 
-現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。B0–B1 でホスト初期化の管理者と owner に属するグループ定義を追加しました。認証済み端末へのグループ割り当ては B2、複数ユーザーアカウントとマルチテナントは今後の実装です。
+現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。schema 3 は認証済み端末に所属グループの内容を配信します。複数ユーザーアカウントとマルチテナントは未実装です。
 
 ## 起動と構成
 
@@ -30,7 +61,9 @@ webclock/
   app.py                     時計、設定、カレンダー、起動
   api/
     management.py            管理画面と予定／端末管理 API
-    device.py                端末設定、予定、カレンダー、状態 API
+    device.py                self モードの旧 schema 2 端末 API
+    managed_device.py        schema 3 参加・認証・グループ表示・状態
+    groups.py                グループ・招待・内容目録・メンバー
   services/                  予定、休日、端末、JSON 保存サービス
   translations/              Web UI 文言
   data/taiwan_calendar.json  読み取り専用カレンダーと出典
@@ -233,7 +266,7 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 
 ### 今後の拡張
 
-有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B0–B1 で管理者/owner とグループ定義を提供しましたが、端末別の認証情報、参加処理、認証済み端末の帰属、本番用の完全なデプロイモード切り替えは未実装です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
+有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B2–B3 はブラウザー参加、端末別の認証情報、グループ表示を提供します。ESP の新契約への対応と、本番用の完全なモード切り替えは今後の対象です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
 
 ## 旧データと保存
 
@@ -258,6 +291,8 @@ node tests/test_alarms.js
 node tests/test_calendar_ui.js
 node tests/test_management_navigation.js
 node tests/test_management_theme.js
+node tests/test_group_ui.js
+node tests/test_device_enrollment.js
 bash -n setup.sh scripts/setup.sh update_clock.sh
 ```
 

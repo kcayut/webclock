@@ -1,5 +1,6 @@
-"""Groups and short invitations; enrollment is deliberately a later stage."""
+"""Groups and invitations; atomic enrollment has its own regression suite."""
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -135,9 +136,14 @@ class DeviceAccessTest(unittest.TestCase):
 
     def test_regeneration_close_expiry_disable_capacity_and_global_device_limit(self):
         group = self.create()
+        def device_row(device_id):
+            return dict(id=device_id, owner_id='owner1', group_id=group['id'], enabled=True,
+                        status='active', credential_digest=hashlib.sha256(device_id.encode()).hexdigest(),
+                        credential_generation=1, created_at='2026-10-05T00:00:00+00:00',
+                        assignment_revision=1, rejoin_required=False)
         first = self.service.create_invite('owner1', group['id'], 1)
         state = load_json(self.path, {})
-        state['devices']['existing'] = {'group_id': group['id']}
+        state['devices']['existing'] = device_row('existing')
         save_json(self.path, state)
         second = self.service.create_invite('owner1', group['id'], 2)
         self.assertEqual(load_json(self.path, {})['devices'], state['devices'])
@@ -168,7 +174,7 @@ class DeviceAccessTest(unittest.TestCase):
         with self.assertRaises(AccessError):
             self.service.check_invite(current['code'], 'peer')
         state['invites'][group['id']]['used'] = 0
-        state['devices'] = {str(i): {'group_id': group['id']} for i in range(100)}
+        state['devices'] = {str(i): device_row(str(i)) for i in range(100)}
         save_json(self.path, state)
         self.assertEqual(self.service.get_invite('owner1', group['id'])['remaining'], 0)
         with self.assertRaises(AccessError):

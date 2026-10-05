@@ -28,7 +28,7 @@
         languageSelect.addEventListener('change', function () {
             var select = this, language = select.value;
             select.disabled = true;
-            fetch('/api/control', {
+            fetch('/api/management/language', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content},
                 body: JSON.stringify({language: language})
@@ -44,6 +44,7 @@
                 });
                 select.setAttribute('data-error', labels.settings_save_error);
                 window.applyManagementLanguage(language);
+                if (window.WebClockGroups) window.WebClockGroups.applyLanguage();
                 select.disabled = false;
             }).catch(function () {
                 select.disabled = false;

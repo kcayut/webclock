@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, redirect, url_for, abort, send_from_directory, g
+from flask import Flask, render_template, jsonify, request, redirect, url_for, abort, send_from_directory, g, session, has_request_context
 from datetime import datetime, timezone, timedelta
 import requests
 from icalendar import Calendar
@@ -15,17 +15,22 @@ from threading import RLock
 from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
-from webclock.services.storage import load_json, save_json
+from webclock.services.storage import load_json, save_json, revision, storage_lock
 from webclock.services.holiday_service import HolidayService
-from webclock.services.schedule_service import next_event, read_schedules
+from webclock.services.schedule_service import TAIPEI, next_event, read_schedules
+from webclock.services.display_service import browser_alarm_payload
+from webclock.services.device_service import DeviceService
+from webclock.api.device import conditional
 from webclock.api import register_api
 from webclock.csrf import register_csrf
 from webclock.services.auth_service import AuthService
 from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings, validate_time
 from webclock.auth import register_auth
 from webclock.access_control import register_access_control
-from webclock.services.device_access_service import DeviceAccessService
+from webclock.services.device_access_service import AccessError, DeviceAccessService
 from webclock.api.groups import groups_api
+from webclock.api.managed_device import managed_device_api
+from webclock.translations.clock_enrollment import DEVICE_ENROLLMENT_TRANSLATIONS
 from webclock.translations.common import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, UI_TRANSLATIONS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -379,9 +384,9 @@ def calendar_event_overlaps(event, start, end):
             (event['ends_at'] == event['starts_at'] and event['starts_at'] >= first))
 
 
-def local_calendar_events(start, end):
+def local_calendar_events(start, end, zone=None):
     events = []
-    zone = get_local_now().tzinfo
+    zone = zone or get_local_now().tzinfo
     for note in load_notes():
         if not note.get('enabled', True):
             continue
@@ -598,6 +603,8 @@ def fetch_calendar_events(start=None, end=None, source_ids=None):
 
 def template_context():
     language = display_settings.get('language', DEFAULT_SETTINGS['language'])
+    if has_request_context():
+        language = session.get('management_language', language)
     if language not in SUPPORTED_LANGUAGES:
         language = DEFAULT_SETTINGS['language']
     return {
@@ -611,6 +618,10 @@ def template_context():
 @app.route('/')
 def index():
     context = template_context()
+    # A management preference must never change the clock's initial language.
+    context['language'] = display_settings.get('language', DEFAULT_SETTINGS['language'])
+    context['deployment_mode'] = getattr(g, 'deployment_mode', 'recovery')
+    context['device_enrollment_translations'] = DEVICE_ENROLLMENT_TRANSLATIONS
     if getattr(g, 'deployment_mode', 'self') != 'self':
         # Cacheable clock HTML never embeds private account display settings.
         context.update(language=DEFAULT_SETTINGS['language'], time_format='24h')
@@ -811,51 +822,43 @@ def delete(id):
     return redirect(url_for('admin', _anchor='calendar-title'))
 
 
-@app.route('/api/status')
-def status():
-    if getattr(g, 'deployment_mode', 'self') != 'self':
-        return jsonify(server_timestamp=int(time.time() * 1000), events=[], next_event=None)
-    now = get_local_now()
-    server_timestamp = int(now.timestamp() * 1000)
-    is_holiday = holiday_service.is_holiday(now.date())
-
-    manual_events = []
-    upcoming = []
-    try:
-        show_local = load_calendar_settings()['local_display_enabled']
-    except (OSError, ValueError, KeyError):
-        show_local = True
-    for note in load_notes() if show_local else []:
+def display_snapshot(now, notes, schedules, calendar, calendar_lookup):
+    events, upcoming = [], []
+    for note in notes:
         try:
             if note_visible(note, now):
                 due = note.get('due_date', '')
-                manual_events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else ''})
+                events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else ''})
             candidate = next_note_time(note, now)
             if candidate:
                 upcoming.append({'text': note['text'], 'starts_at': int(candidate.timestamp() * 1000)})
         except (ValueError, TypeError):
             continue
-
-    smart_event = next_event(read_schedules(Path(SETTINGS_FILE).parent), holiday_service, now, get_calendar_events)
-    if smart_event:
-        upcoming.append({'text': smart_event['name'],
-                         'starts_at': int(datetime.fromisoformat(smart_event['datetime']).timestamp() * 1000)})
-
-    calendar_events = get_calendar_events()
-    for event in calendar_events:
-        if not event.get('all_day') and (event.get('starts_at') or 0) > server_timestamp:
+    smart = next_event(schedules, holiday_service, now.astimezone(TAIPEI), calendar_lookup)
+    if smart:
+        upcoming.append({'text': smart['name'], 'starts_at': int(datetime.fromisoformat(smart['datetime']).timestamp() * 1000)})
+    for event in calendar:
+        if not event.get('all_day') and (event.get('starts_at') or 0) > int(now.timestamp() * 1000):
             upcoming.append({'text': event['text'], 'starts_at': event['starts_at']})
-    all_events = [{'text': event['text'], 'time': event['time']} for event in calendar_events] + manual_events
-    all_events.sort(key=lambda event: event['time'] or '99:99')
+    events = [{'text': event['text'], 'time': event['time']} for event in calendar] + events
+    events.sort(key=lambda event: event['time'] or '99:99')
+    return dict(events=events, next_event=min(upcoming, key=lambda event: event['starts_at'], default=None),
+                is_holiday=holiday_service.is_holiday(now.date()))
 
-    return jsonify({
-        # Calendar I/O may take time; do not send the clock's pre-fetch timestamp.
-        'server_timestamp': int(get_local_now().timestamp() * 1000),
-        'is_holiday': is_holiday,
-        'events': all_events,
-        'next_event': min(upcoming, key=lambda event: event['starts_at']) if upcoming else None,
-        'settings': display_settings,
-    })
+
+@app.route('/api/status')
+def status():
+    if getattr(g, 'deployment_mode', 'self') != 'self':
+        return jsonify(server_timestamp=int(time.time() * 1000), events=[], next_event=None)
+    now = get_local_now()
+    try:
+        show_local = load_calendar_settings()['local_display_enabled']
+    except (OSError, ValueError, KeyError):
+        show_local = True
+    payload = display_snapshot(now, load_notes() if show_local else [],
+                               read_schedules(Path(SETTINGS_FILE).parent), get_calendar_events(), get_calendar_events)
+    # Calendar I/O may take time; send a fresh timestamp after projection.
+    return jsonify(dict(payload, settings=display_settings, server_timestamp=int(get_local_now().timestamp() * 1000)))
 
 
 @app.route('/api/time')
@@ -870,7 +873,17 @@ def health():
         return jsonify(status='recovery_required'), 503
     return jsonify(status='ok', auth_schema=1, deployment_mode=mode,
                    device_schema=2, managed_device_schema=3,
-                   managed_devices_ready=False)
+                   managed_devices_ready=True)
+
+
+@app.route('/api/management/language', methods=['POST'])
+def management_language():
+    data = request.get_json()
+    if (not isinstance(data, dict) or set(data) != {'language'}
+            or not isinstance(data['language'], str) or data['language'] not in SUPPORTED_LANGUAGES):
+        return jsonify(error='invalid_language'), 400
+    session['management_language'] = data['language']
+    return jsonify(language=data['language'])
 
 
 def group_service():
@@ -906,10 +919,93 @@ def group_owner():
     return getattr(g, 'owner_id', None) or auth_service().owner_id()
 
 
+def group_ui_catalog():
+    return dict(calendar_sources=[{'id': row['id'], 'name': row['name']} for row in get_calendar_sources()],
+                manual_notes=[{'id': row['id'], 'text': row['text']} for row in load_notes()],
+                schedules=[{'id': row['id'], 'name': row['name']} for row in read_schedules(Path(SETTINGS_FILE).parent)],
+                defaults=dict(display_settings, night=dict(DEFAULT_NIGHT, **display_settings.get('night', {}))))
+
+
+def device_service():
+    return DeviceService(Path(SETTINGS_FILE).parent / 'devices.json')
+
+
+def managed_content(identity):
+    """Resolve references on the server; a deleted dependency grants no fallback."""
+    with storage_lock:
+        group = group_service().get_group(identity['owner_id'], identity['group_id'])
+        content = group['content']
+        all_notes = load_notes()
+        notes = [row for row in all_notes if row['id'] in content['manual_note_ids']]
+        source_rows = get_calendar_sources()
+        sources = {row['id'] for row in source_rows}
+        schedules = [row for row in read_schedules(Path(SETTINGS_FILE).parent)
+                     if row['id'] in content['schedule_ids']
+                     and not set((row.get('calendar_link') or {}).get('source_ids', [])) - (sources | {'local'})]
+        needed = set(content['calendar_source_ids']) | {
+            source for row in schedules for source in (row.get('calendar_link') or {}).get('source_ids', [])}
+        # This server-only digest detects deletion/replacement during calendar I/O.
+        source_revision = revision([[row for row in source_rows if row['id'] in needed],
+                                    all_notes if 'local' in needed else []])
+        return group, notes, schedules, source_revision
+
+
+def managed_calendar_events(start, end, source_ids):
+    # Linked local reminders keep the scheduler's Asia/Taipei semantics even if
+    # a group's display timezone differs. Display selection is independent.
+    external = [value for value in source_ids if value != 'local']
+    events = get_calendar_events(start=start, end=end, source_ids=external) if external else []
+    if 'local' in source_ids:
+        events += local_calendar_events(start, end, zone=TAIPEI)
+    return events
+
+
+def managed_response(identity, group, notes, schedules, source_revision, payload):
+    current_group, current_notes, current_schedules, current_sources = managed_content(identity)
+    if (group['effective_settings'] != current_group['effective_settings']
+            or group['content'] != current_group['content'] or notes != current_notes
+            or schedules != current_schedules or source_revision != current_sources):
+        raise AccessError('Display scope changed during request', 409, 'display_scope_changed')
+    scope = identity['identity_revision']
+    payload.update(schema_version=3, identity=identity,
+                   config_revision=revision([scope, group['effective_settings']]),
+                   schedule_revision=revision([scope, group['content'], notes, schedules, source_revision]),
+                   holiday_revision=revision(holiday_service.export()))
+    # Exclude only time and lease from ETag; visible events still change it.
+    digest = revision(payload)
+    stamp = int(time.time() * 1000)
+    payload.update(server_timestamp=stamp, lease={'issued_at': stamp, 'expires_at': stamp + 300000})
+    response = conditional(payload, digest)
+    response.headers['X-WebClock-Server-Timestamp'] = str(stamp)
+    response.headers['X-WebClock-Lease-Expires-At'] = str(stamp + 300000)
+    response.headers['X-WebClock-Identity-Revision'] = scope
+    response.headers['Vary'] = 'Cookie, Authorization'
+    return response
+
+
+def managed_display(identity):
+    group, notes, schedules, source_revision = managed_content(identity)
+    settings = group['effective_settings']
+    now = datetime.now(timezone(timedelta(hours=settings['timezone_offset'])))
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    sources = group['content']['calendar_source_ids']
+    calendar = get_calendar_events(start=start, end=start + timedelta(days=1), source_ids=sources) if sources else []
+    payload = display_snapshot(now, notes, schedules, calendar, managed_calendar_events)
+    payload['settings'] = settings
+    return managed_response(identity, group, notes, schedules, source_revision, payload)
+
+
+def managed_alarms(identity):
+    group, notes, schedules, source_revision = managed_content(identity)
+    payload = browser_alarm_payload(schedules, holiday_service, datetime.now(TAIPEI), managed_calendar_events)
+    return managed_response(identity, group, notes, schedules, source_revision, payload)
+
+
 register_api(app, lambda: Path(SETTINGS_FILE).parent, holiday_service, template_context,
              calendar_events=lambda **query: get_calendar_events(**query),
              calendar_sources=lambda: get_calendar_sources())
-app.register_blueprint(groups_api(group_service, group_owner))
+app.register_blueprint(groups_api(group_service, group_owner, group_ui_catalog, lambda: device_service().list()))
+app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms))
 
 
 def main():

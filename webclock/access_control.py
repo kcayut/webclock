@@ -15,6 +15,7 @@ def register_access_control(app, service_getter):
     @app.before_request
     def authorize():
         g.owner_id = None
+        g.device_bearer_authenticated = False
         try:
             service = service_getter()
             g.deployment_mode = service.mode()
@@ -33,12 +34,19 @@ def register_access_control(app, service_getter):
             return None
         if request.endpoint in {'auth.login', 'csrf_token'}:
             return None
+        if request.blueprint == 'managed_device':
+            # The device guard validates its independent credential before CSRF;
+            # an administrator session never substitutes for device identity.
+            guard = app.extensions.get('webclock_device_authorize')
+            if guard is None:
+                return failure('access_not_ready', 503)
+            return guard()
         if g.deployment_mode == 'self':
             return None
         if not same_origin():
             return failure('cross_origin_forbidden', 403)
         # Neither the shared schema-2 token nor an administrator cookie is a
-        # per-device identity. The new device API is delivered in B2.
+        # per-device identity. Only the versioned API accepts those credentials.
         if request.path.startswith('/api/v1/device/'):
             return failure('legacy_device_api_disabled', 403)
         if request.path == '/api/v1/browser-alarms':

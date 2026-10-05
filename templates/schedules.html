@@ -14,6 +14,7 @@
     <script defer src="{{ url_for('static', filename='time-inputs.js') }}"></script>
     <script defer src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
     <script defer src="{{ url_for('static', filename='schedules.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='groups.js') }}"></script>
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
 </head>
 <body class="management" data-management-page="schedules" data-initial-panel="alarms" data-time-format="{{ time_format }}">
@@ -109,6 +110,25 @@
         </section>
         <section id="devices-panel" data-management-panel="devices" hidden aria-labelledby="devices-title">
             <div class="page-heading"><div><h1 id="devices-title" data-schedule-i18n="devices">{{ t.devices }}</h1><p class="page-description" data-schedule-i18n="device_hint">{{ t.device_hint }}</p></div></div>
+            <section id="group-manager" class="panel group-manager" aria-labelledby="groups-title">
+                <div class="section-heading"><h2 id="groups-title" data-group-i18n="group_title">{{ t.group_title }}</h2><button id="group-refresh" type="button" data-group-i18n="group_refresh">{{ t.group_refresh }}</button></div>
+                <p class="help" data-group-i18n="group_hint">{{ t.group_hint }}</p>
+                <div class="group-picker"><label for="group-select" data-group-i18n="group_choose">{{ t.group_choose }}</label><select id="group-select"></select><button id="group-add" type="button" data-group-i18n="group_new">{{ t.group_new }}</button><button id="group-initialize" type="button" data-group-i18n="group_initialize">{{ t.group_initialize }}</button></div>
+                <p id="group-refresh-status" class="error" role="status" aria-live="polite"></p>
+                <form id="group-form" hidden>
+                    <div class="group-identity"><div class="field"><label for="group-name" data-group-i18n="group_name">{{ t.group_name }}</label><input id="group-name" maxlength="100" required autocomplete="off"></div><label class="check"><input id="group-enabled" type="checkbox"><span data-group-i18n="group_enabled">{{ t.group_enabled }}</span></label></div>
+                    <details class="group-section"><summary data-group-i18n="group_display">{{ t.group_display }}</summary><p class="help" data-group-i18n="group_inherit_hint">{{ t.group_inherit_hint }}</p><div id="group-settings"></div></details>
+                    <details class="group-section" open><summary data-group-i18n="group_content">{{ t.group_content }}</summary><p class="help" data-group-i18n="group_content_hint">{{ t.group_content_hint }}</p><div class="group-content-lists">
+                        {% for field, label in [('calendar_source_ids', 'group_calendars'), ('manual_note_ids', 'group_notes'), ('schedule_ids', 'group_schedules')] %}<fieldset><legend data-group-i18n="{{ label }}">{{ t[label] }}</legend><div id="group-{{ field }}" class="group-content-options"></div><p id="group-{{ field }}-empty" class="help" data-group-i18n="group_content_empty">{{ t.group_content_empty }}</p></fieldset>{% endfor %}
+                    </div></details>
+                    <p id="group-form-status" class="help" role="status" aria-live="polite"></p>
+                    <div class="actions group-save-actions"><button id="group-save" class="primary" type="submit" data-group-i18n="group_save">{{ t.group_save }}</button><button id="group-delete" class="danger" type="button" data-group-i18n="group_delete">{{ t.group_delete }}</button></div>
+                </form>
+                <div id="group-access" hidden>
+                    <section class="group-section" aria-labelledby="group-invite-title"><h3 id="group-invite-title" data-group-i18n="group_invite_title">{{ t.group_invite_title }}</h3><p class="help" data-group-i18n="group_invite_hint">{{ t.group_invite_hint }}</p><div class="group-invite-actions"><label for="group-invite-capacity" data-group-i18n="group_invite_capacity">{{ t.group_invite_capacity }}</label><input id="group-invite-capacity" type="number" min="1" max="100" step="1" value="5"><button id="group-invite-create" type="button" data-group-i18n="group_invite_create">{{ t.group_invite_create }}</button><button id="group-invite-close" type="button" data-group-i18n="group_invite_close">{{ t.group_invite_close }}</button></div><p id="group-invite-status" class="help"></p><div id="group-code-box" class="group-code-box" hidden><strong id="group-code" aria-live="polite"></strong><p class="help" data-group-i18n="group_code_hint">{{ t.group_code_hint }}</p></div><p id="group-access-status" class="error" role="status" aria-live="polite"></p></section>
+                    <section class="group-section" aria-labelledby="group-members-title"><h3 id="group-members-title" data-group-i18n="group_members">{{ t.group_members }}</h3><p class="help" data-group-i18n="group_members_hint">{{ t.group_members_hint }}</p><ul id="group-members" class="group-members"></ul></section>
+                </div>
+            </section>
             <p id="device-refresh-status" class="help" role="status" aria-live="polite"></p>
             <ul id="device-list" class="device-list"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
             <section class="other-schedules" aria-labelledby="other-schedules-title">

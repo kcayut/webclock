@@ -1,12 +1,23 @@
 # WebClock English Guide
 
-## Administrator sign-in and B0–B1 test scope
+## Administrator sign-in and B0–B3 test scope
 
-Existing installations remain in self mode. Managed mode is limited to isolated testing: stop the test service, run `./venv/bin/python scripts/manage_auth.py --state-dir /path/to/test-state setup --username admin --enable-managed-test` as the service user, enter a password of at least 12 characters interactively, restart, and open `/admin` over HTTPS. Use `reset-password` with the same state path to revoke all admin sessions. Sessions last at most 8 hours; the management header has a Sign out button. Production migration and device enrollment/display await B2–B4.
+Existing installations remain in self mode. Managed mode is limited to isolated testing: stop the test service, run `./venv/bin/python scripts/manage_auth.py --state-dir /path/to/test-state setup --username admin --enable-managed-test` as the service user, enter a password of at least 12 characters interactively, restart, and open `/admin` over HTTPS. Use `reset-password` with the same state path to revoke all admin sessions. Sessions last at most 8 hours; the management header has a Sign out button. B2 enrollment and B3 managed display/group management are implemented. Production mode migration and device lifecycle controls remain B4 work.
 
-Groups and invitations currently have services/APIs only, without a group UI or device entry panel. Default migration requires an explicit groups/initialize request; new groups select no content. Codes last 10 minutes with 5 slots by default and cannot sign in as an administrator. See the [B0–B1 contract](b0-b1-contract.md). Unenrolled managed clocks still display time/date but receive no private events or alarms, even when their browser has an admin session.
+Unenrolled managed clocks still display time/date but receive no private events or alarms. An admin session does not grant device access, and an invitation cannot sign in as an administrator. See the [B0–B1 contract](b0-b1-contract.md) for storage and authorization boundaries and the [device API](server-api_en.md) for current endpoints.
 
 Full host backups contain unencrypted credentials. Historical restore rotates session/invitation secrets, clears sessions/attempts, closes invitations and invalidates device credentials while retaining groups/content and observation records. A managed target cannot become anonymous through an old backup. Immediate update rollback preserves current authorization data; unsupported older code stays stopped for host recovery. The management version-1 export remains settings and notes only.
+
+### Groups and device enrollment
+
+1. Create a group in `/schedules#devices`, or explicitly confirm initialization of the default group to import existing display settings and content selections. New groups select no content.
+2. Choose inheritance or an override for each display field, select existing calendars, reminders and alarms, then save. Explicit `false`, brightness `0`, and empty content selections are preserved. Alarm schedules use Taiwan time independently from the group's display timezone.
+3. Generate a six-character invitation with a capacity of 1–100 devices (default 5), valid for 10 minutes. The panel shows expiry and remaining slots. Plaintext appears only after generation. Switching groups or reloading does not invalidate it, but you must regenerate to view a code again. Closing or regenerating an invitation leaves existing members unchanged.
+4. Open `/` on the same server in the target browser and choose **Join a display group**. After the cookie check succeeds, enter the code. The browser receives its own device identity and applies the group automatically. Enrollment is unavailable from public Pages or another origin's clock.
+
+Periodic refresh, group/language changes, slow saves and read failures preserve drafts and input focus within the current page. A full page reload does not retain unsent drafts or invitation codes. Member authorization and last observations are shown separately; missing reports remain unknown. Moving, disabling and revoking individual members remain B4 work. A group with members cannot be deleted.
+
+An enrolled clock receives only its group's settings and content. During a short outage, private data loaded in this session may remain until its authorization lease expires, at most 5 minutes. Confirmed authorization failure or lease expiry clears private events and queued alarms and stops current browser ringing; time/date and browser-local reminders remain available. This does not guarantee offline reopening or background/lock-screen alarms. First-generation iPad mini/iOS 9 and the new identity flow in ESP firmware require separate acceptance.
 
 [README](../README_en.md) · [繁體中文](guide.md) · [日本語](guide_jp.md) · [Device API](server-api_en.md)
 
@@ -34,7 +45,7 @@ HOST=0.0.0.0
 WEBCLOCK_LANGUAGE=en
 ```
 
-`WEBCLOCK_LANGUAGE` sets the interface language on first start and accepts `zh-TW`, `en`, or `ja`. You can switch it later at the bottom of the management sidebar. That choice is saved to `webclock_state/settings.json` and takes precedence over the deployment default.
+`WEBCLOCK_LANGUAGE` sets the initial display language: `zh-TW`, `en`, or `ja`. The management sidebar changes only the management language for the current browser session, preserving drafts without changing any clock. **Default display language** in `/admin` saves the global display choice to `webclock_state/settings.json`, overriding the deployment default. Each group can inherit it or select its own display language.
 
 Under **Appearance** in the management sidebar, choose the sun for **Light** or the moon for **Dark**. The selected icon is highlighted; light is the default. Navigation and content share the same palette. The choice stays in this browser’s same-origin `localStorage`, shared by `/admin` and `/schedules` and retained on reopening. It does not change the main clock or server display settings. Theme changes do not reload the page, so unsaved form values remain.
 
@@ -104,7 +115,7 @@ Open `/schedules#devices` for devices registered through the device API. Each ca
 
 If refresh fails, the page keeps the last successful list and marks it as not updated. Automatic list updates every 15 seconds and in-page language changes preserve unsaved name drafts, input focus, and text selection; reloading or reopening the page does not preserve drafts. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing or display updates. See the [device contract](server-api_en.md#status-and-command-acknowledgement).
 
-The existing device list still uses self-reported IDs and the self-mode shared DEVICE_API_TOKEN. B0–B1 adds test-only admin login and group/invitation APIs; enrollment, per-device credentials and revocation await B2–B4. Opening the clock page does not register a device.
+The observation list can contain two kinds of devices: legacy self-mode devices use self-reported IDs and the shared `DEVICE_API_TOKEN`; schema 3 devices enrolled with a code authenticate with individual credentials, and the server determines their device/group identity before recording status. Use the group panel for current member authorization; old observations cannot establish it. Opening the clock page alone does not enroll a device. Individual device move, disable and revoke controls remain B4 work.
 
 ## Night mode and offline use
 

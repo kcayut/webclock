@@ -1,24 +1,55 @@
 # WebClock Server: Central Management and Device API
 
-## B0–B1 administration and groups (2026-10-05)
+## B0–B3 administration, groups and managed devices (2026-10-05)
 
-Host-initialized administrator login/logout, a stable owner, access enforcement, group CRUD, six-character invitations, and protected update/restore are implemented. Existing installations stay in `self` mode; `managed` is an explicit isolated-test opt-in until B3/B4. Device enrollment/display (B2) and group UI (B3) are not implemented.
+Administrator sessions, owner-scoped groups, invitations, atomic enrollment, authenticated group display/alarms, and group management UI are implemented. Existing installations remain in `self`; `managed` is still an explicit isolated-test opt-in. Production mode migration and individual device move/disable/revoke controls remain B4 work. See the [guide](guide_en.md) for operation and the [B0–B1 contract](b0-b1-contract.md) for storage and update/restore boundaries.
 
-See the [complete B0–B1 contract](b0-b1-contract.md) for persisted schemas, the legacy fixture, request/response fields and future contracts. Public `GET /api/time` returns only a millisecond timestamp. Managed `/api/status` returns time and empty events even with an admin cookie; `/api/v1/device/*` returns 403 and browser-alarms returns 401. The non-private `/api/health` reports `managed_devices_ready: false`.
+Public `GET /api/time` returns only time. Managed `/api/status` returns time and empty events; old `/api/v1/device/*` returns 403 and `/api/v1/browser-alarms` returns 401. An admin session cannot grant device access. Non-private `/api/health` reports `managed_device_schema: 3` and `managed_devices_ready: true`: the endpoints exist, but production migration and hardware acceptance are not complete. The legacy schema 2 descriptions below assume self mode. Existing ESP codecs do not automatically support schema 3.
 
-Group routes are `/api/v1/groups`, `/api/v1/groups/:id`, explicit migration `/api/v1/groups/initialize`, and `/api/v1/groups/:id/invite`. Managed requests require the admin session; writes in either mode require CSRF. Invitations expire in 600 seconds, default to 5 slots (1–100), and reveal plaintext only in the creation POST response. Regeneration leaves members unchanged. The invitation validation service limits attempts to 10 per source and 100 globally per 60 seconds, with a rate-limit error and retry interval. B1 has no public validation/enrollment endpoint or capacity-consumption transaction; the future endpoint's 429 contract includes `Retry-After`.
+### Group management API
 
-Future `/api/v2/device/*` and display schema 3 are frozen contracts, not live endpoints; those routes currently return 404. Legacy schema 2 remains compatible only in self mode; an existing ESP codec is not automatically compatible with schema 3. The legacy device API descriptions below assume self mode.
+Managed requests require the admin session; writes in both modes require CSRF. `/schedules#devices` provides these operations.
+
+| Path | Method and purpose |
+| --- | --- |
+| `/api/v1/groups` | GET list; POST create with no content selected by default |
+| `/api/v1/groups/initialize` | POST explicit default-group initialization with existing content |
+| `/api/v1/groups/<id>` | GET; PATCH name, enabled state, display overrides and content; DELETE a group without members |
+| `/api/v1/groups/catalog` | GET display defaults and IDs/labels for selectable content, without source URLs |
+| `/api/v1/groups/<id>/members` | GET member authorization and safe observations, without credentials |
+| `/api/v1/groups/<id>/invite` | POST generate/regenerate; GET state; DELETE close |
+| `/api/management/language` | POST `{"language":"en"}`, changing only the browser session's management language |
+
+Missing `display_overrides` fields inherit global defaults, including each nested `night` field; `false` and `0` are valid overrides. `content` contains `calendar_source_ids`, `manual_note_ids` and `schedule_ids`; empty arrays select nothing, and note IDs are positive integers. Group display language is independent from management language. `/api/control` still updates global display `language`.
+
+Each group has one six-character invitation, valid for 600 seconds with 5 slots by default (1–100). The installation supports at most 100 devices. Plaintext appears only in the generating POST response, never in GET, persisted state or member lists. Closing/regenerating leaves members unchanged. Closed, expired, full or disabled-group invitations reject enrollment. Enrollment-related limits are 10 attempts per source and 100 globally per 60 seconds; 429 includes `Retry-After`.
+
+### Schema 3 device API
+
+| Path | Method and purpose |
+| --- | --- |
+| `/api/v2/device/join/prepare` | POST `{}`; create/reuse a 10-minute attempt, return `attempt_id`/`expires_at`, and set the pending cookie |
+| `/api/v2/device/identity` | GET cookie round-trip confirmation; return `pending` attempt or `active` identity |
+| `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`; atomically consume capacity and enroll, returning 201 initially or 200 for the same committed attempt |
+| `/api/v2/device/display` | GET effective group settings, selected events and next event |
+| `/api/v2/device/browser-alarms` | GET selected alarms and computed occurrences |
+| `/api/v2/device/status` | POST name, capabilities, revisions and command ACKs; credential determines identity, with no caller-supplied `id`/`group_id` |
+
+Browsers perform prepare → identity cookie confirmation → join. The pending secret becomes the same device credential after commit, allowing retries after a lost success response without consuming another slot. Codes never enter URLs or browser storage. `webclock_device` is a host-only, HttpOnly, SameSite=Lax cookie scoped to `/api/v2/device`; managed mode requires HTTPS and Secure cookies. Prepare/join reject Bearer; other device endpoints accept a dedicated device Bearer, not an admin session or legacy shared `DEVICE_API_TOKEN`. Cookie writes require same-origin CSRF. An authenticated device Bearer bypasses cookie CSRF but still undergoes Origin checks; cross-origin reads are not enabled.
+
+Display and alarms return `schema_version: 3`, `identity`, config/schedule/holiday revisions, millisecond `server_timestamp` and a `lease` of at most 300 seconds. Identity includes owner/device/group IDs, credential generation, assignment revision and `identity_revision`. Current authorization and content scope are rechecked before every response, including 304; a scope change during I/O returns 409 `display_scope_changed` instead of old content. ETag responses use `private, no-cache` and `Vary: Cookie, Authorization`; 304 renews through `X-WebClock-Server-Timestamp`, `X-WebClock-Lease-Expires-At` and `X-WebClock-Identity-Revision`. Enrollment/identity responses use `no-store`.
+
+Private caches are scoped to device identity. A 401/403, identity change or expired lease clears private events and browser alarms; network failures may retain only unexpired data from the current run. Alarms use `Asia/Taipei`, independently from the group's display timezone. Missing linked sources suppress the affected alarm rather than falling back to daily ringing. This is not an ESP seven-day offline trigger list or proof of old-iPad, lock-screen audio or hardware acceptance.
 
 [繁體中文](server-api.md) · **English** · [日本語](server-api_jp.md) · [README](../README_en.md)
 
-This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Managed clocks receive no private alarms until the B2 device authorization/display flow is delivered.
+This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Enrolled schema 3 clocks receive only their assigned group's private content.
 
 Device execution remains a firmware responsibility. [`firmware/`](../firmware/README.md) now contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
 
 See the [ESPHome device guide](esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
 
-There is currently one owner's management space. **Legacy self-mode devices use the same schedules and calendars**. B0–B1 adds a host-initialized administrator and owner-scoped group definitions; applying group assignments to authenticated devices is still pending B2. Multiple user accounts and multi-tenancy are not implemented.
+There is currently one owner's management space. **Legacy self-mode devices use the same schedules and calendars**. Schema 3 applies group assignments to authenticated devices. Multiple user accounts and multi-tenancy are not implemented.
 
 ## Startup and layout
 
@@ -30,7 +61,9 @@ webclock/
   app.py                     clock, settings, calendars, and startup
   api/
     management.py            management pages and schedule/device APIs
-    device.py                device configuration, schedules, calendar, and status APIs
+    device.py                legacy self-mode schema 2 device APIs
+    managed_device.py        schema 3 enrollment, identity, group display and status
+    groups.py                groups, invitations, content catalog and members
   services/                  schedule, holiday, device, and JSON storage services
   translations/              web UI text
   data/taiwan_calendar.json  read-only calendar data and provenance
@@ -233,7 +266,7 @@ The UI's “sync requested,” `online`, matching revisions, or an absent pendin
 
 ### Planned extensions
 
-A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. B0–B1 provides the administrator/owner and group definitions; per-device credentials, enrollment, authenticated device ownership, and complete production deployment-mode switching remain unimplemented. See the [ESPHome guide](esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
+A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. B2–B3 provides browser enrollment, per-device credentials and group display. ESP integration with the new contract and complete production deployment-mode switching remain future work. See the [ESPHome guide](esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
 
 ## Legacy data and storage
 
@@ -258,6 +291,8 @@ node tests/test_alarms.js
 node tests/test_calendar_ui.js
 node tests/test_management_navigation.js
 node tests/test_management_theme.js
+node tests/test_group_ui.js
+node tests/test_device_enrollment.js
 bash -n setup.sh scripts/setup.sh update_clock.sh
 ```
 

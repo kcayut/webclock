@@ -148,6 +148,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         };
     }
     const node = id => elements[id] || (elements[id] = makeNode());
+    node('body').setAttribute('data-deployment-mode', 'self');
     const labels = Array.from(template.matchAll(/<[^>]+data-clock-i18n="([^"]+)"[^>]*>/g), ([tag, key]) => {
         const id = (tag.match(/\bid="([^"]+)"/) || [])[1];
         const label = id ? node(id) : makeNode();
@@ -183,7 +184,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             this.open = (method, url) => {
                 assert.match(node('time').textContent, /^\d\d:\d\d$/);
                 assert.equal(method, 'GET');
-                assert.match(url, /^http:\/\/[^/]+\/api\/status\?nocache=\d+$/);
+                assert.match(url, /^http:\/\/[^/]+\/api\/(?:status\?nocache=\d+|time)$/);
                 this.url = url;
                 requests.push(this);
             };
@@ -313,7 +314,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             server_timestamp: serverNow - 7200000});
         assert.equal(legacy.activeSettings.brightness, 44, 'switching servers invalidates the previous source');
         const secondSource = newRequest();
-        assert.match(secondSource.url, /^http:\/\/second\.example\/api\/status/);
+        assert.match(secondSource.url, /^http:\/\/second\.example\/api\/time/);
         serverNow += 60000;
         reply(secondSource, {events: [{text: 'Second server', time: '08:08'}], settings: {brightness: 46},
             server_timestamp: serverNow});
@@ -330,9 +331,9 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         beforeSameUrlReconnect.onerror();
         reply(beforeSameUrlReconnect, {events: [{text: 'Before reconnect', time: '01:00'}],
             server_timestamp: serverNow - 7200000});
-        assert.equal(legacy.connectionMode, 'server');
-        assert.equal(node('list-container').children[0].children[0].children[1].textContent, 'Reconnected',
-            'same-URL reconnect invalidates its previous generation');
+        assert.equal(legacy.connectionMode, 'standalone');
+        assert.ok(!legacy.currentEventsJson.includes('Reconnected'),
+            'without the optional session module another source only supplies public time');
 
         node('server-url-input').value = 'http://clock.example';
         legacy.reconnectNow();
@@ -346,7 +347,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         reply(firstARequest, {events: [{text: 'First A', time: '01:00'}], settings: {brightness: 13},
             server_timestamp: serverNow - 7200000});
         staleBRequest.ontimeout();
-        assert.equal(legacy.activeSettings.brightness, 46,
+        assert.equal(legacy.activeSettings.brightness, 44,
             'the first A generation stays invalid before the current A responds');
         assert.equal(legacy.lastServerStatus, 'connection_connecting');
         serverNow += 60000;
@@ -465,6 +466,18 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         assert.equal(JSON.stringify(legacy.activeSettings), validSettings,
             'unavailable storage retains the current valid settings');
         storageAvailable = true;
+        const corruptLocalEvents = JSON.stringify([null, false, {text: 'Invalid time', time: 123},
+            {text: 'Invalid date', date: []}, {text: 45}, {text: 'Valid local reminder', time: '09:00'}]);
+        storage['webclock.localEvents'] = corruptLocalEvents;
+        legacy.enterServerMode({events: [{text: 'Private reminder', time: '10:00'}]});
+        assert.doesNotThrow(() => legacy.enterStandaloneMode(),
+            'malformed local reminders cannot prevent private content from clearing');
+        assert.equal(node('list-container').children[0].children[0].children[1].textContent,
+            'Valid local reminder');
+        assert.equal(node('event-counter').textContent, '1 / 1');
+        assert.equal(storage['webclock.localEvents'], corruptLocalEvents,
+            'filtering local reminders never rewrites the saved source');
+        delete storage['webclock.localEvents'];
         storage['webclock.settings'] = '{broken';
         legacy.enterStandaloneMode();
         assert.equal(JSON.stringify(legacy.activeSettings), validSettings,

@@ -1,14 +1,45 @@
 # WebClock Server：集中管理與裝置 API
 
-## B0–B1 管理與群組（2026-10-05）
+## B0–B3 管理、群組與受管裝置（2026-10-05）
 
-已提供主機初始化的管理員登入/登出、owner、入口授權、群組 CRUD、六碼邀請及安全更新/還原。既有安裝仍為自用模式；帳密模式只供明確啟用的隔離測試。B2 裝置加入/受管顯示與 B3 管理面板尚未交付。
+已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 目前只供明確啟用的隔離測試。正式模式切換與個別裝置移動／停用／撤銷的管理操作仍待 B4。操作方式見[使用指南](guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](b0-b1-contract.md)。
 
-完整持久 schema、權限矩陣、遷移 fixture、API body/回應及後續凍結契約見 [B0–B1 契約](b0-b1-contract.md)。`GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403、browser-alarms 回 401，管理登入不能替代裝置憑證。`/api/health` 不含私人資料，`managed_devices_ready: false`。
+`GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403，`/api/v1/browser-alarms` 回 401。管理登入不能替代裝置憑證。非私人 `/api/health` 提供 `managed_device_schema: 3`、`managed_devices_ready: true`，表示新端點已實作，不表示正式模式切換或實機驗收已完成。以下舊 schema 2 裝置 API 均以 self 模式為前提，現有 ESP codec 不會自動支援 schema 3。
 
-群組 API 為 `/api/v1/groups`、`/api/v1/groups/:id`、明確遷移 `/api/v1/groups/initialize` 與 `/api/v1/groups/:id/invite`。managed 要管理 session，所有模式的寫入要 CSRF。六碼期限 600 秒、預設 5 台（1–100），只在產碼 POST 回一次明文；每群一組，重產不改成員。驗碼服務限每來源 10/60 秒、全站 100/60 秒，429 附 `Retry-After`；B1 沒有公開加入端點或扣額交易。
+### 群組管理 API
 
-後續 `/api/v2/device/*` / schema 3 已凍結但尚未實作；現有 schema 2 只維持 self 相容，不默認舊 ESP codec 能使用新契約。以下舊裝置 API 說明均以 self 模式為前提。
+managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devices` 提供相同操作。
+
+| 路徑 | 方法與用途 |
+| --- | --- |
+| `/api/v1/groups` | GET 列表；POST 新增，內容選擇預設空 |
+| `/api/v1/groups/initialize` | POST 明確建立預設群組並帶入既有內容 |
+| `/api/v1/groups/<id>` | GET；PATCH 名稱、啟用狀態、顯示覆寫與內容；DELETE 無成員群組 |
+| `/api/v1/groups/catalog` | GET 顯示預設與三類可選內容的 ID／名稱，不含私人來源 URL |
+| `/api/v1/groups/<id>/members` | GET 成員授權與安全的觀察欄位，不含憑證 |
+| `/api/v1/groups/<id>/invite` | POST 產生或重產；GET 狀態；DELETE 關閉 |
+| `/api/management/language` | POST `{"language":"zh-TW"}`，只改瀏覽器 session 的後台語言 |
+
+群組 `display_overrides` 未提供的欄位繼承全域設定，含 `night` 內的逐欄繼承；`false` 與 `0` 是有效覆寫。`content` 包含 `calendar_source_ids`、`manual_note_ids`、`schedule_ids`，空陣列代表不選取，文字提醒 ID 保留正整數。群組的顯示語言與後台語言分開。全域顯示語言仍由 `/api/control` 的 `language` 更新。
+
+每群一組六碼，600 秒有效、預設 5 台（1–100），全站最多 100 台裝置。明文只在產碼 POST 回一次；GET、持久檔及成員列表不回明文。重產／關閉不改成員。過期、額滿、關閉或停用群組不能加入。加入相關限制為每來源 10 次／60 秒、全站 100 次／60 秒，429 附 `Retry-After`。
+
+### Schema 3 裝置 API
+
+| 路徑 | 方法與用途 |
+| --- | --- |
+| `/api/v2/device/join/prepare` | POST `{}`，建立或重用 10 分鐘加入嘗試；回 `attempt_id`／`expires_at`，並設定待加入 Cookie |
+| `/api/v2/device/identity` | GET 確認 Cookie 往返；回 `pending` 嘗試或 `active` 身份 |
+| `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`；原子扣額並加入，首次 201、同一已提交嘗試重試 200 |
+| `/api/v2/device/display` | GET 群組有效設定、已選事件與下一個事件 |
+| `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
+| `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
+
+瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。prepare／join 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
+
+display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision`、`schedule_revision`、`holiday_revision`、Unix 毫秒 `server_timestamp` 與最長 300 秒的 `lease`。身份含 owner／device／group、憑證世代、指派 revision 與 `identity_revision`。每次回應（含 304）前重新確認目前授權與內容範圍；I/O 期間範圍變更回 409 `display_scope_changed`，不送出舊內容。ETag 回應使用 `private, no-cache`、`Vary: Cookie, Authorization`，304 以 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` 續期；加入／身份回應為 `no-store`。
+
+私人快取依裝置身份隔離；401／403、身份改變或租期到期會清除私人事件與網頁鬧鐘。短暫網路錯誤只能沿用尚未過期的本次資料。鬧鐘依 `Asia/Taipei` 計算，顯示時區另依群組設定；聯動來源缺失會排除相應鬧鐘，不退回每天響鈴。此流程未提供 ESP 的七天離線觸發清單，也不代表舊 iPad、鎖屏音訊或硬體已驗收。
 
 **繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../README.md)
 
@@ -18,7 +49,7 @@
 獨立硬體由裝置端執行。[`firmware/`](../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
-自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。B0 已有最小管理員帳號與 owner，B1 已保存群組內容指派；實際依裝置身份下發、一般成員帳號及多租戶仍待後續。
+自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。新 schema 3 裝置依已認證身份取得所屬群組內容；一般成員帳號與多租戶仍未提供。
 
 ## 啟動與目錄
 
@@ -31,11 +62,14 @@ webclock/
   api/
     __init__.py              共用存取檢查、錯誤回應與路由註冊
     management.py            管理頁與排程／裝置管理 API
-    device.py                裝置取得設定、排程、日曆及回報 API
+    device.py                self 模式 schema 2 裝置 API
+    managed_device.py        schema 3 加入、身份、群組顯示與回報
+    groups.py                群組、邀請、內容目錄與成員管理 API
   services/
     schedule_service.py      排程驗證、儲存、下一次時間計算
     holiday_service.py       台灣工作日判斷與日曆匯出
     device_service.py        裝置登錄、狀態、同步要求與確認
+    device_access_service.py 群組、邀請、加入嘗試與獨立裝置授權
     storage.py               原子 JSON 儲存
   translations/              網頁文案
   data/taiwan_calendar.json  唯讀日曆與來源
@@ -50,7 +84,9 @@ webclock_state/              私人執行資料，不進 Git
   settings.json
   manual_notes.json
   schedules.json
-  devices.json
+  devices.json              裝置觀察與同步狀態
+  auth.json                 管理員身份、session 與秘密
+  device-access.json        群組、邀請、裝置授權與加入嘗試
 ```
 
 根目錄保留相容入口與公開時鐘檔案。GitHub Pages 仍只發布公開時鐘；管理頁、API、私人行事曆與裝置資料不進公開離線快取。
@@ -443,7 +479,7 @@ curl -i -H 'Content-Type: application/json' \
 
 ESPHome 目標中的「未來七天觸發清單」尚未提供 API，現有 `schema_version=2` 不會回 `valid_until` 或完整行事曆聯動事件。`/api/v1/browser-alarms` 也不是七天離線清單，不能代替這個功能。
 
-實作時需另定能力／版本契約，包含清單有效期限、滾動補充、來源更新與失效、刪除、範圍切換，以及容量上限的完整性處理；沿用目前 Server 排程計算，保留既有 schema 2 語意。獨立裝置認證與部署模式切換也仍是待辦，不能在現行 status 任意增加尚未支援的欄位。開發順序與硬體驗收見 [ESPHome 裝置指南](esp-home.md)。
+實作時需另定能力／版本契約，包含清單有效期限、滾動補充、來源更新與失效、刪除、範圍切換，以及容量上限的完整性處理；沿用目前 Server 排程計算，保留既有 schema 2 語意。B2–B3 已提供瀏覽器的獨立裝置認證與群組顯示；ESP 韌體接入新契約與正式部署模式切換仍待後續，不能在舊 status 任意增加尚未支援的欄位。開發順序與硬體驗收見 [ESPHome 裝置指南](esp-home.md)。
 
 ## 舊原型與資料保存
 
@@ -470,6 +506,8 @@ node tests/test_alarms.js
 node tests/test_calendar_ui.js
 node tests/test_management_navigation.js
 node tests/test_management_theme.js
+node tests/test_group_ui.js
+node tests/test_device_enrollment.js
 bash -n setup.sh scripts/setup.sh update_clock.sh
 ```
 

@@ -1,8 +1,4 @@
-"""Owner-scoped display groups and invitations, without device enrollment yet.
-
-One process owns device-access.json. B2 will commit enrollment, capacity and
-credentials together in this file under the same storage lock.
-"""
+"""Groups, invitations and atomic enrollment; one process owns the JSON file."""
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -14,11 +10,13 @@ import secrets
 import time
 from uuid import uuid4
 
-from .storage import load_json, save_json, storage_lock
+from .storage import load_json, revision, save_json, storage_lock
 
 
 CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 INVITE_SECONDS = 600
+ATTEMPT_SECONDS = 600
+PENDING_ATTEMPT_LIMIT = 200
 DEVICE_LIMIT = 100
 GROUP_LIMIT = 100
 SOURCE_LIMIT = 10
@@ -119,10 +117,57 @@ class DeviceAccessService:
                         or _epoch(row['expires_at']) <= _epoch(row['created_at'])):
                     raise ValueError('Invalid stored invitation')
                 invite_ids.add(row['id'])
-            for field in ('devices', 'attempts'):
-                if any(not isinstance(key, str) or not key or not isinstance(row, dict)
-                       for key, row in data[field].items()):
-                    raise ValueError('Invalid future enrollment records')
+            device_fields = {'id', 'owner_id', 'group_id', 'enabled', 'status', 'credential_digest',
+                             'credential_generation', 'created_at', 'assignment_revision', 'rejoin_required'}
+            digests = set()
+            for device_id, row in data['devices'].items():
+                if (not isinstance(row, dict) or set(row) != device_fields or row['id'] != device_id
+                        or not isinstance(device_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', device_id)
+                        or row['group_id'] not in data['groups']
+                        or row['owner_id'] != data['groups'][row['group_id']]['owner_id']
+                        or type(row['enabled']) is not bool or type(row['rejoin_required']) is not bool
+                        or row['status'] not in ('active', 'disabled', 'revoked')
+                        or type(row['credential_generation']) is not int or row['credential_generation'] < 1
+                        or type(row['assignment_revision']) is not int or row['assignment_revision'] < 1):
+                    raise ValueError('Invalid stored device identity')
+                digest = row['credential_digest']
+                if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest)
+                                           or digest in digests):
+                    raise ValueError('Invalid stored credential')
+                if digest is not None:
+                    digests.add(digest)
+                if row['status'] == 'active' and (digest is None or row['rejoin_required']):
+                    raise ValueError('Invalid active credential')
+                _epoch(row['created_at'])
+            attempt_fields = {'id', 'owner_id', 'credential_digest', 'created_at', 'expires_at', 'device_id'}
+            completed = set()
+            pending_count = 0
+            attempt_digests = set()
+            for attempt_id, row in data['attempts'].items():
+                if (not isinstance(row, dict) or set(row) != attempt_fields or row['id'] != attempt_id
+                        or not isinstance(attempt_id, str) or not re.fullmatch(r'[a-f0-9]{32}', attempt_id)
+                        or not isinstance(row['owner_id'], str) or not row['owner_id']
+                        or not isinstance(row['credential_digest'], str)
+                        or not re.fullmatch(r'[a-f0-9]{64}', row['credential_digest'])
+                        or row['credential_digest'] in attempt_digests
+                        or _epoch(row['expires_at']) <= _epoch(row['created_at'])):
+                    raise ValueError('Invalid stored join attempt')
+                attempt_digests.add(row['credential_digest'])
+                device_id = row['device_id']
+                if device_id is None:
+                    pending_count += 1
+                    if row['credential_digest'] in digests:
+                        raise ValueError('Pending credential already in use')
+                elif (not isinstance(device_id, str) or device_id in completed
+                      or device_id not in data['devices']
+                      or data['devices'][device_id]['owner_id'] != row['owner_id']
+                      or (data['devices'][device_id]['credential_digest'] is not None
+                          and data['devices'][device_id]['credential_digest'] != row['credential_digest'])):
+                    raise ValueError('Invalid completed join attempt')
+                else:
+                    completed.add(device_id)
+            if pending_count > PENDING_ATTEMPT_LIMIT or len(completed) > DEVICE_LIMIT:
+                raise ValueError('Too many join attempts')
             return data
         except (ValueError, TypeError, KeyError, OverflowError) as error:
             raise AccessError('Invalid stored device access data', 503, 'access_not_ready') from error
@@ -341,10 +386,10 @@ class DeviceAccessService:
                 save_json(self.path, state)
             return self._invite_metadata(state, row) if row else None
 
-    def _limit(self, source):
+    def _limit(self, source, purpose='invite'):
         """All attempts count; a fixed window stores at most 100 source keys."""
         now = self.clock()
-        key = str(self.path.resolve())
+        key = str(self.path.resolve()) + (':prepare' if purpose == 'prepare' else '')
         window = _RATE_WINDOWS.get(key)
         if window is None or now >= window['reset'] or now < window['start']:
             # Services normally share one state path. Bound test/multi-app paths too.
@@ -361,22 +406,160 @@ class DeviceAccessService:
         window['sources'][source] = used + 1
 
     def check_invite(self, code, source):
-        """B1 validation only; B2 must recheck and consume within its transaction.
-
-        The caller must use the transport peer address, never untrusted forwarded
-        headers. No public enrollment route is exposed in B1.
-        """
+        """Read-only validation; join rechecks and consumes inside one transaction."""
         with storage_lock:
             self._limit(source)
-            normalized = code.upper() if isinstance(code, str) and code.isascii() else ''
-            if len(normalized) != 6 or any(char not in CODE_ALPHABET for char in normalized):
-                raise AccessError('Invalid or unavailable invitation', 400, 'invalid_invitation')
-            digest = self._digest(normalized)
-            state = self._load()
-            match = None
-            for row in state['invites'].values():
-                if hmac.compare_digest(row['code_digest'], digest):
-                    match = row
-            if match is None or self._invite_metadata(state, match)['status'] != 'active':
-                raise AccessError('Invalid or unavailable invitation', 400, 'invalid_invitation')
+            match = self._matching_invite(self._load(), code)
             return dict(invite_id=match['id'], group_id=match['group_id'], owner_id=match['owner_id'])
+
+    def _matching_invite(self, state, code):
+        normalized = code.upper() if isinstance(code, str) and code.isascii() else ''
+        if len(normalized) != 6 or any(char not in CODE_ALPHABET for char in normalized):
+            raise AccessError('Invalid or unavailable invitation', 400, 'invalid_invitation')
+        digest = self._digest(normalized)
+        match = None
+        for row in state['invites'].values():
+            if hmac.compare_digest(row['code_digest'], digest):
+                match = row
+        if match is None or self._invite_metadata(state, match)['status'] != 'active':
+            raise AccessError('Invalid or unavailable invitation', 400, 'invalid_invitation')
+        return match
+
+    @staticmethod
+    def _credential_digest(token):
+        if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', token):
+            return None
+        return hashlib.sha256(token.encode('ascii')).hexdigest()
+
+    @staticmethod
+    def _identity(row):
+        value = {key: row[key] for key in ('owner_id', 'group_id', 'credential_generation', 'assignment_revision')}
+        value['device_id'] = row['id']
+        value['identity_revision'] = revision(value)
+        return value
+
+    def _active_identity(self, state, row, owner_id):
+        group = state['groups'].get(row['group_id'])
+        if (row['owner_id'] != owner_id or not row['enabled'] or row['status'] != 'active'
+                or row['rejoin_required'] or row['credential_digest'] is None
+                or not group or not group['enabled'] or group['owner_id'] != owner_id):
+            raise AccessError('Device authorization is no longer valid', 403, 'device_authorization_revoked')
+        return self._identity(row)
+
+    def _device_for_digest(self, state, digest):
+        if digest is not None:
+            return next((row for row in state['devices'].values()
+                         if row['credential_digest'] is not None
+                         and hmac.compare_digest(row['credential_digest'], digest)), None)
+        return None
+
+    def authenticate(self, token, owner_id):
+        """Validate the current owner, credential and assignment before any response/304."""
+        with storage_lock:
+            self._owner(owner_id)
+            state = self._load()
+            row = self._device_for_digest(state, self._credential_digest(token))
+            if row is None:
+                raise AccessError('A device credential is required', 401, 'device_authentication_required')
+            return self._active_identity(state, row, owner_id)
+
+    def identity(self, token, owner_id):
+        with storage_lock:
+            self._owner(owner_id)
+            state = self._load()
+            digest = self._credential_digest(token)
+            row = self._device_for_digest(state, digest)
+            if row is not None:
+                return {'status': 'active', 'identity': self._active_identity(state, row, owner_id)}
+            if digest is not None:
+                for attempt in state['attempts'].values():
+                    if hmac.compare_digest(attempt['credential_digest'], digest):
+                        if attempt['device_id'] is not None:
+                            # A retained attempt cannot resurrect a cleared/revoked credential.
+                            raise AccessError('Device authorization is no longer valid', 403,
+                                              'device_authorization_revoked')
+                        if attempt['owner_id'] == owner_id and _epoch(attempt['expires_at']) > self.clock():
+                            return {'status': 'pending', 'attempt_id': attempt['id'],
+                                    'expires_at': int(_epoch(attempt['expires_at']) * 1000)}
+            raise AccessError('A device credential is required', 401, 'device_authentication_required')
+
+    def prepare(self, owner_id, source, token=None):
+        """Return attempt metadata and a token only when a new cookie is needed."""
+        with storage_lock:
+            self._owner(owner_id)
+            self._limit(source, 'prepare')
+            state = self._load()
+            digest = self._credential_digest(token)
+            device = self._device_for_digest(state, digest)
+            if device is not None:
+                self._active_identity(state, device, owner_id)
+                raise AccessError('Device is already joined', 409, 'join_attempt_conflict')
+            now = self.clock()
+            state['attempts'] = {key: row for key, row in state['attempts'].items()
+                                 if row['device_id'] is not None or _epoch(row['expires_at']) > now}
+            for row in state['attempts'].values():
+                if digest is not None and hmac.compare_digest(row['credential_digest'], digest):
+                    if row['device_id'] is not None or row['owner_id'] != owner_id:
+                        raise AccessError('Device authorization is no longer valid', 403,
+                                          'device_authorization_revoked')
+                    return {'attempt_id': row['id'], 'expires_at': int(_epoch(row['expires_at']) * 1000),
+                            'token': None, 'created': False}
+            pending = [row for row in state['attempts'].values() if row['device_id'] is None]
+            if len(pending) >= PENDING_ATTEMPT_LIMIT:
+                retry = max(1, math.ceil(min(_epoch(row['expires_at']) for row in pending) - now))
+                raise AccessError('Too many pending attempts', 429, 'rate_limited', retry)
+            for _ in range(20):
+                new_token = secrets.token_urlsafe(32)
+                new_digest = self._credential_digest(new_token)
+                if (self._device_for_digest(state, new_digest) is None
+                        and not any(row['credential_digest'] == new_digest for row in state['attempts'].values())):
+                    break
+            else:
+                raise AccessError('Unable to allocate a credential', 503, 'temporarily_unavailable')
+            attempt_id = self._new_id(state['attempts'])
+            state['attempts'][attempt_id] = dict(id=attempt_id, owner_id=owner_id,
+                credential_digest=new_digest, created_at=_stamp(now), expires_at=_stamp(now + ATTEMPT_SECONDS),
+                device_id=None)
+            save_json(self.path, state)
+            return {'attempt_id': attempt_id, 'expires_at': int((now + ATTEMPT_SECONDS) * 1000),
+                    'token': new_token, 'created': True}
+
+    def join(self, owner_id, token, attempt_id, code, source):
+        """Activate the same prepared credential and consume one seat in one write."""
+        with storage_lock:
+            self._owner(owner_id)
+            state = self._load()
+            digest = self._credential_digest(token)
+            if digest is None:
+                raise AccessError('A device credential is required', 401, 'device_authentication_required')
+            attempt = state['attempts'].get(attempt_id) if isinstance(attempt_id, str) else None
+            if (attempt is None or attempt['owner_id'] != owner_id
+                    or not hmac.compare_digest(attempt['credential_digest'], digest)):
+                raise AccessError('Join attempt no longer matches this browser', 409, 'join_attempt_conflict')
+            if attempt['device_id'] is not None:
+                row = state['devices'][attempt['device_id']]
+                return {'identity': self._active_identity(state, row, owner_id), 'created': False}
+            if _epoch(attempt['expires_at']) <= self.clock() or self._device_for_digest(state, digest) is not None:
+                raise AccessError('Join attempt has expired or was replaced', 409, 'join_attempt_conflict')
+            self._limit(source)
+            invitation = self._matching_invite(state, code)
+            if invitation['owner_id'] != owner_id:
+                raise AccessError('Invalid or unavailable invitation', 400, 'invalid_invitation')
+            device_id = self._new_id(state['devices'])
+            row = dict(id=device_id, owner_id=owner_id, group_id=invitation['group_id'], enabled=True,
+                       status='active', credential_digest=digest, credential_generation=1,
+                       created_at=_stamp(self.clock()), assignment_revision=1, rejoin_required=False)
+            state['devices'][device_id] = row
+            attempt['device_id'] = device_id
+            invitation['used'] += 1
+            save_json(self.path, state)
+            return {'identity': self._identity(row), 'created': True}
+
+    def list_members(self, owner_id, group_id):
+        with storage_lock:
+            state = self._load()
+            group = self._group(state, owner_id, group_id)
+            return [{key: deepcopy(value) for key, value in row.items() if key != 'credential_digest'}
+                    | {'device_id': row['id'], 'group_enabled': group['enabled']}
+                    for row in state['devices'].values()
+                    if row['owner_id'] == owner_id and row['group_id'] == group_id]

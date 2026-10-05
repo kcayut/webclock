@@ -126,6 +126,11 @@
         </div>
 
         <div class="field">
+            <label for="display-language-select" data-i18n="display_language">{{ translations[language].display_language }}</label>
+            <select id="display-language-select" onchange="setDisplayLanguage(this)">{% for code, label in languages.items() %}<option value="{{ code }}" {% if code == settings.language %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <p class="help" data-i18n="display_language_hint">{{ translations[language].display_language_hint }}</p>
+        </div>
+        <div class="field">
             <label for="time-format-select" data-i18n="time_format">{{ translations[language].time_format }}</label>
             <select id="time-format-select" onchange="setTimeFormat(this.value)">
                 <option value="24h" data-i18n="time_format_24">{{ translations[language].time_format_24 }}</option>
@@ -332,6 +337,7 @@
         var I18N = JSON.parse(document.getElementById('management-i18n').textContent);
         var currentLanguage = {{ language | tojson }};
         var currentTimeFormat = {{ time_format | tojson }};
+        var displayLanguage = {{ settings.language | tojson }};
 
         document.getElementById('timezone-select').value = "{{ settings.timezone_offset }}";
 
@@ -459,6 +465,17 @@
 
         function setTimezone(val) {
             postSettings({ timezone_offset: val });
+        }
+
+        function setDisplayLanguage(select) {
+            if (select.disabled) return;
+            select.disabled = true;
+            var requested = select.value;
+            postSettings({language: requested}, true).then(function (result) {
+                if (result) displayLanguage = requested;
+                else select.value = displayLanguage;
+                select.disabled = false;
+            });
         }
 
     </script>

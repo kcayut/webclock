@@ -52,7 +52,7 @@ class AccessControlTest(unittest.TestCase):
     def test_all_registered_management_routes_require_identity_before_data_or_mutation(self):
         before = self.snapshot()
         public = {'index', 'status', 'public_time', 'health', 'static', 'service_worker',
-                  'csrf_token', 'auth.login'}
+                  'csrf_token', 'auth.login', 'managed_device.prepare', 'managed_device.join'}
         seen = set()
         for rule in clock.app.url_map.iter_rules():
             if rule.endpoint in public:
@@ -95,7 +95,7 @@ class AccessControlTest(unittest.TestCase):
             self.assertEqual(status['events'], [])
             self.assertIsNone(status['next_event'])
             self.assertEqual(set(self.request('/api/time').json), {'server_timestamp'})
-        self.assertFalse(self.request('/api/health').json['managed_devices_ready'])
+        self.assertTrue(self.request('/api/health').json['managed_devices_ready'])
 
     def test_shared_token_and_admin_session_never_authorize_legacy_display(self):
         with patch.dict(os.environ, DEVICE_API_TOKEN='legacy-shared'):

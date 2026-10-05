@@ -90,7 +90,7 @@ async function checkLanguage() {
     assert.equal(select.disabled, true);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(select.disabled, false);
-    assert.equal(request.url, '/api/control');
+    assert.equal(request.url, '/api/management/language');
     assert.equal(request.options.headers['X-CSRF-Token'], 'language-csrf-token');
     assert.deepEqual(JSON.parse(request.options.body), {language: 'en'});
     assert.equal(context.currentLanguage, 'en');

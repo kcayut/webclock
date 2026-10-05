@@ -1,5 +1,5 @@
 // Bump this version whenever the offline shell changes.
-const VERSION = 'v10';
+const VERSION = 'v11';
 const BASE = new URL('./', self.location.href);
 const PREFIX = 'webclock-' + BASE.pathname + '-';
 const CACHE = PREFIX + VERSION;

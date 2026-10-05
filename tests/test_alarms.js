@@ -13,7 +13,7 @@ assert.ok(!fs.readFileSync(path.join(root, 'index.html'), 'utf8').includes('alar
 assert.doesNotMatch(script, /alarm-status|alarm_sync_error|alarm_unknown_holiday|alarm_sound_unavailable/,
     'alarm faults must not create automatic main-screen status text');
 
-function browser(storage = {}, usePerformance = false) {
+function browser(storage = {}, usePerformance = false, managed = false) {
     let instant = Date.parse('2026-09-30T00:00:00Z');
     let elapsed = 0;
     const nodes = {}, handlers = {}, requests = [], timers = [];
@@ -22,6 +22,7 @@ function browser(storage = {}, usePerformance = false) {
         classList: {items: new Set(), add(x) { this.items.add(x); }, remove(x) { this.items.delete(x); },
             toggle(x, on) { on ? this.add(x) : this.remove(x); }},
         setAttribute(key, value) { this.attrs[key] = value; },
+        getAttribute(key) { return key === 'data-deployment-mode' ? (managed ? 'managed' : 'self') : this.attrs[key]; },
     });
     const addEventListener = (name, handler) => (handlers[name] || (handlers[name] = [])).push(handler);
     const sound = {ready: false, played: [], volumes: [], stopped: 0, unlocked: 0,
@@ -30,6 +31,16 @@ function browser(storage = {}, usePerformance = false) {
     const window = {serverUrl: 'http://clock.example', location: {origin: 'http://clock.example'},
         AlarmAudio: sound, addEventListener};
     if (usePerformance) window.performance = {now: () => elapsed};
+    const subscribers = [];
+    let lease = true, scope = 'https://clock.example|group-a', identity = {device_id: 'a'};
+    const session = {getState: () => ({scope, identity}), subscribe: callback => subscribers.push(callback),
+        expire() {}, hasLease: () => lease,
+        fetchAlarms(accept) { requests.push({accept, url: '/api/v2/device/browser-alarms'}); },
+        clear(type = 'revoked') { lease = false; if (type === 'revoked') identity = null;
+            subscribers.forEach(callback => callback({type, resource: type === 'expired' ? 'alarms' : 'all', state: {scope, identity}})); },
+        changeScope(value) { scope = value; identity = {device_id: value}; lease = true;
+            subscribers.forEach(callback => callback({type: 'identity', resource: 'all', state: {scope, identity}})); }};
+    if (managed) window.WebClockDeviceSession = session;
     const context = vm.createContext({window,
         document: {getElementById(id) {
             assert.ok(!['alarm-status', 'notice', 'notice-text'].includes(id),
@@ -62,9 +73,10 @@ function browser(storage = {}, usePerformance = false) {
         request.status = 200;
         request.responseText = JSON.stringify({alarms, enabled_count: enabledIds.length, enabled_ids: enabledIds,
             server_timestamp: serverTimestamp, holiday_known: true});
-        request.onload();
+        if (request.accept) request.accept(JSON.parse(request.responseText), true);
+        else request.onload();
     }
-    return {node, window, sound, requests, tick, poll, dispatch, reply,
+    return {node, window, sound, requests, tick, poll, dispatch, reply, session,
         advance(ms) { instant += ms; elapsed += ms; }, adjustClock(ms) { instant += ms; }, now: () => instant,
         ringing: () => node('body').classList.items.has('alarm-ringing')};
 }
@@ -250,3 +262,31 @@ const unsupported = {};
 vm.runInNewContext(audioScript, {window: unsupported});
 assert.equal(unsupported.AlarmAudio.unlock('bell'), false);
 console.log('Alarm checks passed: ES5/webkit audio, unlock, scheduling, holidays via server, touch deduplication, dismissal, stale/offline data and motion control.');
+
+// Private alarm queues, current ring and dismissals are scoped and memory-only.
+const privateStorage = {};
+const managedPage = browser(privateStorage, true, true);
+managedPage.node('alarm-bell').onclick();
+managedPage.reply([alarm(managedPage, 'Private group alarm')]);
+managedPage.advance(1000); managedPage.tick();
+assert.ok(managedPage.ringing());
+managedPage.session.clear('revoked');
+assert.equal(managedPage.ringing(), false);
+assert.equal(managedPage.node('alarm-name').textContent, '');
+assert.equal(managedPage.node('alarm-message').style.display, 'none');
+assert.ok(managedPage.sound.stopped > 0);
+managedPage.advance(30000); managedPage.tick();
+assert.equal(managedPage.ringing(), false, 'revoked queued alarms never resume');
+assert.ok(!JSON.stringify(privateStorage).includes('Private group alarm'));
+const privateDismissal = browser({}, true, true);
+privateDismissal.reply([alarm(privateDismissal, 'Same occurrence')]);
+privateDismissal.advance(1000); privateDismissal.tick();
+privateDismissal.dispatch('touchend'); privateDismissal.advance(900); privateDismissal.dispatch('touchend');
+assert.equal(privateDismissal.ringing(), false);
+privateDismissal.session.changeScope('other-device-scope');
+privateDismissal.poll(); privateDismissal.reply([alarm(privateDismissal, 'Same occurrence')]);
+privateDismissal.advance(1000); privateDismissal.tick();
+assert.equal(privateDismissal.ringing(), true, 'dismissals from another identity never suppress a new scope');
+privateDismissal.session.clear('expired');
+assert.equal(privateDismissal.ringing(), false, 'lease expiry stops an active private ring');
+console.log('Managed alarm checks passed: scope partition, memory-only dismissals, active/queued revocation and lease expiry.');

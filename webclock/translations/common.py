@@ -8,6 +8,8 @@ SUPPORTED_LANGUAGES = {
 
 UI_TRANSLATIONS = {
     'zh-TW': {
+        'display_language': '全體預設顯示語言',
+        'display_language_hint': '供時鐘與未覆寫語言的群組使用；左側 Language 只改這個瀏覽器的後台語言。',
         'management_logout': '登出',
         'connection_settings': '連線設定',
         'connection_server_url': '伺服器網址',
@@ -316,6 +318,8 @@ UI_TRANSLATIONS = {
         'calendar_event_limit': '来源事件数量超过处理上限，请缩小日历内容。',
     },
     'en': {
+        'display_language': 'Default display language',
+        'display_language_hint': 'Used by clocks and groups that inherit language. The sidebar Language control affects management only in this browser.',
         'management_logout': 'Sign out',
         'connection_settings': 'Connection settings',
         'connection_server_url': 'Server URL',
@@ -479,6 +483,8 @@ UI_TRANSLATIONS = {
         'calendar_event_limit': 'This source exceeds the event limit. Reduce the calendar contents.',
     },
     'ja': {
+        'display_language': '共通の表示言語',
+        'display_language_hint': '時計と表示言語を継承するグループに適用します。サイドバーの Language はこのブラウザーの管理画面だけを変更します。',
         'management_logout': 'ログアウト',
         'connection_settings': '接続設定',
         'connection_server_url': 'サーバー URL',

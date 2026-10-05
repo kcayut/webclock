@@ -3,7 +3,7 @@ import hmac
 import secrets
 from urllib.parse import urlsplit
 
-from flask import jsonify, request, session
+from flask import g, jsonify, request, session
 
 
 def same_origin():
@@ -49,6 +49,9 @@ def register_csrf(app):
     def protect_management_writes():
         if (request.method in ('GET', 'HEAD', 'OPTIONS') or request.endpoint is None
                 or request.blueprint == 'server_api.device'):
+            return None
+        if (request.endpoint == 'managed_device.status' and same_origin()
+                and getattr(g, 'device_bearer_authenticated', False)):
             return None
         expected = session.get('csrf_token')
         supplied = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token', '')

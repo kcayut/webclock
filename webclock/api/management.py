@@ -6,6 +6,7 @@ import uuid
 from flask import Blueprint, abort, jsonify, render_template, request
 
 from webclock.services.device_service import DeviceService
+from webclock.services.display_service import browser_alarm_payload
 from webclock.services.schedule_service import TAIPEI, read_schedules, save_schedules, validate_schedule, next_occurrence, prefetch_calendar_sources
 from webclock.services.storage import storage_lock
 from webclock.translations.schedules import SCHEDULE_TRANSLATIONS
@@ -153,40 +154,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
 
     @api.route('/api/v1/browser-alarms')
     def browser_alarms():
-        now = taipei_now()
-        minute = now.replace(second=0, microsecond=0)
-        rows = [row for row in schedules() if row['enabled'] and row['type'] == 'alarm']
-        alarms = []
-        windows = {}
-
-        def lookup(start, end, source_ids):
-            key = (start, end, tuple(source_ids))
-            if key not in windows:
-                windows[key] = calendar_events(start=start, end=end, source_ids=source_ids) if calendar_events else []
-            return windows[key]
-
-        prefetch_calendar_sources(rows, now, lookup)
-        for row in rows:
-            cursor = minute
-            # Include this minute's linked events before the next future event,
-            # so two events with different seconds are not collapsed into one.
-            while len(alarms) < 1000:
-                event = next_occurrence(row, holidays, cursor, lookup)
-                if not event:
-                    break
-                stamp = datetime.fromisoformat(event['datetime'])
-                alarms.append(dict(occurrence_id=event['occurrence_id'], id=event['id'],
-                                   name=event['name'], sound=event['browser_sound'],
-                                   volume=event['browser_volume'],
-                                   starts_at=int(stamp.timestamp() * 1000)))
-                if not row.get('calendar_link') or stamp > now:
-                    break
-                cursor = stamp + timedelta(microseconds=1)
-        alarms.sort(key=lambda event: (event['starts_at'], event['id']))
-        return jsonify(server_timestamp=int(taipei_now().timestamp() * 1000), enabled_count=len(rows),
-                       enabled_ids=sorted(row['id'] for row in rows),
-                       alarms=alarms, holiday_coverage=holidays.coverage,
-                       holiday_known=holidays.get_day_type(now.date())['known'])
+        payload = browser_alarm_payload(schedules(), holidays, taipei_now(), calendar_events)
+        return jsonify(dict(payload, server_timestamp=int(taipei_now().timestamp() * 1000)))
 
     @api.route('/api/v1/schedules/<schedule_id>/skip-next', methods=['POST'])
     def skip_next(schedule_id):

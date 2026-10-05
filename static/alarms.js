@@ -5,6 +5,7 @@
     if (!bell) return;
     var message = document.getElementById('alarm-message');
     var motion = document.getElementById('alarm-motion');
+    var session = window.WebClockDeviceSession, privateData = false;
     var source = '', queue = [], active = [], handled = {}, dismissed = [];
     var enabled = 0, confirmed = false;
     var baseTime = null, baseElapsedTime = 0, requestNumber = 0, lastTouch = -1000, lastTone = -1600;
@@ -18,6 +19,7 @@
     }
     function now() { return baseTime === null ? deviceNow() : baseTime + elapsedNow() - baseElapsedTime; }
     function sourceUrl() { return window.serverUrl || window.location.origin; }
+    function sourceScope() { return session ? session.getState().scope : sourceUrl(); }
     function storageKey() { return 'webclock.dismissedAlarms.' + source; }
     function ready() { return !!(window.AlarmAudio && window.AlarmAudio.isReady()); }
     function audible() {
@@ -48,9 +50,11 @@
                 dismissed.push({id: active[i].occurrence_id, starts_at: active[i].starts_at});
             }
             dismissed = dismissed.filter(function (item) { return item.starts_at > now() - 60000; });
-            writeStoredJson(storageKey(), dismissed);
+            if (!privateData) writeStoredJson(storageKey(), dismissed);
         }
         active = [];
+        text(document.getElementById('alarm-name'), '');
+        text(document.getElementById('alarm-prompt'), '');
         confirmed = false;
         document.body.classList.remove('alarm-ringing');
         if (window.AlarmAudio) window.AlarmAudio.stop();
@@ -84,26 +88,45 @@
         for (var key in handled) if (handled[key] < now() - 60000) delete handled[key];
         tick();
     }
+    function reset() {
+        requestNumber += 1;
+        queue = []; enabled = 0; handled = {}; dismissed = []; baseTime = null;
+        stopRing(false);
+    }
     function poll() {
         var target = sourceUrl();
-        if (target !== source) {
+        var nextScope = sourceScope();
+        if (nextScope !== source) {
             stopRing(false);
-            source = target;
+            source = nextScope;
+            privateData = !!(session && session.getState().identity);
             queue = [];
             enabled = 0;
             baseTime = null;
             handled = {};
-            dismissed = readStoredJson(storageKey(), []);
+            dismissed = privateData ? [] : readStoredJson(storageKey(), []);
             if (!Array.isArray(dismissed)) dismissed = [];
             dismissed = dismissed.filter(function (item) {
                 return item && typeof item.id === 'string' && typeof item.starts_at === 'number';
             }).slice(-1000);
             for (var i = 0; i < dismissed.length; i++) handled[dismissed[i].id] = dismissed[i].starts_at;
         }
+        if (session) {
+            session.fetchAlarms(function (data, isPrivate) {
+                if (source !== sourceScope()) { reset(); source = sourceScope(); }
+                privateData = isPrivate;
+                accept(data);
+                return true;
+            });
+            return;
+        }
+        if (!document.body.getAttribute || document.body.getAttribute('data-deployment-mode') !== 'self') return;
+        if (target !== window.location.origin) return;
         var sequence = ++requestNumber;
         var xhr = new XMLHttpRequest();
         xhr.open('GET', target + '/api/v1/browser-alarms', true);
         xhr.timeout = 8000;
+        xhr.withCredentials = false;
         function failure() {
             /* Alarm polling faults stay quiet; loaded alarms and the clock keep running. */
         }
@@ -116,7 +139,9 @@
         try { xhr.send(); } catch (error) { failure(); }
     }
     function tick() {
-        if (source !== sourceUrl()) { poll(); return; }
+        if (session) session.expire();
+        if (source !== sourceScope()) { poll(); return; }
+        if (privateData && !session.hasLease('alarms')) return;
         var instant = now();
         for (var i = 0; i < queue.length; i++) {
             var item = queue[i];
@@ -172,6 +197,10 @@
     }, true);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); poll(); } });
     window.addEventListener('pageshow', function () { tick(); poll(); });
+    if (session) session.subscribe(function (event) {
+        if (event.type === 'sync' || event.type === 'joined') { poll(); return; }
+        if (event.resource === 'alarms' || event.resource === 'all') { reset(); source = sourceScope(); privateData = !!event.state.identity; }
+    });
     setInterval(tick, 1000);
     setInterval(poll, 15000);
     poll();

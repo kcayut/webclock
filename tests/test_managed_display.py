@@ -1,0 +1,202 @@
+"""Two authenticated browsers must never share private display data or ETags."""
+from datetime import datetime
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import app as clock
+from webclock.services.auth_service import AuthService
+from webclock.services.device_access_service import _RATE_WINDOWS
+
+
+class ManagedDisplayTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.auth = AuthService(self.root / 'auth.json')
+        self.auth.setup('owner', 'a-long-test-password', enable_managed_test=True)
+        self.owner = self.auth.owner_id()
+        for item in [patch.object(clock, 'SETTINGS_FILE', str(self.root / 'settings.json')),
+                     patch.object(clock, 'NOTES_FILE', str(self.root / 'manual_notes.json')),
+                     patch.object(clock, 'ICAL_URL', ''),
+                     patch.dict(clock.display_settings, clock.DEFAULT_SETTINGS, clear=True),
+                     patch.dict(clock.app.config, SECRET_KEY=self.auth.session_secret()),
+                     patch.object(clock.requests, 'get', side_effect=AssertionError('Unexpected network'))]:
+            item.start()
+            self.addCleanup(item.stop)
+        _RATE_WINDOWS.clear()
+        clock.save_json(self.root / 'calendar.json', {'local_display_enabled': True, 'sources': [
+            dict(id=key, name=key, provider='ics', url='https://example.invalid/PRIVATE-' + key, display_enabled=True)
+            for key in ('a', 'b')]})
+        clock.save_json(self.root / 'manual_notes.json', [
+            dict(id=1, text='note-a', due_date=''), dict(id=2, text='note-b', due_date='')])
+        self.schedules = [dict(id=key, name='alarm-' + key, type='alarm', time='07:30', rule={},
+                              enabled=True, skipped_occurrences=[], browser_sound='silent',
+                              browser_volume=0, skip_holidays=False) for key in ('a', 'b')]
+        clock.save_json(self.root / 'schedules.json', self.schedules)
+        self.instant = datetime.fromisoformat('2026-10-05T06:00:00+08:00')
+        dates = patch.object(clock, 'datetime', wraps=datetime)
+        self.dates = dates.start()
+        self.addCleanup(dates.stop)
+        self.dates.now.side_effect = lambda zone: self.instant.astimezone(zone)
+
+    def service(self):
+        with clock.app.test_request_context('/'):
+            return clock.group_service()
+
+    def group(self, name, **extra):
+        return self.service().create_group(self.owner, dict(name=name, **extra))
+
+    def device(self, group):
+        service = self.service()
+        code = service.create_invite(self.owner, group['id'], 5)['code']
+        attempt = service.prepare(self.owner, 'test-' + group['id'])
+        joined = service.join(self.owner, attempt['token'], attempt['attempt_id'], code, 'test-' + group['id'])
+        client = clock.app.test_client()
+        client.set_cookie('webclock_device', attempt['token'], path='/api/v2/device')
+        return client, joined['identity']
+
+    def get(self, client, path='display', **kwargs):
+        return client.get('/api/v2/device/' + path, base_url='https://localhost', **kwargs)
+
+    def test_two_groups_filter_on_server_and_empty_means_empty(self):
+        first = self.group('A', display_overrides={'brightness': 0, 'language': 'ja'},
+                           content={'calendar_source_ids': ['a'], 'manual_note_ids': [1], 'schedule_ids': ['a']})
+        second = self.group('B', content={'calendar_source_ids': ['b'], 'manual_note_ids': [2], 'schedule_ids': ['b']})
+        a, identity = self.device(first)
+        b, _ = self.device(second)
+        queries = []
+
+        def events(start, end, source_ids):
+            queries.append(source_ids)
+            return [dict(text='calendar-' + key, time='09:00', starts_at=0) for key in source_ids]
+
+        with patch.object(clock, 'get_calendar_events', side_effect=events):
+            for client, suffix in ((a, 'a'), (b, 'b')):
+                response = self.get(client)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual({row['text'] for row in response.json['events']}, {'calendar-' + suffix, 'note-' + suffix})
+                self.assertEqual(self.get(client, 'browser-alarms').json['enabled_ids'], [suffix])
+                self.assertNotIn('PRIVATE-', response.text)
+                self.assertNotIn('Access-Control-Allow-Origin', response.headers)
+            self.assertEqual(queries, [['a'], ['b']])
+            self.assertEqual(self.get(a).json['settings']['brightness'], 0)
+            self.assertEqual(self.get(a).json['identity'], identity)
+            self.service().update_group(self.owner, first['id'], {'content': {
+                'calendar_source_ids': [], 'manual_note_ids': [], 'schedule_ids': []}})
+            queries.clear()
+            payload = self.get(a).json
+            self.assertEqual(payload['events'], [])
+            self.assertIsNone(payload['next_event'])
+            self.assertEqual(self.get(a, 'browser-alarms').json['alarms'], [])
+            self.assertEqual(queries, [])
+
+    def test_etags_cover_identity_effective_settings_and_content_not_heartbeats(self):
+        group = self.group('A', content={'manual_note_ids': [1]})
+        a, identity = self.device(group)
+        b, _ = self.device(group)
+        first = self.get(a)
+        etag = first.headers['ETag']
+        cached = self.get(a, headers={'If-None-Match': etag})
+        self.assertEqual(cached.status_code, 304)
+        self.assertEqual(cached.headers['X-WebClock-Identity-Revision'], identity['identity_revision'])
+        self.assertEqual(int(cached.headers['X-WebClock-Lease-Expires-At']) - int(cached.headers['X-WebClock-Server-Timestamp']), 300000)
+        self.assertEqual(self.get(b, headers={'If-None-Match': etag}).status_code, 200)
+        self.service().update_group(self.owner, group['id'], {'name': 'Renamed'})
+        self.assertEqual(self.get(a).headers['ETag'], etag)
+        clock.device_service().register({'id': identity['device_id'], 'name': 'Observed name'})
+        self.assertEqual(self.get(a).headers['ETag'], etag)
+        clock.display_settings['brightness'] = 31
+        changed = self.get(a)
+        self.assertNotEqual(changed.json['config_revision'], first.json['config_revision'])
+        clock.save_json(self.root / 'manual_notes.json', [dict(id=1, text='changed', due_date='')])
+        self.assertNotEqual(self.get(a).json['schedule_revision'], first.json['schedule_revision'])
+        self.service().update_group(self.owner, group['id'], {'enabled': False})
+        denied = self.get(a, headers={'If-None-Match': etag})
+        self.assertEqual(denied.status_code, 403)
+        self.assertNotIn('ETag', denied.headers)
+
+    def test_linked_alarm_dependency_is_independent_from_display_selection(self):
+        linked = dict(self.schedules[0], calendar_link={'source_ids': ['a'], 'mode': 'event', 'offset_minutes': 0})
+        from webclock.services.schedule_service import validate_schedule
+        linked = validate_schedule(linked)
+        clock.save_json(self.root / 'schedules.json', [linked])
+        group = self.group('A', content={'schedule_ids': ['a']})
+        client, _ = self.device(group)
+        stamp = int(self.instant.replace(hour=9).timestamp() * 1000)
+
+        def events(start, end, source_ids):
+            self.assertEqual(source_ids, ['a'])
+            return [dict(source_id='a', uid='event', text='Private linked event', starts_at=stamp,
+                         ends_at=stamp, all_day=False, recurring=False, recurrence_id='')]
+
+        with patch.object(clock, 'get_calendar_events', side_effect=events):
+            payload = self.get(client).json
+            self.assertEqual(payload['events'], [])
+            self.assertEqual(len(self.get(client, 'browser-alarms').json['alarms']), 1)
+            clock.save_json(self.root / 'calendar.json', {'sources': [], 'local_display_enabled': True})
+            self.assertEqual(self.get(client, 'browser-alarms').json['alarms'], [])
+            self.assertIsNone(self.get(client).json['next_event'])
+
+    def test_display_timezone_does_not_change_alarm_timezone(self):
+        self.schedules[0]['calendar_link'] = None
+        clock.save_json(self.root / 'schedules.json', self.schedules)
+        group = self.group('A', display_overrides={'timezone_offset': -5}, content={'schedule_ids': ['a']})
+        client, _ = self.device(group)
+        payload = self.get(client, 'browser-alarms').json
+        self.assertEqual(payload['alarms'][0]['starts_at'], int(self.instant.replace(hour=7, minute=30).timestamp() * 1000))
+        self.assertEqual(self.get(client).json['settings']['timezone_offset'], -5)
+
+    def test_scope_change_during_calendar_io_rejects_old_result(self):
+        group = self.group('A', content={'calendar_source_ids': ['a']})
+        client, _ = self.device(group)
+
+        def change(**kwargs):
+            self.service().update_group(self.owner, group['id'], {'content': {'calendar_source_ids': []}})
+            return [dict(text='must not escape', time='', starts_at=0)]
+
+        with patch.object(clock, 'get_calendar_events', side_effect=change):
+            response = self.get(client)
+            self.assertEqual(response.status_code, 409)
+            self.assertNotIn('must not escape', response.text)
+
+    def test_management_language_changes_session_only(self):
+        client = clock.app.test_client()
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        client.post('/login', base_url='https://localhost', data={
+            'username': 'owner', 'password': 'a-long-test-password', 'csrf_token': token})
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        before = dict(clock.display_settings)
+        result = client.post('/api/management/language', base_url='https://localhost', json={'language': 'ja'},
+                             headers={'X-CSRF-Token': token})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(clock.display_settings, before)
+        for invalid in ([], {}, None, True, 'zh-CN'):
+            response = client.post('/api/management/language', base_url='https://localhost', json={'language': invalid},
+                                   headers={'X-CSRF-Token': token})
+            self.assertEqual(response.status_code, 400)
+        self.assertIn('lang="ja"', client.get('/schedules', base_url='https://localhost').text)
+        self.assertIn('var currentLanguage = "zh-TW";', client.get('/', base_url='https://localhost').text)
+
+    def test_source_removed_during_io_cannot_return_old_events_or_304(self):
+        group = self.group('A', content={'calendar_source_ids': ['a']})
+        client, _ = self.device(group)
+        event = dict(text='old source', time='', starts_at=0)
+        with patch.object(clock, 'get_calendar_events', return_value=[event]):
+            etag = self.get(client).headers['ETag']
+
+        def remove(**kwargs):
+            clock.save_json(self.root / 'calendar.json', {'sources': [], 'local_display_enabled': True})
+            return [event]
+
+        with patch.object(clock, 'get_calendar_events', side_effect=remove):
+            response = self.get(client, headers={'If-None-Match': etag})
+            self.assertEqual(response.status_code, 409)
+            self.assertNotIn('ETag', response.headers)
+            self.assertNotIn('old source', response.text)
+
+
+if __name__ == '__main__':
+    unittest.main()
