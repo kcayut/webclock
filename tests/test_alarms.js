@@ -43,6 +43,7 @@ function browser(storage = {}, usePerformance = false, managed = false) {
     if (managed) window.WebClockDeviceSession = session;
     const context = vm.createContext({window,
         document: {getElementById(id) {
+            if (id === 'alarm-motion' || id === 'alarm-motion-label') return null;
             assert.ok(!['alarm-status', 'notice', 'notice-text'].includes(id),
                 'optional alarms must not use an automatic error notice surface');
             return node(id);
@@ -128,11 +129,11 @@ assert.ok(simultaneous.ringing(), 'disabling one simultaneous alarm preserves th
 assert.equal(simultaneous.node('alarm-name').textContent, 'alarm_ringing · A');
 simultaneous.dispatch('click'); simultaneous.dispatch('click');
 assert.ok(!simultaneous.ringing());
-const silent = browser();
+const silent = browser({'webclock.alarmFlash': 'off'});
 silent.reply([alarm(silent, 'Quiet', 'silent')]); silent.advance(1000); silent.tick();
 assert.ok(silent.ringing()); assert.deepEqual(silent.sound.played, []);
-silent.node('alarm-motion').checked = false; silent.node('alarm-motion').onchange();
-assert.ok(silent.node('body').classList.items.has('alarm-steady'));
+assert.ok(!silent.node('body').classList.items.has('alarm-steady'),
+    'a saved flash-off preference must not suppress the default visual alarm');
 silent.reply([]);
 assert.ok(!silent.ringing(), 'management disable/delete stops the active alarm');
 
@@ -261,7 +262,7 @@ assert.equal(signatures.size, 7, 'each audible style has a distinct pattern');
 const unsupported = {};
 vm.runInNewContext(audioScript, {window: unsupported});
 assert.equal(unsupported.AlarmAudio.unlock('bell'), false);
-console.log('Alarm checks passed: ES5/webkit audio, unlock, scheduling, holidays via server, touch deduplication, dismissal, stale/offline data and motion control.');
+console.log('Alarm checks passed: ES5/webkit audio, unlock, scheduling, holidays via server, touch deduplication, dismissal, stale/offline data and default visual alarms.');
 
 // Private alarm queues, current ring and dismissals are scoped and memory-only.
 const privateStorage = {};

@@ -12,7 +12,7 @@ function browser(mode = 'managed', storageWorks = true) {
     const requests = [], timers = [], changes = [], stored = {}, handlers = {}, nodes = {};
     const node = id => nodes[id] || (nodes[id] = {style: {}, value: '', textContent: '', disabled: false, focus() { this.focused = true; }});
     const listen = (name, callback) => (handlers[name] || (handlers[name] = [])).push(callback);
-    const window = {location: {origin: 'https://clock.example'}, performance: {now: () => elapsed}, addEventListener: listen,
+    const window = {location: {origin: 'https://clock.example'}, performance: {now: () => elapsed}, addEventListener: listen, confirm: () => true,
         localStorage: {getItem(key) { if (!storageWorks) throw Error('storage unavailable'); return stored[key] || null; },
             setItem(key, value) { if (!storageWorks) throw Error('storage unavailable'); stored[key] = value; }},
         WebClockEnrollmentTranslations: {'zh-TW': {}}, currentLanguage: 'zh-TW'};
@@ -44,7 +44,7 @@ function browser(mode = 'managed', storageWorks = true) {
     function csrf() { respond('/api/csrf', {csrf_token: 'test-csrf'}); }
     const identity = {device_id: 'device-a', owner_id: 'owner', group_id: 'group-a', credential_generation: 1, assignment_revision: 1, identity_revision: 'scope-a'};
     function activate() {
-        session.checkIdentity(); respond('/identity', {status: 'active', identity});
+        session.checkIdentity(); respond('/identity', {status: 'active', identity, group: {id: identity.group_id, name: 'Living room'}});
     }
     function snapshot(extra = {}, who = identity) {
         return {schema_version: 3, identity: who, server_timestamp: now, lease: {issued_at: now, expires_at: now + 300000},
@@ -76,8 +76,12 @@ assert.deepEqual(JSON.parse(page.pending('/join').body), {attempt_id: 'attempt-a
 assert.equal(page.pending('/join').headers['X-CSRF-Token'], 'test-csrf');
 page.respond('/join', {schema_version: 3, identity: page.identity, server_timestamp: page.now()}, 201);
 assert.equal(page.node('device-join-status').textContent, 'join_submitting', 'join response is not yet cookie confirmation');
-page.respond('/identity', {status: 'active', identity: page.identity});
+page.respond('/identity', {status: 'active', identity: page.identity, group: {id: page.identity.group_id, name: 'Living room'}});
 assert.equal(page.node('device-join-status').textContent, 'join_connected');
+assert.equal(page.node('device-join-fields').style.display, 'none', 'joined devices hide the code fields');
+assert.equal(page.node('device-join-open').style.display, 'none', 'joined devices hide the join entry');
+assert.equal(page.node('device-group-name').textContent, 'Living room');
+assert.equal(page.node('device-group-leave').style.display, '');
 assert.ok(!JSON.stringify(page.stored).includes('ABC234'));
 assert.ok(!JSON.stringify(page.stored).includes('attempt-a'));
 let applied = [];
@@ -137,6 +141,7 @@ conflict.respond('/identity', {status: 'pending', attempt_id: 'second-tab', expi
 assert.equal(conflict.node('device-join-submit').disabled, true);
 conflict.node('device-join-cancel').onclick();
 assert.equal(conflict.node('device-join-panel').style.display, 'none');
+assert.equal(conflict.node('device-join-open').style.display, '', 'cancel restores the join entry immediately');
 
 for (const mode of ['managed', 'self']) {
     const blocked = browser(mode, false);
@@ -216,3 +221,55 @@ const canceled = browser(); canceled.panel(); canceled.node('device-join-open').
 canceled.node('device-join-cancel').onclick(); canceled.csrf();
 assert.ok(!canceled.requests.some(request => request.url.endsWith('/join/prepare')), 'canceling before CSRF returns prevents a later prepare write');
 console.log('Canceled enrollment cannot send a delayed write.');
+
+const membership = browser(); membership.activate(); membership.panel();
+assert.equal(membership.node('device-join-panel').style.display, 'block', 'reload restores membership without opening enrollment');
+assert.equal(membership.node('device-join-code').disabled, true);
+membership.node('device-join-retry').onclick();
+const checksBeforeResume = membership.requests.length;
+membership.dispatch('pageshow');
+assert.equal(membership.requests.length, checksBeforeResume, 'resume cannot supersede a manual recheck and strand its callback');
+membership.respond('/identity', {status: 'active', identity: membership.identity, group: {id: membership.identity.group_id, name: 'Renamed room'}});
+assert.equal(membership.node('device-join-retry').disabled, false);
+assert.equal(membership.node('device-group-name').textContent, 'Renamed room', 'recheck fetches the current group name');
+assert.ok(!membership.requests.some(request => request.url.endsWith('/join/prepare')), 'rechecking membership never starts another join');
+membership.session.fetchDisplay(() => true); membership.respond('/display', membership.snapshot());
+membership.session.fetchAlarms(() => true); membership.respond('/browser-alarms', membership.snapshot());
+membership.session.fetchDisplay(() => assert.fail('in-flight private display revived after leave'));
+const lateDisplay = membership.pending('/display');
+membership.stored.localReminder = 'keep me';
+membership.window.confirm = () => false;
+membership.node('device-group-leave').onclick();
+assert.equal(membership.session.hasLease('display'), true, 'canceling leave does not change membership');
+membership.window.confirm = () => true;
+membership.node('device-group-leave').onclick();
+assert.equal(membership.session.hasLease('display'), false);
+assert.equal(membership.session.hasLease('alarms'), false, 'leaving immediately clears both private leases');
+membership.csrf();
+assert.deepEqual(JSON.parse(membership.pending('/leave').body), {});
+membership.respond('/leave', {status: 'left'});
+membership.reply(lateDisplay, membership.snapshot());
+assert.equal(membership.session.getState().identity, null);
+assert.equal(membership.session.getState().group, null);
+assert.equal(membership.node('device-group-name').textContent, '');
+assert.equal(membership.node('device-join-panel').style.display, 'none');
+assert.equal(membership.node('device-join-open').style.display, '');
+assert.equal(membership.stored.localReminder, 'keep me');
+assert.ok(membership.stored['webclock.deviceChanged.https://clock.example'], 'other tabs are told to discard their old identity');
+assert.equal(membership.session.getState().shared, false, 'leaving cannot fall back to anonymous private data');
+membership.node('device-join-open').onclick(); membership.csrf();
+assert.ok(membership.pending('/join/prepare'), 'a new manual join remains available');
+
+for (const failure of ['network', 'storage']) {
+    const failed = browser(); failed.activate(); failed.panel();
+    failed.node('device-group-leave').onclick(); failed.csrf();
+    if (failure === 'network') failed.pending('/leave').onerror();
+    else failed.respond('/leave', {code: 'storage_failure'}, 500);
+    assert.equal(failed.node('device-join-status').textContent, 'join_leave_failed');
+    assert.equal(failed.session.getState().identity.device_id, failed.identity.device_id, 'failed leave is never shown as successful');
+    assert.equal(failed.node('device-group-leave').disabled, false);
+    failed.node('device-join-retry').onclick();
+    failed.respond('/identity', {status: 'active', identity: failed.identity, group: {id: failed.identity.group_id, name: 'Still joined'}});
+    assert.equal(failed.node('device-group-name').textContent, 'Still joined');
+}
+console.log('Membership UI checks passed: restore, real recheck, hidden code, confirmed leave, stale responses, local reminders and failed leave.');

@@ -29,13 +29,16 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 | パス | メソッドと用途 |
 | --- | --- |
 | `/api/v2/device/join/prepare` | POST `{}`。10 分の試行を作成・再利用し、`attempt_id`・`expires_at` と待機 Cookie を返す |
-| `/api/v2/device/identity` | GET Cookie 往復確認。`pending` 試行または `active` な認証情報を返す |
+| `/api/v2/device/identity` | GET Cookie 往復確認。`pending` 試行は group を含まず、`active` は `{status: "active", identity, group: {id, name}}` を返す |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`。枠消費と参加を原子的に保存。初回 201、同じ確定済み試行の再送は 200 |
+| `/api/v2/device/leave` | POST `{}`。Cookie と同一オリジンの CSRF のみ。この端末の認証情報を原子的に失効させ、200 `{status: "left"}` を返して同じパスの Cookie を削除する |
 | `/api/v2/device/display` | GET グループの有効設定、選択済み予定、次の予定 |
 | `/api/v2/device/browser-alarms` | GET 選択済みアラームと計算結果 |
 | `/api/v2/device/status` | POST 名前・能力・revision・指令 ACK。認証情報から端末を決定し、`id`・`group_id` の自己指定は不可 |
 
-ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed は HTTPS と Secure Cookie を要求します。prepare・join は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
+ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed は HTTPS と Secure Cookie を要求します。prepare・join・leave は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
+
+退出はこの端末の認証レコードと完了済み参加試行を原子的に削除します。旧認証情報と旧参加試行の再送は永久に無効となり、全体の上限 100 台の枠を解放します。他のメンバー、グループ、`devices.json` の観測記録、ローカルのリマインダーは保持し、元の招待の使用済み枠は戻しません。無効化されたグループからも退出できます。成功後は再度 prepare し、新しい招待で新しい端末 ID として参加できます。保存失敗は `storage_failure` を返し、Cookie を削除せず、成功とも報告しません。B4 の個別端末管理機能全体は未実装です。
 
 display・alarms は `schema_version: 3`、`identity`、config・schedule・holiday revision、ミリ秒 `server_timestamp`、最大 300 秒の `lease` を返します。identity は owner・device・group ID、認証世代、割り当て revision、`identity_revision` を含みます。304 を含む応答の直前に現在の認証と内容範囲を再確認し、I/O 中の範囲変更は古い内容ではなく 409 `display_scope_changed` を返します。ETag 応答は `private, no-cache` と `Vary: Cookie, Authorization` を使い、304 は `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` で期限を更新します。参加・identity 応答は `no-store` です。
 

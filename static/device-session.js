@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
-    var source = '', mode = 'unknown', identity = null, pending = null, phase = 'unknown';
+    var source = '', mode = 'unknown', identity = null, group = null, pending = null, phase = 'unknown';
     var generation = 0, sequence = 0, handled = {}, listeners = [], joining = 0, enrolling = false;
     var resources = {}, bound = false, checked = false, checking = false, lastIdentityCheck = 0;
     var applied = {display: 0, alarms: 0}, revisions = {}, commands = [], reporting = false, lastReport = 0;
@@ -39,11 +39,11 @@
         generation += 1;
         handled = {}; resources = {}; commands = []; revisions = {}; applied = {display: 0, alarms: 0};
         reporting = false;
-        if (forget) { identity = null; pending = null; }
+        if (forget) { identity = null; group = null; pending = null; }
         notify(reason || 'clear');
     }
     function getState() {
-        return {source: source, mode: mode, phase: phase, identity: identity, scope: scope(),
+        return {source: source, mode: mode, phase: phase, identity: identity, group: group, scope: scope(),
             sameOrigin: sameOrigin(), attempt_id: pending ? pending.attempt_id : null,
             generation: generation, shared: mode === 'self' && checked && (!sameOrigin() || phase === 'unpaired') && !bound && !identity && !pending};
     }
@@ -112,10 +112,12 @@
         }
         return false;
     }
-    function useIdentity(value) {
+    function useIdentity(value, membership) {
         if (!validIdentity(value)) return false;
         var changed = identityKey(value) !== identityKey(identity);
         identity = value; pending = null; phase = 'active'; checked = true; markBound();
+        group = object(membership) && membership.id === value.group_id && typeof membership.name === 'string' ?
+            {id: membership.id, name: membership.name} : null;
         if (changed) clear('identity', false);
         return true;
     }
@@ -132,9 +134,9 @@
                 } else unauthorized(error);
                 callback(error); return;
             }
-            if (data && data.status === 'active' && useIdentity(data.identity)) { callback(null, data); return; }
+            if (data && data.status === 'active' && useIdentity(data.identity, data.group)) { callback(null, data); return; }
             if (data && data.status === 'pending' && typeof data.attempt_id === 'string' && number(data.expires_at) && data.expires_at > 0) {
-                identity = null; pending = data; phase = 'pending'; checked = true; clear('pending', false);
+                identity = null; group = null; pending = data; phase = 'pending'; checked = true; clear('pending', false);
                 callback(null, data); return;
             }
             callback({code: 'invalid_response'});
@@ -293,9 +295,26 @@
             });
         });
     }
-    function resume() { expire(); if (sameOrigin() && !enrolling) checkIdentity(); }
+    function leave(callback) {
+        if (!sameOrigin() || !identity) { callback({code: 'device_authentication_required'}); return; }
+        var attemptGeneration = ++joining;
+        enrolling = true; checking = false; phase = 'leaving';
+        clear('leaving', false);
+        post('/api/v2/device/leave', {}, 'leave', function (error, data) {
+            if (attemptGeneration !== joining) return;
+            enrolling = false;
+            if (error || !data || data.status !== 'left') {
+                phase = 'active'; unauthorized(error);
+                callback(error || {code: 'invalid_response'}); return;
+            }
+            phase = 'unpaired'; checked = true; clear('left', true);
+            try { window.localStorage.setItem('webclock.deviceChanged.' + source, String(wall()) + '.' + sequence); } catch (failure) {}
+            callback(null, data);
+        });
+    }
+    function resume() { expire(); if (sameOrigin() && !enrolling && !checking) checkIdentity(); }
     window.WebClockDeviceSession = {setSource: setSource, getState: getState, checkIdentity: checkIdentity,
-        prepare: prepare, join: join, cancelJoin: function () { joining += 1; enrolling = false; checked = false; generation += 1; handled = {}; reporting = false; },
+        prepare: prepare, join: join, leave: leave, cancelJoin: function () { joining += 1; enrolling = false; checked = false; generation += 1; handled = {}; reporting = false; },
         fetchDisplay: function (accept, failure) { fetchData('display', accept, failure); },
         fetchAlarms: function (accept, failure) { fetchData('alarms', accept, failure); },
         hasLease: checkLease, expire: expire, subscribe: function (callback) { listeners.push(callback); }};

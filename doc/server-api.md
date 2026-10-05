@@ -29,13 +29,16 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 | 路徑 | 方法與用途 |
 | --- | --- |
 | `/api/v2/device/join/prepare` | POST `{}`，建立或重用 10 分鐘加入嘗試；回 `attempt_id`／`expires_at`，並設定待加入 Cookie |
-| `/api/v2/device/identity` | GET 確認 Cookie 往返；回 `pending` 嘗試或 `active` 身份 |
+| `/api/v2/device/identity` | GET 確認 Cookie 往返；`pending` 嘗試不含 group，`active` 回 `{status: "active", identity, group: {id, name}}` |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`；原子扣額並加入，首次 201、同一已提交嘗試重試 200 |
+| `/api/v2/device/leave` | POST `{}`，僅限 Cookie 與同源 CSRF；原子撤銷自身憑證，200 回 `{status: "left"}` 並清除同路徑 Cookie |
 | `/api/v2/device/display` | GET 群組有效設定、已選事件與下一個事件 |
 | `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
 | `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
 
-瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。prepare／join 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
+瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
+
+自行退出原子刪除自身授權記錄與已完成加入嘗試，舊憑證與舊加入重試永久失效，並釋放全站 100 台上限中的名額。其他成員、群組、`devices.json` 觀察記錄與本機提醒保留；原邀請已用額度不退還。群組停用後仍可退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 `storage_failure`，不清 Cookie，也不宣稱成功。B4 的完整逐台管理操作仍未交付。
 
 display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision`、`schedule_revision`、`holiday_revision`、Unix 毫秒 `server_timestamp` 與最長 300 秒的 `lease`。身份含 owner／device／group、憑證世代、指派 revision 與 `identity_revision`。每次回應（含 304）前重新確認目前授權與內容範圍；I/O 期間範圍變更回 409 `display_scope_changed`，不送出舊內容。ETag 回應使用 `private, no-cache`、`Vary: Cookie, Authorization`，304 以 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` 續期；加入／身份回應為 `no-store`。
 

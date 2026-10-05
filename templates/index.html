@@ -32,7 +32,6 @@
         }
         @-webkit-keyframes alarm-edge { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
         @keyframes alarm-edge { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
-        .alarm-steady #alarm-flash { -webkit-animation: none; animation: none; opacity: 0.8; }
         @media (prefers-reduced-motion: reduce) {
             .alarm-ringing #alarm-flash { -webkit-animation: none; animation: none; opacity: 0.8; }
         }
@@ -45,7 +44,6 @@
         #alarm-prompt { font-size: 18px; color: #ffcaca; }
         #alarm-help { font-size: 18px; line-height: 1.5; }
         #alarm-manage { color: #9cc7ff; }
-        #connection-panel #alarm-motion { width: 24px; min-height: 24px; height: 24px; vertical-align: middle; }
         #list-container {
             display: none;
             width: 95%;
@@ -188,6 +186,10 @@
             display: block;
         }
 
+        #device-join-open { margin-top: 12px; }
+        #device-group-name { font-weight: bold; }
+        #local-event-time-hint { margin: 8px 0; font-size: 18px; color: #aaa; }
+
         #connection-panel label {
             display: block;
             margin: 16px 0 8px;
@@ -320,13 +322,17 @@
         <button id="device-join-open" type="button" data-enrollment-i18n="join_open"></button>
         <section id="device-join-panel" style="display:none" role="region" aria-labelledby="device-join-title">
             <h2 id="device-join-title" data-enrollment-i18n="join_title"></h2>
+            <p id="device-group-name" style="display:none"></p>
             <p id="device-join-status" role="status" aria-live="polite"></p>
             <form id="device-join-form" autocomplete="off">
-                <label for="device-join-code" data-enrollment-i18n="join_code"></label>
-                <input id="device-join-code" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                <div id="device-join-fields">
+                    <label for="device-join-code" data-enrollment-i18n="join_code"></label>
+                    <input id="device-join-code" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                </div>
                 <div class="connection-row">
                     <button id="device-join-submit" type="submit" data-enrollment-i18n="join_submit" disabled></button>
                     <button id="device-join-retry" type="button" data-enrollment-i18n="join_retry"></button>
+                    <button id="device-group-leave" type="button" data-enrollment-i18n="join_leave" style="display:none"></button>
                     <button id="device-join-cancel" type="button" data-enrollment-i18n="join_cancel"></button>
                 </div>
             </form>
@@ -334,14 +340,15 @@
         <form id="local-event-form" onsubmit="addLocalEvent(); return false;">
             <label for="local-event-text" data-clock-i18n="local_reminder">{{ translations[language].local_reminder }}</label>
             <input id="local-event-text" type="text" data-clock-i18n="local_reminder_placeholder" data-clock-attribute="placeholder" placeholder="{{ translations[language].local_reminder_placeholder }}">
+            <label for="local-event-time" data-clock-i18n="local_reminder_time">{{ translations[language].local_reminder_time }}</label>
+            <p id="local-event-time-hint" data-clock-i18n="local_reminder_time_hint">{{ translations[language].local_reminder_time_hint }}</p>
             <div class="connection-row">
                 <input id="local-event-time" type="time" data-clock-i18n="local_reminder_time" data-clock-attribute="aria-label" aria-label="{{ translations[language].local_reminder_time }}">
                 <button type="submit" data-clock-i18n="add">{{ translations[language].add }}</button>
             </div>
         </form>
         <div id="local-events-list"></div>
-        <p><a id="alarm-manage" href="/schedules">{{ translations[language].alarm_manage }}</a></p>
-        <label><input id="alarm-motion" type="checkbox" checked> <span id="alarm-motion-label">{{ translations[language].alarm_flash }}</span></label>
+        <p><a id="alarm-manage" href="/admin">{{ translations[language].alarm_manage }}</a></p>
         <p id="alarm-help">{{ translations[language].alarm_sound_hint }}</p>
     </div>
 

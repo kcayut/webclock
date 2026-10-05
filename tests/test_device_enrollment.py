@@ -228,6 +228,94 @@ class EnrollmentServiceTest(unittest.TestCase):
         self.assertNotIn('credential_digest', members[0])
         self.assert_error('not_found', lambda: self.service.list_members('other', self.group['id']))
 
+    def test_identity_exposes_only_current_authorized_group_label_without_changing_scope(self):
+        prepared = self.prepare()
+        identity = self.join(prepared)['identity']
+        expected = {'status': 'active', 'identity': identity,
+                    'group': {'id': self.group['id'], 'name': 'Living room'}}
+        self.assertEqual(self.service.identity(prepared['token'], self.owner), expected)
+        self.service.update_group(self.owner, self.group['id'], {'name': 'New label'})
+        expected['group']['name'] = 'New label'
+        self.assertEqual(self.service.identity(prepared['token'], self.owner), expected)
+        self.service.update_group(self.owner, self.group['id'], {'enabled': False})
+        error = self.assert_error('device_authorization_revoked',
+            lambda: self.service.identity(prepared['token'], self.owner))
+        self.assertNotIn('New label', str(error))
+
+    def test_leave_revokes_only_self_persists_and_allows_rejoin_with_a_new_cookie(self):
+        self.invitation = self.service.create_invite(self.owner, self.group['id'], 3)
+        first, second, pending = self.prepare('one'), self.prepare('two'), self.prepare('pending')
+        first_identity, second_identity = self.join(first)['identity'], self.join(second)['identity']
+        before = self.service._load()
+        self.service.leave(first['token'], self.owner)
+        restarted = access_service(self.path, lambda: self.now)
+        after = restarted._load()
+        self.assertEqual(after['devices'], {key: value for key, value in before['devices'].items()
+                                           if key != first_identity['device_id']})
+        self.assertEqual(after['attempts'], {key: value for key, value in before['attempts'].items()
+                                           if key != first['attempt_id']})
+        self.assertEqual(after['groups'], before['groups'])
+        self.assertEqual(after['invites'], before['invites'])
+        self.assertEqual(restarted.authenticate(second['token'], self.owner), second_identity)
+        self.assertEqual(restarted.identity(pending['token'], self.owner)['status'], 'pending')
+        self.assert_error('device_authentication_required', lambda: restarted.authenticate(first['token'], self.owner))
+        self.assert_error('join_attempt_conflict', lambda: self.join(first))
+        # Simulate a lost Set-Cookie response: prepare replaces the stale cookie.
+        fresh = restarted.prepare(self.owner, 'one', first['token'])
+        self.assertNotEqual(fresh['token'], first['token'])
+        joined = self.join(fresh)['identity']
+        self.assertNotEqual(joined['device_id'], first_identity['device_id'])
+        self.assertEqual(self.service.get_invite(self.owner, self.group['id'])['used'], 3)
+
+    def test_leave_requires_own_existing_credential_but_allows_disabled_groups(self):
+        prepared = self.prepare()
+        before = self.path.read_bytes()
+        for token in (None, 'unknown', prepared['token']):
+            self.assert_error('device_authentication_required', lambda: self.service.leave(token, self.owner))
+        self.assertEqual(before, self.path.read_bytes())
+        identity = self.join(prepared)['identity']
+        before = self.path.read_bytes()
+        self.assert_error('device_authorization_revoked', lambda: self.service.leave(prepared['token'], 'other'))
+        self.assertEqual(before, self.path.read_bytes())
+        self.service.update_group(self.owner, self.group['id'], {'enabled': False})
+        self.service.leave(prepared['token'], self.owner)
+        self.assertNotIn(identity['device_id'], self.service._load()['devices'])
+        self.assert_error('device_authentication_required', lambda: self.service.leave(prepared['token'], self.owner))
+
+    def test_leave_write_failure_retains_credential_and_attempt_for_retry(self):
+        prepared = self.prepare()
+        identity = self.join(prepared)['identity']
+        before = self.path.read_bytes()
+        with patch('webclock.services.device_access_service.save_json', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.service.leave(prepared['token'], self.owner)
+        self.assertEqual(before, self.path.read_bytes())
+        self.assertEqual(self.service.authenticate(prepared['token'], self.owner), identity)
+        self.assertFalse(self.join(prepared)['created'])
+        self.service.leave(prepared['token'], self.owner)
+        self.assert_error('device_authentication_required', lambda: self.service.authenticate(prepared['token'], self.owner))
+
+    def test_full_installation_can_issue_a_new_code_and_rejoin_after_leaving(self):
+        prepared = self.prepare()
+        identity = self.join(prepared)['identity']
+        state = self.service._load()
+        for index in range(99):
+            device_id = 'existing-' + str(index)
+            state['devices'][device_id] = dict(state['devices'][identity['device_id']], id=device_id,
+                credential_digest=hashlib.sha256(device_id.encode()).hexdigest())
+        save_json(self.path, state)
+        self.assert_error('device_limit', lambda: self.service.create_invite(self.owner, self.group['id']))
+        invitation_before = deepcopy(state['invites'])
+        self.service.leave(prepared['token'], self.owner)
+        self.assertEqual(len(self.service._load()['devices']), 99)
+        self.assertEqual(self.service._load()['invites'], invitation_before)
+        self.invitation = self.service.create_invite(self.owner, self.group['id'])
+        new_attempt = self.service.prepare(self.owner, 'returning', prepared['token'])
+        joined = self.join(new_attempt)['identity']
+        self.assertEqual(len(self.service._load()['devices']), 100)
+        self.assertNotEqual(identity['device_id'], joined['device_id'])
+        self.assert_error('device_authentication_required', lambda: self.service.authenticate(prepared['token'], self.owner))
+
     def test_prepare_rate_limits_shared_instances_and_bounded_pending_storage(self):
         for _ in range(SOURCE_LIMIT):
             self.prepare('source')
@@ -322,7 +410,8 @@ class EnrollmentTransportTest(unittest.TestCase):
         self.assertNotIn('Set-Cookie', joined.headers)
         self.assertEqual(self.cookie().value, cookie.value)
         self.assertEqual(self.call('/api/v2/device/identity').json,
-                         {'status': 'active', 'identity': joined.json['identity']})
+                         {'status': 'active', 'identity': joined.json['identity'],
+                          'group': {'id': self.group['id'], 'name': 'Living room'}})
         retry = self.join(prepared.json['attempt_id'])
         self.assertEqual(retry.status_code, 200)
         self.assertEqual(retry.json['identity'], joined.json['identity'])
@@ -469,6 +558,109 @@ class EnrollmentTransportTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json['code'], 'https_required')
         self.assertEqual(load_json(self.service.path, {})['attempts'], {})
+
+    def test_leave_clears_scoped_cookie_and_denies_old_token_without_affecting_peer(self):
+        joined = self.join().json['identity']
+        token = self.cookie().value
+        self.devices.register({'id': joined['device_id'], 'name': 'Observed device'})
+        observations = self.devices.path.read_bytes()
+        peer = self.service.prepare(self.auth.owner_id(), 'peer')
+        peer_identity = self.service.join(self.auth.owner_id(), peer['token'], peer['attempt_id'],
+                                          self.invitation['code'], 'peer')['identity']
+        response = self.call('/api/v2/device/leave', 'POST', json={}, headers={'X-CSRF-Token': self.csrf})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {'status': 'left'})
+        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        self.assertIsNone(self.cookie())
+        self.assertEqual(self.devices.path.read_bytes(), observations)
+        deleted = response.headers['Set-Cookie']
+        for marker in ('webclock_device=', 'Max-Age=0', 'Path=/api/v2/device', 'Secure', 'HttpOnly', 'SameSite=Lax'):
+            self.assertIn(marker, deleted)
+        self.assertNotIn('Domain=', deleted)
+        self.assertEqual(self.service.authenticate(peer['token'], self.auth.owner_id()), peer_identity)
+        for path in ('identity', 'display', 'browser-alarms'):
+            rejected = self.call('/api/v2/device/' + path, headers={
+                'Authorization': 'Bearer ' + token, 'If-None-Match': '"test-revision"'})
+            self.assertEqual(rejected.status_code, 401, path)
+            self.assertNotIn('ETag', rejected.headers)
+        self.assertEqual(self.call('/api/v2/device/status', 'POST', json={},
+            headers={'Authorization': 'Bearer ' + token}).status_code, 401)
+        rejoined = self.join()
+        self.assertEqual(rejoined.status_code, 201)
+        self.assertNotEqual(rejoined.json['identity']['device_id'], joined['device_id'])
+        self.assertNotEqual(self.cookie().value, token)
+
+    def test_leave_requires_cookie_csrf_origin_and_empty_body_before_any_write(self):
+        self.join()
+        token = self.cookie().value
+        before = self.service.path.read_bytes()
+        cases = [({}, {}, 403),
+                 ({}, {'X-CSRF-Token': self.csrf, 'Origin': 'https://elsewhere.invalid'}, 403),
+                 ({}, {'X-CSRF-Token': self.csrf, 'Authorization': 'Bearer ' + token}, 401),
+                 ({'id': 'other-device'}, {'X-CSRF-Token': self.csrf}, 400),
+                 ({'group_id': 'other-group'}, {'X-CSRF-Token': self.csrf}, 400),
+                 ([], {'X-CSRF-Token': self.csrf}, 400)]
+        for value, headers, status in cases:
+            with self.subTest(body=value, status=status):
+                response = self.call('/api/v2/device/leave', 'POST', json=value, headers=headers)
+                self.assertEqual(response.status_code, status)
+                self.assertNotIn('Set-Cookie', response.headers)
+                self.assertEqual(self.service.path.read_bytes(), before)
+        self.assertEqual(self.call('/api/v2/device/leave').status_code, 405)
+        self.client.delete_cookie(DEVICE_COOKIE, path='/api/v2/device')
+        response = self.call('/api/v2/device/leave', 'POST', json={}, headers={'X-CSRF-Token': self.csrf})
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn('Set-Cookie', response.headers)
+        self.assertEqual(self.service.path.read_bytes(), before)
+
+    def test_leave_disabled_group_succeeds_and_failed_storage_does_not_clear_cookie(self):
+        self.join()
+        token = self.cookie().value
+        self.service.update_group(self.auth.owner_id(), self.group['id'], {'enabled': False})
+        before = self.service.path.read_bytes()
+        with patch('webclock.services.device_access_service.save_json', side_effect=OSError('PRIVATE path')):
+            response = self.call('/api/v2/device/leave', 'POST', json={}, headers={'X-CSRF-Token': self.csrf})
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json['code'], 'storage_failure')
+        self.assertNotIn('PRIVATE', response.text)
+        self.assertNotIn('Set-Cookie', response.headers)
+        self.assertEqual(self.cookie().value, token)
+        self.assertEqual(self.service.path.read_bytes(), before)
+        response = self.call('/api/v2/device/leave', 'POST', json={}, headers={'X-CSRF-Token': self.csrf})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(self.cookie())
+
+    def test_leave_authenticates_before_csrf_and_rechecks_inside_transaction(self):
+        for token in (None, 'unknown'):
+            if token:
+                self.client.set_cookie(DEVICE_COOKIE, token, path='/api/v2/device')
+            response = self.call('/api/v2/device/leave', 'POST', json={})
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.json['code'], 'device_authentication_required')
+        self.prepare()
+        self.assertEqual(self.call('/api/v2/device/leave', 'POST', json={}).status_code, 401)
+        self.join()
+        self.assertEqual(self.call('/api/v2/device/leave', 'POST', json={}).json['code'], 'csrf_failed')
+        authorize = self.service.authorize_leave
+        def removed_after_guard(token, owner):
+            authorize(token, owner)
+            self.service.leave(token, owner)
+        with patch.object(self.service, 'authorize_leave', side_effect=removed_after_guard):
+            response = self.call('/api/v2/device/leave', 'POST', json={}, headers={'X-CSRF-Token': self.csrf})
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn('Set-Cookie', response.headers)
+
+    def test_leave_during_display_cannot_return_previously_authorized_body_or_304(self):
+        self.join()
+        token = self.cookie().value
+        def leave_during_render(identity):
+            self.service.leave(token, self.auth.owner_id())
+            return self.display_payload(identity)
+        self.display_callback = leave_during_render
+        response = self.call('/api/v2/device/display', headers={'If-None-Match': '"test-revision"'})
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn('ETag', response.headers)
+        self.assertNotIn('settings', response.json)
 
 
 if __name__ == '__main__':

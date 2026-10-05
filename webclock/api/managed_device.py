@@ -62,13 +62,15 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         authorization = request.headers.get('Authorization')
         token = request.cookies.get(DEVICE_COOKIE)
         if authorization:
-            if (request.endpoint in ('managed_device.prepare', 'managed_device.join')
+            if (request.endpoint in ('managed_device.prepare', 'managed_device.join', 'managed_device.leave')
                     or not authorization.startswith('Bearer ')):
                 raise AccessError('A device credential is required', 401, 'device_authentication_required')
             token = authorization[7:]
             g.device_identity = access_provider().authenticate(token, owner())
             g.device_bearer_authenticated = True
         g.device_token = token
+        if request.endpoint == 'managed_device.leave':
+            return access_provider().authorize_leave(token, owner())
         if request.endpoint in ('managed_device.prepare', 'managed_device.join'):
             return None
         if request.endpoint == 'managed_device.identity':
@@ -110,6 +112,15 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
                                         request.remote_addr)
         return jsonify(schema_version=3, identity=result['identity'], server_timestamp=int(time.time() * 1000)), \
             201 if result['created'] else 200
+
+    @api.route('/leave', methods=['POST'])
+    def leave():
+        body(())
+        access_provider().leave(g.device_token, owner())
+        response = jsonify(status='left')
+        response.delete_cookie(DEVICE_COOKIE, path='/api/v2/device',
+                              secure=auth_provider().mode() == 'managed', httponly=True, samesite='Lax')
+        return response
 
     def scoped_response(provider):
         identity = access_provider().authenticate(g.device_token, owner())

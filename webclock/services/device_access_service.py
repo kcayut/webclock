@@ -470,7 +470,10 @@ class DeviceAccessService:
             digest = self._credential_digest(token)
             row = self._device_for_digest(state, digest)
             if row is not None:
-                return {'status': 'active', 'identity': self._active_identity(state, row, owner_id)}
+                identity = self._active_identity(state, row, owner_id)
+                group = state['groups'][identity['group_id']]
+                return {'status': 'active', 'identity': identity,
+                        'group': {'id': group['id'], 'name': group['name']}}
             if digest is not None:
                 for attempt in state['attempts'].values():
                     if hmac.compare_digest(attempt['credential_digest'], digest):
@@ -482,6 +485,32 @@ class DeviceAccessService:
                             return {'status': 'pending', 'attempt_id': attempt['id'],
                                     'expires_at': int(_epoch(attempt['expires_at']) * 1000)}
             raise AccessError('A device credential is required', 401, 'device_authentication_required')
+
+    def _leave_device(self, state, token, owner_id):
+        self._owner(owner_id)
+        row = self._device_for_digest(state, self._credential_digest(token))
+        if row is None:
+            raise AccessError('A device credential is required', 401, 'device_authentication_required')
+        if row['owner_id'] != owner_id:
+            raise AccessError('Device authorization is no longer valid', 403, 'device_authorization_revoked')
+        return row
+
+    def authorize_leave(self, token, owner_id):
+        """Require one's own credential before CSRF, including disabled groups."""
+        with storage_lock:
+            self._leave_device(self._load(), token, owner_id)
+
+    def leave(self, token, owner_id):
+        """Remove only this device's authorization and release its global slot."""
+        with storage_lock:
+            state = self._load()
+            row = self._leave_device(state, token, owner_id)
+            del state['devices'][row['id']]
+            # Removing this completed attempt also permits prepare with the old
+            # cookie if the successful leave response (and cookie deletion) is lost.
+            state['attempts'] = {key: attempt for key, attempt in state['attempts'].items()
+                                 if attempt['device_id'] != row['id']}
+            save_json(self.path, state)
 
     def prepare(self, owner_id, source, token=None):
         """Return attempt metadata and a token only when a new cookie is needed."""

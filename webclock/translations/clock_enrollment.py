@@ -3,6 +3,10 @@ DEVICE_ENROLLMENT_TRANSLATIONS = {
     'zh-TW': {
         'join_open': '加入顯示群組', 'join_title': '加入顯示群組', 'join_intro': '向管理者取得六碼加入碼。',
         'join_code': '六碼加入碼', 'join_submit': '加入', 'join_cancel': '關閉', 'join_retry': '重新確認連線',
+        'join_group_title': '目前顯示群組', 'join_group_unknown': '群組名稱尚未取得', 'join_leave': '退出群組',
+        'join_checking': '正在重新確認群組與連線…', 'join_check_failed': '暫時無法確認群組與連線，請再試一次。',
+        'join_leave_confirm': '確定退出這個顯示群組？群組內容與鬧鐘會停止，本機提醒仍保留。重新加入需要加入碼。',
+        'join_leaving': '正在退出群組…', 'join_leave_failed': '尚未確認退出成功。請重新確認連線後再試。',
         'join_preparing': '正在確認這個瀏覽器的 Cookie…', 'join_enter_code': '請輸入管理者提供的六碼加入碼。',
         'join_submitting': '正在加入並確認裝置身份…', 'join_connected': '已確認裝置身份，顯示內容將自動更新。',
         'join_invalid': '加入碼無效或已不可使用，請向管理者確認。',
@@ -15,6 +19,10 @@ DEVICE_ENROLLMENT_TRANSLATIONS = {
     'en': {
         'join_open': 'Join a display group', 'join_title': 'Join a display group', 'join_intro': 'Ask the administrator for a six-character code.',
         'join_code': 'Six-character code', 'join_submit': 'Join', 'join_cancel': 'Close', 'join_retry': 'Check connection again',
+        'join_group_title': 'Current display group', 'join_group_unknown': 'Group name unavailable', 'join_leave': 'Leave group',
+        'join_checking': 'Checking the group and connection…', 'join_check_failed': 'Unable to confirm the group and connection. Please try again.',
+        'join_leave_confirm': 'Leave this display group? Group content and alarms will stop; local reminders will stay. You will need a code to rejoin.',
+        'join_leaving': 'Leaving the group…', 'join_leave_failed': 'Leaving has not been confirmed. Check the connection and try again.',
         'join_preparing': 'Checking this browser’s cookie…', 'join_enter_code': 'Enter the six-character code from the administrator.',
         'join_submitting': 'Joining and confirming device identity…', 'join_connected': 'Device identity confirmed. Display content will update automatically.',
         'join_invalid': 'This code is invalid or unavailable. Check with the administrator.',
@@ -27,6 +35,10 @@ DEVICE_ENROLLMENT_TRANSLATIONS = {
     'ja': {
         'join_open': '表示グループに参加', 'join_title': '表示グループに参加', 'join_intro': '管理者から6文字の参加コードを取得してください。',
         'join_code': '6文字の参加コード', 'join_submit': '参加', 'join_cancel': '閉じる', 'join_retry': '接続を再確認',
+        'join_group_title': '現在の表示グループ', 'join_group_unknown': 'グループ名を取得できません', 'join_leave': 'グループを退出',
+        'join_checking': 'グループと接続を確認中…', 'join_check_failed': 'グループと接続を確認できません。再試行してください。',
+        'join_leave_confirm': 'この表示グループを退出しますか？グループの表示とアラームは停止し、ローカルのリマインダーは残ります。再参加にはコードが必要です。',
+        'join_leaving': 'グループを退出中…', 'join_leave_failed': '退出を確認できません。接続を再確認してから再試行してください。',
         'join_preparing': 'このブラウザのCookieを確認中…', 'join_enter_code': '管理者から受け取った6文字のコードを入力してください。',
         'join_submitting': '参加して端末の認証を確認中…', 'join_connected': '端末の認証を確認しました。表示内容は自動更新されます。',
         'join_invalid': 'コードが無効、または利用できません。管理者に確認してください。',

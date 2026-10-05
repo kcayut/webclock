@@ -5,6 +5,8 @@
     var panel = document.getElementById('device-join-panel'), form = document.getElementById('device-join-form');
     var input = document.getElementById('device-join-code'), status = document.getElementById('device-join-status');
     var submit = document.getElementById('device-join-submit'), retry = document.getElementById('device-join-retry');
+    var fields = document.getElementById('device-join-fields'), groupName = document.getElementById('device-group-name');
+    var leave = document.getElementById('device-group-leave'), title = document.getElementById('device-join-title');
     var cancel = document.getElementById('device-join-cancel'), attempt = null, epoch = 0, opened = false, busy = false;
     var labels = window.WebClockEnrollmentTranslations || {}, statusKey = 'join_intro';
     var connection = document.getElementById('connection-panel');
@@ -15,12 +17,20 @@
         return pack[key] || key;
     }
     function render() {
+        var state = session.getState(), joined = !!state.identity;
         var nodes = document.querySelectorAll('[data-enrollment-i18n]');
         for (var i = 0; i < nodes.length; i++) nodes[i].textContent = text(nodes[i].getAttribute('data-enrollment-i18n'));
-        status.textContent = text(statusKey);
+        openButton.style.display = opened || joined ? 'none' : '';
+        panel.style.display = opened || joined ? 'block' : 'none';
+        fields.style.display = submit.style.display = joined ? 'none' : '';
+        cancel.style.display = joined ? 'none' : '';
+        groupName.style.display = leave.style.display = joined ? '' : 'none';
+        title.textContent = text(joined ? 'join_group_title' : 'join_title');
+        groupName.textContent = joined ? (state.group ? state.group.name : text('join_group_unknown')) : '';
+        status.textContent = text(joined && statusKey === 'join_intro' ? 'join_connected' : statusKey);
         submit.disabled = busy || !attempt;
-        retry.disabled = busy;
-        input.disabled = busy || !attempt;
+        retry.disabled = leave.disabled = busy;
+        input.disabled = joined || busy || !attempt;
     }
     function show(key) { statusKey = key; render(); }
     function errorKey(error) {
@@ -54,16 +64,38 @@
     cancel.onclick = function () {
         opened = false; epoch += 1; session.cancelJoin(); attempt = null; busy = false;
         input.value = ''; panel.style.display = 'none';
+        render();
         try { openButton.focus(); } catch (failure) {}
     };
     retry.onclick = function () {
         if (busy) return;
-        if (session.getState().phase === 'active') { attempt = null; show('join_connected'); return; }
+        if (session.getState().identity) {
+            var current = ++epoch;
+            busy = true; show('join_checking');
+            session.checkIdentity(function (error, result) {
+                if (current !== epoch) return;
+                busy = false;
+                show(error || !result || result.status !== 'active' ? 'join_check_failed' : 'join_connected');
+            });
+            return;
+        }
         prepare();
+    };
+    leave.onclick = function () {
+        if (busy || !session.getState().identity || !window.confirm(text('join_leave_confirm'))) return;
+        var current = ++epoch;
+        busy = true; input.value = ''; show('join_leaving');
+        session.leave(function (error) {
+            if (current !== epoch) return;
+            busy = false; attempt = null;
+            if (error) { show('join_leave_failed'); return; }
+            opened = false; statusKey = 'join_intro'; render();
+            try { openButton.focus(); } catch (failure) {}
+        });
     };
     form.onsubmit = function (event) {
         if (event && event.preventDefault) event.preventDefault();
-        if (!attempt || busy) return false;
+        if (!attempt || busy || session.getState().identity) return false;
         var code = String(input.value || '').replace(/\s/g, '').toUpperCase();
         if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code)) { show('join_invalid'); return false; }
         var current = ++epoch;
@@ -81,9 +113,11 @@
         return false;
     };
     session.subscribe(function (event) {
-        if (!opened) return;
-        if (event.type === 'source' || (event.type === 'revoked' && !busy) || (event.type === 'identity' && event.state.phase === 'unknown')) {
-            epoch += 1; session.cancelJoin(); attempt = null; busy = false; input.value = ''; show('join_conflict');
+        if (event.type === 'source' || event.type === 'authorization-check' || (event.type === 'revoked' && !busy) || (event.type === 'identity' && event.state.phase === 'unknown')) {
+            epoch += 1; attempt = null; busy = false; input.value = ''; show('join_conflict');
+        } else {
+            if (event.state.identity && !busy) { attempt = null; input.value = ''; statusKey = 'join_connected'; }
+            render();
         }
     });
     window.WebClockEnrollmentRefresh = render;

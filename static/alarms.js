@@ -4,7 +4,6 @@
     var bell = document.getElementById('alarm-bell');
     if (!bell) return;
     var message = document.getElementById('alarm-message');
-    var motion = document.getElementById('alarm-motion');
     var session = window.WebClockDeviceSession, privateData = false;
     var source = '', queue = [], active = [], handled = {}, dismissed = [];
     var enabled = 0, confirmed = false;
@@ -40,7 +39,6 @@
                 (active.length > 1 ? ' (+' + (active.length - 1) + ')' : ''));
             text(document.getElementById('alarm-prompt'), t(confirmed ? 'alarm_second_tap' : 'alarm_first_tap'));
         }
-        text(document.getElementById('alarm-motion-label'), t('alarm_flash'));
         text(document.getElementById('alarm-help'), t('alarm_sound_hint'));
         text(document.getElementById('alarm-manage'), t('alarm_manage'));
     }
@@ -183,13 +181,6 @@
         if (window.AlarmAudio) window.AlarmAudio.unlock('bell');
         render();
     };
-    motion.checked = readStoredValue('webclock.alarmFlash', 'on') !== 'off';
-    function setMotion() {
-        document.body.classList.toggle('alarm-steady', !motion.checked);
-        writeStoredValue('webclock.alarmFlash', motion.checked ? 'on' : 'off');
-    }
-    motion.onchange = setMotion;
-    setMotion();
     document.addEventListener('touchend', tap, true);
     document.addEventListener('click', tap, true);
     document.addEventListener('keydown', function (event) {
