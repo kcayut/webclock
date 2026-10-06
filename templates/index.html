@@ -348,7 +348,7 @@
             </div>
         </form>
         <div id="local-events-list"></div>
-        <p><a id="alarm-manage" href="{{ url_for('admin') }}">{{ translations[language].alarm_manage }}</a></p>
+        {% if not display_only %}<p><a id="alarm-manage" href="{{ url_for('admin') }}">{{ translations[language].alarm_manage }}</a></p>{% endif %}
         <p id="alarm-help">{{ translations[language].alarm_sound_hint }}</p>
     </div>
 

@@ -6,4 +6,4 @@
 docker build -f homeassistant/addon/Dockerfile -t webclock-addon .
 ```
 
-App 使用 Home Assistant Ingress 開啟 `/admin`，並將所有可變狀態保存到 `/data`。
+App 使用 Home Assistant Ingress 開啟完整管理頁，另以選用的 `8100/tcp` 提供區網顯示與裝置配對；所有可變狀態保存到 `/data`。

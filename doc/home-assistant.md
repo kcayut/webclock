@@ -1,6 +1,6 @@
 # Home Assistant
 
-WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；自訂整合則把同一台 Server 的時間、行事曆與鬧鐘帶進 HA。一次加入建立一個裝置身份，三種卡片共用該身份；群組與內容仍由 WebClock 管理頁管理。
+WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；自訂整合則把同一台 Server 的時間、行事曆與鬧鐘帶進 HA。HA 只允許一份 WebClock 整合及一個群組，三種卡片共用該身份；完整群組與裝置管理仍在 WebClock 管理頁進行。
 
 ## 專案目錄
 
@@ -31,15 +31,15 @@ https://github.com/kcayut/webclock
 docker build -f homeassistant/addon/Dockerfile -t webclock-addon .
 ```
 
-若網頁時鐘、ESP 或區網上的其他裝置也要連線，請在 App 的「網路」設定把容器連接埠 `8099` 指定到主機連接埠。不要直接公開到 Internet；對外存取應由 HTTPS 反向代理及 WebClock managed 模式保護。
+若網頁時鐘、ESP 或區網上的其他裝置也要連線，請在 App 的「網路」設定把容器連接埠 `8100` 指定到主機連接埠，再開啟 `http://HOME_ASSISTANT_IP:指定連接埠`。這個連接埠只提供時鐘、六碼配對與裝置同步；管理頁及管理 API 只能經由 HA Ingress 使用。預設不對區網開放，也不要把它直接公開到 Internet。
 
-同一台 HA 內的 WebClock 自訂整合可使用 `http://webclock:8099` 連到 App。`webclock` 是 App 提供的固定內部 DNS 別名，不必依賴安裝來源產生的動態名稱。
+同一台 HA 內的 WebClock 自訂整合可使用 `http://webclock:8100` 連到 App。`webclock` 是 App 提供的固定內部 DNS 別名，不必依賴安裝來源產生的動態名稱。內部整合和外部顯示都透過六位加入碼取得各自的裝置身份；外部顯示可以加入其他群組，不會改變 HA 儀表板選定的群組。
 
 ## 自訂整合安裝前準備
 
 1. WebClock Server 須更新至包含 `/api/v2/device/token/prepare`、`token/join`、`token/leave` 的版本。
 2. 確認 HA 主機可以連到 WebClock Server。正式的受管部署使用有效憑證的 HTTPS；可信任的自用區網可以使用 HTTP。
-3. WebClock Server 位址只填來源，例如 `https://clock.example`、`http://192.168.1.20:5000`，或同機 App 的 `http://webclock:8099`。自訂整合目前不接受任意反向代理子路徑；App 的 Ingress 子路徑由 Server 自動處理。
+3. WebClock Server 位址只填來源，例如 `https://clock.example`、`http://192.168.1.20:5000`，或同機 App 的 `http://webclock:8100`。自訂整合目前不接受任意反向代理子路徑；App 的 Ingress 子路徑由 Server 自動處理。
 
 ## 安裝整合
 
@@ -61,7 +61,7 @@ cp -R homeassistant/custom_components/webclock /config/custom_components/
 3. 在 HA 新增 **WebClock** 整合，輸入 Server 位址與加入碼。整合不要求 WebClock 管理員帳密。
 4. 成功後，WebClock 裝置面板會出現類型 `homeassistant` 的裝置；HA 會建立時間、行事曆、鬧鐘三個 sensor。
 
-三個 sensor 及其卡片共用同一裝置身份。重新啟動 HA、重新載入整合或增加卡片不會再次註冊，也不會重複消耗加入名額。需要顯示另一個群組時，才另外新增一個 WebClock 整合實例。
+三個 sensor 及其卡片共用同一裝置身份。重新啟動 HA、重新載入整合或增加卡片不會再次註冊，也不會重複消耗加入名額。HA 只允許一份 WebClock 整合；要改用另一個群組，請在 WebClock 管理頁把這個 HA 裝置移到目標群組。
 
 加入失敗時先確認加入碼尚未過期、群組仍啟用且名額未滿。受管模式拒絕無效憑證的 HTTPS；本整合不提供略過 TLS 驗證的選項。
 
@@ -91,7 +91,7 @@ cards:
 - **鬧鐘**：呈現已啟用數量與各鬧鐘下一次觸發時間。排程與假日／行事曆聯動由 Server 計算，顯示時區不改變既有排程時區。新增、編輯及停用鬧鐘仍在 WebClock 管理頁操作。
 - **同步**：每個 HA 整合實例共用一次 15 秒輪詢，驗證顯示及鬧鐘快照版本一致後才更新並回報。後台的同步 ACK 表示資料已取得，不代表揚聲器已播放。
 - **停用與撤銷**：停用後清除目前私人顯示並繼續檢查，恢復時可自動回來；撤銷憑證後透過 HA 的重新授權提示輸入新碼。離線資料只在 Server 授權租約內有效，期限到即清除行程與待執行鬧鐘。已校準時間可繼續顯示。
-- **移組**：沿用同一身份，刷新後顯示新群組內容，舊清單不與新群組混合。不同群組可新增不同 HA 整合實例；不要為三張相同群組卡片各加一份整合。
+- **移組**：沿用同一身份，刷新後顯示新群組內容，舊清單不與新群組混合。HA 儀表板固定使用這一份整合選定的群組；區網瀏覽器與 ESP 可各自配對其他群組。
 - **移除**：從 HA 刪除整合時會嘗試退出 WebClock。Server 離線時仍可移除 HA 設定，但須在 WebClock 後台手動清除該裝置記錄。
 
 HA 設定儲存中包含裝置憑證，請保護 HA 設定與備份。卡片設定、sensor 屬性與一般日誌不包含憑證；行事曆與鬧鐘清單屬性不寫入 HA recorder。撤權會停止本整合使用目前私人資料，但不會刪除使用者自行建立的外部歷史或自動化紀錄。

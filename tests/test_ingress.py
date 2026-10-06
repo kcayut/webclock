@@ -10,9 +10,9 @@ class IngressTest(unittest.TestCase):
         self.client = clock.app.test_client()
         self.header = {'X-Ingress-Path': '/api/hassio_ingress/test-token'}
 
-    def get(self, path='/', remote='172.30.32.2'):
+    def get(self, path='/', remote='172.30.32.2', port='80'):
         return self.client.get(path, headers=self.header,
-                               environ_overrides={'REMOTE_ADDR': remote})
+                               environ_overrides={'REMOTE_ADDR': remote, 'SERVER_PORT': port})
 
     def test_trusted_ingress_prefixes_generated_and_browser_urls(self):
         with patch.dict(os.environ, {'WEBCLOCK_INGRESS': '1'}):
@@ -40,6 +40,30 @@ class IngressTest(unittest.TestCase):
             response = self.get(remote='127.0.0.1')
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('/api/hassio_ingress/test-token/static/', response.get_data(as_text=True))
+
+    def test_ha_app_separates_ingress_management_from_lan_display(self):
+        environment = {'WEBCLOCK_INGRESS': '1', 'WEBCLOCK_HA_APP': '1'}
+        with patch.dict(os.environ, environment):
+            ingress = self.get('/admin', port='8099')
+            direct_ingress = self.client.get('/admin', environ_overrides={'SERVER_PORT': '8099'})
+            display = self.client.get('/', environ_overrides={'SERVER_PORT': '8100'})
+            display_time = self.client.get('/api/time', environ_overrides={'SERVER_PORT': '8100'})
+            display_admin = self.client.get('/admin', environ_overrides={'SERVER_PORT': '8100'})
+            display_shared = self.client.get('/api/status', environ_overrides={'SERVER_PORT': '8100'})
+            display_traversal = self.client.get('/static/../admin', environ_overrides={'SERVER_PORT': '8100'})
+            display_device = self.client.get('/api/v2/device/identity', environ_overrides={'SERVER_PORT': '8100'})
+            display_esp = self.client.get('/api/v1/device/config', environ_overrides={'SERVER_PORT': '8100'})
+        self.assertEqual(ingress.status_code, 200)
+        self.assertEqual(direct_ingress.status_code, 403)
+        self.assertEqual(display.status_code, 200)
+        self.assertNotIn('id="alarm-manage"', display.get_data(as_text=True))
+        self.assertIn('data-deployment-mode="managed"', display.get_data(as_text=True))
+        self.assertEqual(display_time.status_code, 200)
+        self.assertEqual(display_admin.status_code, 404)
+        self.assertEqual(display_shared.status_code, 404)
+        self.assertEqual(display_traversal.status_code, 404)
+        self.assertNotEqual(display_device.status_code, 404)
+        self.assertNotEqual(display_esp.status_code, 404)
 
 
 if __name__ == '__main__':

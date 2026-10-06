@@ -615,6 +615,7 @@ def template_context():
         language = DEFAULT_SETTINGS['language']
     return {
         'app_base': request.script_root.rstrip('/') if has_request_context() else '',
+        'display_only': has_request_context() and request.environ.get('webclock.surface') == 'display',
         'language': language,
         'time_format': display_settings.get('time_format', '24h'),
         'languages': SUPPORTED_LANGUAGES,
@@ -627,7 +628,7 @@ def index():
     context = template_context()
     # A management preference must never change the clock's initial language.
     context['language'] = display_settings.get('language', DEFAULT_SETTINGS['language'])
-    context['deployment_mode'] = getattr(g, 'deployment_mode', 'recovery')
+    context['deployment_mode'] = 'managed' if context['display_only'] else getattr(g, 'deployment_mode', 'recovery')
     context['device_enrollment_translations'] = DEVICE_ENROLLMENT_TRANSLATIONS
     if getattr(g, 'deployment_mode', 'self') != 'self':
         # Cacheable clock HTML never embeds private account display settings.

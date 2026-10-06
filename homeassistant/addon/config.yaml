@@ -19,9 +19,9 @@ panel_admin: true
 aliases:
   - webclock
 ports:
-  8099/tcp: null
+  8100/tcp: null
 ports_description:
-  8099/tcp: Optional direct WebClock access
-watchdog: http://[HOST]:[PORT:8099]/api/health
+  8100/tcp: Optional LAN display access
+watchdog: http://[HOST]:[PORT:8100]/api/health
 backup: cold
 stage: experimental

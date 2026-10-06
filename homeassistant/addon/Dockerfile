@@ -9,10 +9,12 @@ LABEL io.hass.name="WebClock" \
 
 WORKDIR /app
 ENV HOST=0.0.0.0 \
-    PORT=8099 \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Taipei \
+    WEBCLOCK_HA_APP=1 \
     WEBCLOCK_INGRESS=1 \
+    WEBCLOCK_INGRESS_PORT=8099 \
+    WEBCLOCK_DISPLAY_PORT=8100 \
     WEBCLOCK_STATE_DIR=/data \
     NOTES_FILE=/data/manual_notes.json
 
@@ -24,5 +26,5 @@ COPY webclock ./webclock
 COPY templates ./templates
 COPY static ./static
 
-EXPOSE 8099
-CMD ["python", "app.py"]
+EXPOSE 8099 8100
+CMD ["python", "-m", "webclock.ha_app"]
