@@ -65,7 +65,7 @@ class AccessControlTest(unittest.TestCase):
                 seen.add((route, method))
                 response = self.request(route, method, json={} if method != 'GET' else None)
                 with self.subTest(route=route, method=method):
-                    expected = 403 if route.startswith('/api/v1/device/') else 401
+                    expected = 403 if route.startswith(('/api/v1/device/', '/api/v2/device/token/')) else 401
                     if route.startswith('/api/') or method != 'GET':
                         self.assertEqual(response.status_code, expected, response.text)
                         self.assertTrue(response.is_json)

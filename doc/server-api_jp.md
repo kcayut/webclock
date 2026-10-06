@@ -1,5 +1,7 @@
 # WebClock Server：集中管理と端末 API
 
+Home Assistant のネイティブ参加: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](home-assistant.md).
+
 ## B0–B4 管理・グループ・受管端末（2026-10-06）
 
 管理者session、owner別グループ、招待、原子的な参加、認証に基づく表示・アラーム、グループ管理に対応します。既存環境は `self` を維持し、`managed` はホスト側で明示的に有効化します。端末の退出と、管理者による個別移動・無効化／再開・取り消しが可能です。操作は[ガイド](guide_jp.md)、保存と更新・復元は [B0–B1 契約](b0-b1-contract.md)を参照してください。

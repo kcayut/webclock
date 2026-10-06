@@ -1,0 +1,58 @@
+{
+  "title": "WebClock",
+  "config": {
+    "step": {
+      "user": {
+        "title": "加入 WebClock",
+        "description": "輸入 WebClock 伺服器位址，以及裝置管理頁產生的六位英數加入碼。",
+        "data": {
+          "server_url": "伺服器位址",
+          "join_code": "加入碼"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新加入 WebClock",
+        "description": "請輸入新的加入碼；不會恢復舊授權。",
+        "data": {
+          "join_code": "加入碼"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "伺服器位址無效，請使用不含路徑的 HTTP(S) 位址。",
+      "invalid_code": "請輸入六位英文字母或數字。",
+      "invalid_invitation": "加入碼錯誤、已過期或名額已滿。",
+      "rate_limited": "嘗試次數過多，請稍後重試。",
+      "https_required": "此伺服器必須使用 HTTPS。",
+      "join_attempt_conflict": "加入程序已過期，請重試。",
+      "cannot_connect": "無法連線至 WebClock，或伺服器版本不支援。"
+    },
+    "abort": {
+      "already_configured": "已完成設定",
+      "reauth_successful": "已重新授權"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "選項",
+        "data": {
+          "emit_alarm_events": "發出 webclock_alarm 事件（另行設定 HA 自動化）"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "time": {
+        "name": "時間"
+      },
+      "calendar": {
+        "name": "行事曆"
+      },
+      "alarms": {
+        "name": "鬧鐘"
+      }
+    }
+  }
+}

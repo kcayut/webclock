@@ -1,5 +1,7 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
+Home Assistant: enroll with a six-character code and use the time, calendar and alarm cards. See the [installation guide](doc/home-assistant.md).
+
 # WebClock
 
 [繁體中文](README.md) · **English** · [日本語](README_jp.md)

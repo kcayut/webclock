@@ -1,0 +1,58 @@
+{
+  "title": "WebClock",
+  "config": {
+    "step": {
+      "user": {
+        "title": "WebClock に参加",
+        "description": "WebClock サーバーのアドレスと、デバイス管理画面で発行した6桁の英数字コードを入力してください。",
+        "data": {
+          "server_url": "サーバーアドレス",
+          "join_code": "参加コード"
+        }
+      },
+      "reauth_confirm": {
+        "title": "WebClock に再参加",
+        "description": "新しい参加コードを入力してください。以前の認証は復元されません。",
+        "data": {
+          "join_code": "参加コード"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "パスを含まない HTTP(S) アドレスを入力してください。",
+      "invalid_code": "6桁の英数字を入力してください。",
+      "invalid_invitation": "コードが無効、期限切れ、または定員に達しています。",
+      "rate_limited": "試行回数が多すぎます。しばらくしてから再試行してください。",
+      "https_required": "このサーバーには HTTPS が必要です。",
+      "join_attempt_conflict": "参加処理が期限切れです。再試行してください。",
+      "cannot_connect": "WebClock に接続できないか、サーバーのバージョンが未対応です。"
+    },
+    "abort": {
+      "already_configured": "設定済みです",
+      "reauth_successful": "再認証が完了しました"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "オプション",
+        "data": {
+          "emit_alarm_events": "webclock_alarm イベントを送信（HA 自動化を別途設定）"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "time": {
+        "name": "時刻"
+      },
+      "calendar": {
+        "name": "カレンダー"
+      },
+      "alarms": {
+        "name": "アラーム"
+      }
+    }
+  }
+}

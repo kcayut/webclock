@@ -1,5 +1,7 @@
 # WebClock Server: Central Management and Device API
 
+Home Assistant native enrollment: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](home-assistant.md).
+
 ## B0–B4 administration, groups and managed devices (2026-10-06)
 
 Administrator sessions, owner-scoped groups, invitations, atomic enrollment, authenticated group display/alarms, and group management UI are implemented. Existing installations remain in `self`; `managed` requires explicit host-side activation. Devices may leave, and administrators may move, disable/resume, or revoke individual device access. See the [guide](guide_en.md) and the [B0–B1 contract](b0-b1-contract.md) for storage and update/restore boundaries.

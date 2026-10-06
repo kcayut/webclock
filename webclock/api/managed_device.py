@@ -12,6 +12,7 @@ from webclock.services.storage import storage_lock
 
 DEVICE_COOKIE = 'webclock_device'
 COOKIE_SECONDS = 365 * 24 * 60 * 60
+NATIVE_ENDPOINTS = {'managed_device.token_prepare', 'managed_device.token_join', 'managed_device.token_leave'}
 
 
 def managed_device_api(access_provider, device_provider, auth_provider, display_provider, alarms_provider):
@@ -60,6 +61,22 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         if auth_provider().mode() == 'managed' and not request.is_secure:
             raise AccessError('HTTPS is required for device access', 403, 'https_required')
         authorization = request.headers.get('Authorization')
+        if request.endpoint in NATIVE_ENDPOINTS:
+            # This separate JSON transport never accepts ambient browser cookies.
+            # The marker is not authentication: prepare grants no authority, and
+            # join still needs both the prepared secret and a valid invitation.
+            if (not request.is_json or request.headers.get('X-WebClock-Client') != 'native-v1'
+                    or request.headers.get('Cookie') or request.headers.get('Origin')
+                    or request.headers.get('Referer')
+                    or any(key.lower().startswith('sec-fetch-') for key in request.headers.keys())):
+                raise AccessError('A native JSON client is required', 403, 'native_client_required')
+            if authorization and not authorization.startswith('Bearer '):
+                raise AccessError('A device credential is required', 401, 'device_authentication_required')
+            g.device_token = authorization[7:] if authorization else None
+            if request.endpoint == 'managed_device.token_leave':
+                access_provider().authorize_leave(g.device_token, owner())
+            g.device_native_request = True
+            return None
         token = request.cookies.get(DEVICE_COOKIE)
         if authorization:
             if (request.endpoint in ('managed_device.prepare', 'managed_device.join', 'managed_device.leave')
@@ -88,6 +105,27 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         if not isinstance(value, dict) or set(value) - set(fields) or set(required) - set(value):
             raise ValueError('Invalid device fields')
         return value
+
+    @api.route('/token/prepare', methods=['POST'])
+    def token_prepare():
+        body(())
+        result = access_provider().prepare(owner(), request.remote_addr, g.device_token)
+        return jsonify(attempt_id=result['attempt_id'], expires_at=result['expires_at'],
+                       token=result['token'] or g.device_token), 201 if result['created'] else 200
+
+    @api.route('/token/join', methods=['POST'])
+    def token_join():
+        value = body(('attempt_id', 'code'), ('attempt_id', 'code'))
+        result = access_provider().join(owner(), g.device_token, value['attempt_id'], value['code'],
+                                        request.remote_addr)
+        return jsonify(schema_version=3, identity=result['identity'], server_timestamp=int(time.time() * 1000)), \
+            201 if result['created'] else 200
+
+    @api.route('/token/leave', methods=['POST'])
+    def token_leave():
+        body(())
+        access_provider().leave(g.device_token, owner())
+        return jsonify(status='left')
 
     @api.route('/join/prepare', methods=['POST'])
     def prepare():

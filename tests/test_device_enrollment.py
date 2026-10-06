@@ -388,6 +388,57 @@ class EnrollmentTransportTest(unittest.TestCase):
     def cookie(self):
         return self.client.get_cookie(DEVICE_COOKIE, path='/api/v2/device')
 
+    def test_native_join_uses_same_transaction_without_cookie_or_csrf(self):
+        client = self.app.test_client(use_cookies=False)
+        headers = {'X-WebClock-Client': 'native-v1'}
+        def post(path, payload, token=None, **extra):
+            return client.post('/api/v2/device/' + path, base_url=self.base, json=payload,
+                headers=dict(headers, **({'Authorization': 'Bearer ' + token} if token else {}), **extra))
+        prepared = post('token/prepare', {})
+        self.assertEqual(prepared.status_code, 201)
+        self.assertEqual(prepared.headers['Cache-Control'], 'no-store')
+        self.assertNotIn('Set-Cookie', prepared.headers)
+        token = prepared.json['token']
+        self.assertEqual(post('status', {}, token).status_code, 401)
+        join_body = {'attempt_id': prepared.json['attempt_id'], 'code': self.invitation['code'].lower()}
+        joined = post('token/join', join_body, token)
+        self.assertEqual(joined.status_code, 201)
+        self.assertEqual(post('token/join', join_body, token).json['identity'], joined.json['identity'])
+        self.assertEqual(self.service.get_invite(self.auth.owner_id(), self.group['id'])['used'], 1)
+        self.assertNotIn(token, self.service.path.read_text())
+        self.assertEqual(post('status', {'device_type': 'homeassistant', 'name': 'Home Assistant'}, token).status_code, 200)
+        identity = joined.json['identity']
+        self.assertEqual(self.devices.list()[0]['device_type'], 'homeassistant')
+        self.service.update_device(self.auth.owner_id(), identity['device_id'], {'enabled': False})
+        self.assertEqual(post('status', {}, token).status_code, 403)
+        self.service.update_device(self.auth.owner_id(), identity['device_id'], {'enabled': True})
+        self.assertEqual(post('status', {}, token).status_code, 200)
+        self.assertEqual(post('token/leave', {}, token).status_code, 200)
+        self.assertEqual(post('status', {}, token).status_code, 401)
+        self.assertNotEqual(post('token/join', join_body, token).status_code, 200)
+
+    def test_native_transport_rejects_browser_metadata_bad_code_http_and_forged_attempt(self):
+        client = self.app.test_client(use_cookies=False)
+        marker = {'X-WebClock-Client': 'native-v1'}
+        before = self.service.path.read_bytes()
+        for headers in ({}, dict(marker, Origin=self.base), dict(marker, Referer=self.base + '/'),
+                        dict(marker, Cookie='ambient=secret'), dict(marker, **{'Sec-Fetch-Site': 'same-origin'})):
+            response = client.post('/api/v2/device/token/prepare', base_url=self.base, json={}, headers=headers)
+            self.assertEqual(response.status_code, 403)
+        self.assertEqual(before, self.service.path.read_bytes())
+        self.assertEqual(client.post('/api/v2/device/token/prepare', base_url='http://localhost',
+                                    json={}, headers=marker).status_code, 403)
+        prepared = client.post('/api/v2/device/token/prepare', base_url=self.base, json={}, headers=marker).json
+        for token, code, status in [('forged', self.invitation['code'], 401),
+                                    (prepared['token'], 'BAD123', 400)]:
+            result = client.post('/api/v2/device/token/join', base_url=self.base,
+                json={'attempt_id': prepared['attempt_id'], 'code': code},
+                headers=dict(marker, Authorization='Bearer ' + token))
+            self.assertEqual(result.status_code, status)
+        self.assertEqual(self.service.get_invite(self.auth.owner_id(), self.group['id'])['used'], 0)
+        self.assertEqual(client.get('/api/private', base_url=self.base,
+            headers={'Authorization': 'Bearer ' + prepared['token']}).status_code, 401)
+
     def test_wire_cookie_roundtrip_and_lost_response_retry_do_not_rotate_credential(self):
         prepared = self.prepare()
         self.assertEqual(prepared.status_code, 201)

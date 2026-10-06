@@ -1,0 +1,58 @@
+{
+  "title": "WebClock",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Join WebClock",
+        "description": "Enter the WebClock server address and the six-character invitation from its device management page.",
+        "data": {
+          "server_url": "Server address",
+          "join_code": "Join code"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Rejoin WebClock",
+        "description": "Enter a new invitation code. The old authorization will not be reused.",
+        "data": {
+          "join_code": "Join code"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Invalid server address; use an HTTP(S) origin without a path.",
+      "invalid_code": "Enter six letters or digits.",
+      "invalid_invitation": "Invitation invalid, expired or full.",
+      "rate_limited": "Too many attempts; wait before retrying.",
+      "https_required": "This server requires HTTPS.",
+      "join_attempt_conflict": "Join attempt expired; try again.",
+      "cannot_connect": "Cannot connect to WebClock or unsupported server version."
+    },
+    "abort": {
+      "already_configured": "Already configured",
+      "reauth_successful": "Reauthentication successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "emit_alarm_events": "Emit webclock_alarm events (configure HA automations separately)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "time": {
+        "name": "Time"
+      },
+      "calendar": {
+        "name": "Calendar"
+      },
+      "alarms": {
+        "name": "Alarms"
+      }
+    }
+  }
+}

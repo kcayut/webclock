@@ -28,6 +28,8 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 
 ### Schema 3 裝置 API
 
+Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](home-assistant.md)。
+
 | 路徑 | 方法與用途 |
 | --- | --- |
 | `/api/v2/device/join/prepare` | POST `{}`，建立或重用 10 分鐘加入嘗試；回 `attempt_id`／`expires_at`，並設定待加入 Cookie |
@@ -38,7 +40,19 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 | `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
 | `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
 
-瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
+瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。上述瀏覽器 prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
+
+### 非瀏覽器加入（Home Assistant）
+
+| 路徑 | 方法與用途 |
+| --- | --- |
+| `/api/v2/device/token/prepare` | POST `{}`；回 `attempt_id`、`expires_at`、`token`，首次 201、重用待加入 token 為 200；不設定 Cookie |
+| `/api/v2/device/token/join` | POST `{"attempt_id":"…","code":"A7K9M2"}`，帶待加入 `Authorization: Bearer <token>`；沿用同一原子加入交易，首次 201、同一成功嘗試重試 200 |
+| `/api/v2/device/token/leave` | POST `{}`，帶自身 Bearer 憑證；200 `{status:"left"}`，停用時仍可退出 |
+
+三個端點須為 JSON 並帶 `X-WebClock-Client: native-v1`；拒絕 Cookie、Origin、Referer 與任何 Sec-Fetch-* 瀏覽器標頭，且不提供 CORS。通過專用原生傳輸檢查後，僅這三個 POST 免 Cookie CSRF；該標頭本身不是授權。managed 仍要求 HTTPS；prepare 只核發無權限的短期秘密，join 必須同時提供匹配的秘密、嘗試 ID 及有效加入碼，沿用名額、到期與限速規則。資料只保存憑證摘要，所有 token 端點回應 `no-store`，不得記錄請求 body／Authorization 或回應秘密。
+
+成功後以同一 token 讀既有 display、browser-alarms、identity 並 POST status；不得把 token 當成管理 session 或以任意 device ID 接管裝置。HA 將秘密保存於整合設定，不放卡片設定／sensor 屬性，重試保留同一加入嘗試；收到重試衝突才明確重開加入流程。HA 每 15 秒取得完整授權快照，核對 identity 及三種 revision，並沿用最短租約期限；第一版不使用 304 快取，Server 現有 ETag 契約保留不變。
 
 自行退出與管理端個別刪除授權會移除指定裝置的授權、已完成加入嘗試與 `devices.json` 觀察記錄，管理列表不再顯示該裝置，並釋放全站 100 台上限中的名額。舊憑證與舊加入重試永久失效；API 立即拒絕，離線端仍依最長 300 秒租約處理。其他成員、群組與本機提醒保留；原邀請已用額度不退還。群組停用後仍可退出；成功後可重新 prepare，使用新邀請以新身份加入。保存失敗回 500（自行退出為 `storage_failure`），不清 Cookie，也不宣稱成功；若觀察記錄已刪除而授權保存失敗，原授權仍有效，觀察記錄由下次 status 重建，不保證跨檔原子回復。停用與移組保留裝置憑證及觀察記錄；撤銷後不能直接恢復。
 

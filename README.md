@@ -1,5 +1,7 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
+Home Assistant：支援六位英數加入碼與時間／行事曆／鬧鐘卡片，詳見[安裝與操作說明](doc/home-assistant.md)。
+
 # WebClock
 
 **繁體中文** · [English](README_en.md) · [日本語](README_jp.md)

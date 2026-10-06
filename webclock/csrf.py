@@ -53,6 +53,10 @@ def register_csrf(app):
         if (request.endpoint == 'managed_device.status' and same_origin()
                 and getattr(g, 'device_bearer_authenticated', False)):
             return None
+        if (request.endpoint in {'managed_device.token_prepare', 'managed_device.token_join',
+                                 'managed_device.token_leave'}
+                and getattr(g, 'device_native_request', False)):
+            return None
         expected = session.get('csrf_token')
         supplied = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token', '')
         if (not same_origin() or not isinstance(expected, str) or not expected
