@@ -5,6 +5,7 @@ from icalendar import Calendar
 import recurring_ical_events
 import json
 import os
+import tempfile
 import time
 import hashlib
 import re
@@ -113,10 +114,36 @@ def load_display_settings():
             saved = validate_settings(json.load(f))
     except FileNotFoundError:
         saved = {}
+    except ValueError as exc:
+        # Includes invalid JSON/UTF-8 and display schema validation only.
+        app.logger.error('Invalid display settings at %s (%s); using defaults, original file retained',
+                         SETTINGS_FILE, type(exc).__name__)
+        saved = {}
     return dict(DEFAULT_SETTINGS, **saved)
 
 
 def save_display_settings(settings):
+    settings = validate_settings(settings)
+    try:
+        original = Path(SETTINGS_FILE).read_bytes()
+    except FileNotFoundError:
+        original = None
+    if original is not None:
+        try:
+            validate_settings(json.loads(original.decode('utf-8')))
+        except ValueError:
+            # Callers hold settings_lock. Preserve the exact bytes before repair.
+            with tempfile.NamedTemporaryFile(dir=Path(SETTINGS_FILE).parent,
+                                             prefix='settings.corrupt-', suffix='.json',
+                                             delete=False) as backup:
+                try:
+                    backup.write(original)
+                    backup.flush()
+                    os.fsync(backup.fileno())
+                except OSError:
+                    os.unlink(backup.name)
+                    raise
+            app.logger.warning('Damaged display settings preserved at %s before repair', backup.name)
     save_json(SETTINGS_FILE, settings)
 
 

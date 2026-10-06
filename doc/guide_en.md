@@ -147,6 +147,14 @@ The admin page can download and import JSON backups. After validation and confir
 
 Admin version 1 JSON backups still contain only settings and manual reminders. They exclude smart schedules, devices, private calendar URLs, `.env`, and browser-local reminders; the existing import and `before-import.json` behavior is unchanged.
 
+### Damaged server display settings
+
+If `settings.json` contains invalid JSON, UTF-8, or display values, the server logs the path and error type and starts with normal display, 100% brightness, UTC+8, the deployment language, 24-hour time, and no night mode. The entire invalid object is ignored; startup leaves the original file untouched and cannot recover a last valid state that was never saved elsewhere. Valid brightness 0, manual black screen, and night settings remain supported.
+
+Save display settings again or import a valid version 1 backup to repair them. Before replacing `settings.json` atomically, the server preserves the exact damaged bytes in a unique `settings.corrupt-*.json` in the same directory, with permissions 600. If preservation or saving fails, the request fails and the original settings file and in-memory state remain unchanged; failed imports retain the existing reminder rollback behavior. Host administrators keep these archives; they are not automatically deleted or included in admin JSON exports.
+
+This recovery applies only to display settings. Permission and I/O errors still require repair; damaged authorization state still prevents startup and never enables anonymous management. The updater continues rejecting damaged saved data, so repair settings before retrying an update.
+
 ### Complete host-side data backup and restore
 
 On Linux/macOS, run `scripts/backup_clock.py` with Python that already has the WebClock dependencies installed. It preserves the current single data space: `.env`, legacy `manual_notes.json`, default and custom state directories, and a custom reminder file, including smart schedules, devices, and `calendar.json` stored there. Source code, venv, runtime environment overrides, systemd units, Docker configuration, and browser localStorage are excluded. Preserve those separately and prepare matching source and dependencies when moving hosts.

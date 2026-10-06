@@ -67,7 +67,7 @@ class SettingsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'zh-TW, en, ja'):
                 clock.deployment_language()
 
-    def test_write_failure_keeps_previous_settings_and_corrupt_file_is_not_overwritten(self):
+    def test_write_failure_keeps_previous_settings(self):
         self.client.post('/api/control', json={'brightness': 40})
         previous = self.path.read_bytes()
         with patch.object(clock.os, 'replace', side_effect=OSError('disk full')):
@@ -76,10 +76,131 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), previous)
         self.assertEqual(clock.display_settings['brightness'], 40)
         self.assertEqual(list(self.path.parent.glob('.settings-*')), [])
-        self.path.write_text('broken')
-        with self.assertRaises(ValueError):
-            clock.load_display_settings()
-        self.assertEqual(self.path.read_text(), 'broken')
+
+    def test_corrupt_settings_use_defaults_without_writing_or_logging_contents(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for raw in (b'broken', b'', b'\xff', b'[]', b'null',
+                    b'{"brightness": "PRIVATE-VALUE"}', b'{"brightness": 101}',
+                    b'{"mode": "black", "language": []}', b'{"night": {}}'):
+            with self.subTest(raw=raw):
+                self.path.write_bytes(raw)
+                for _ in range(2):
+                    with self.assertLogs(clock.app.logger, level='ERROR') as logs:
+                        self.assertEqual(clock.load_display_settings(), clock.DEFAULT_SETTINGS)
+                    self.assertIn(str(self.path), logs.output[0])
+                    self.assertNotIn('PRIVATE-VALUE', logs.output[0])
+                self.assertEqual(self.path.read_bytes(), raw)
+                self.assertEqual(list(self.path.parent.glob('settings.corrupt-*')), [])
+
+    def test_missing_and_valid_partial_settings_preserve_explicit_black_and_zero(self):
+        self.assertEqual(clock.load_display_settings(), clock.DEFAULT_SETTINGS)
+        self.assertFalse(self.path.exists())
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        saved = dict(mode='black', brightness=0, night=dict(clock.DEFAULT_NIGHT, enabled=True, black=True))
+        self.path.write_text(json.dumps(saved))
+        self.assertEqual(clock.load_display_settings(), dict(clock.DEFAULT_SETTINGS, **saved))
+        with patch('builtins.open', side_effect=PermissionError('unreadable')):
+            with self.assertRaises(PermissionError):
+                clock.load_display_settings()
+
+    def test_control_and_import_preserve_corrupt_bytes_before_repair(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        expected = dict(clock.DEFAULT_SETTINGS, brightness=40)
+        raw = b'{"brightness": "bad"}\xff'
+        for route, data in (('/api/control', {'brightness': 40}),
+                            ('/api/backup', dict(version=1, settings=expected, notes=[]))):
+            with self.subTest(route=route), patch.object(clock, 'NOTES_FILE', str(self.path.parent / 'notes.json')):
+                self.path.write_bytes(raw)
+                before = set(self.path.parent.glob('settings.corrupt-*'))
+                self.assertEqual(self.client.post('/api/control', json={'brightness': 101}).status_code, 400)
+                self.assertEqual(self.path.read_bytes(), raw)
+                self.assertEqual(set(self.path.parent.glob('settings.corrupt-*')), before)
+                with self.assertLogs(clock.app.logger, level='WARNING'):
+                    self.assertEqual(self.client.post(route, json=data).status_code, 200)
+                backups = set(self.path.parent.glob('settings.corrupt-*')) - before
+                self.assertEqual(len(backups), 1)
+                backup = backups.pop()
+                self.assertEqual(backup.read_bytes(), raw)
+                self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(clock.load_display_settings(), expected)
+                self.assertEqual(clock.display_settings, expected)
+                # Further saves of healthy settings do not create more archives.
+                clock.save_display_settings(expected)
+                self.assertEqual(set(self.path.parent.glob('settings.corrupt-*')), before | {backup})
+
+    def test_repair_failure_keeps_original_and_in_memory_settings(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        raw = b'broken'
+        self.path.write_bytes(raw)
+        for target, name in ((clock.tempfile, 'NamedTemporaryFile'), (clock.os, 'fsync'),
+                             (clock.os, 'replace')):
+            with self.subTest(failure=name), patch.object(target, name, side_effect=OSError('disk full')):
+                with self.assertLogs(clock.app.logger, level='ERROR'):
+                    self.assertEqual(self.client.post('/api/control', json={'brightness': 40}).status_code, 500)
+            self.assertEqual(self.path.read_bytes(), raw)
+            self.assertEqual(clock.display_settings, clock.DEFAULT_SETTINGS)
+            self.assertEqual(list(self.path.parent.glob('.settings-*')), [])
+            archives = list(self.path.parent.glob('settings.corrupt-*'))
+            self.assertEqual(len(archives), 1 if name == 'replace' else 0)
+            for archive in archives:
+                self.assertEqual(archive.read_bytes(), raw)
+        with patch.object(Path, 'read_bytes', side_effect=PermissionError('unreadable')):
+            with self.assertLogs(clock.app.logger, level='ERROR'):
+                self.assertEqual(self.client.post('/api/control', json={'brightness': 40}).status_code, 500)
+        self.assertEqual(self.path.read_bytes(), raw)
+        with self.assertLogs(clock.app.logger, level='WARNING'):
+            self.assertEqual(self.client.post('/api/control', json={'brightness': 40}).status_code, 200)
+        notes = self.path.parent / 'notes.json'
+        original_notes = [{'id': 1, 'text': 'keep', 'due_date': ''}]
+        notes.write_text(json.dumps(original_notes))
+        self.path.write_bytes(raw)
+        previous = dict(clock.display_settings)
+        with patch.object(clock, 'NOTES_FILE', str(notes)), \
+             patch.object(clock.tempfile, 'NamedTemporaryFile', side_effect=OSError('disk full')):
+            with self.assertLogs(clock.app.logger, level='ERROR'):
+                response = self.client.post('/api/backup', json=dict(
+                    version=1, settings=dict(clock.DEFAULT_SETTINGS, brightness=80), notes=[]))
+                self.assertEqual(response.status_code, 500)
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(clock.display_settings, previous)
+        self.assertEqual(json.loads(notes.read_text()), original_notes)
+
+    def test_cold_start_recovers_display_without_downgrading_authorization(self):
+        from webclock.services.auth_service import AuthService
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_bytes(b'broken')
+        environment = dict(os.environ, WEBCLOCK_STATE_DIR=str(self.path.parent),
+                           NOTES_FILE=str(self.path.parent / 'notes.json'), ICAL_URL='',
+                           WEBCLOCK_HA_APP='0', WEBCLOCK_INGRESS='0')
+        script = '''
+import app as clock
+assert clock.display_settings == clock.DEFAULT_SETTINGS
+client = clock.app.test_client()
+assert client.get('/', base_url='https://localhost').status_code == 200
+assert client.get('/api/time', base_url='https://localhost').status_code == 200
+response = client.get('/api/backup', base_url='https://localhost')
+assert response.status_code == (401 if clock.auth_service().mode() == 'managed' else 200)
+'''
+        for mode in ('self', 'managed'):
+            if mode == 'managed':
+                AuthService(self.path.parent / 'auth.json').setup(
+                    'owner', 'long-test-only-password', enable_managed=True)
+            with self.subTest(mode=mode):
+                result = subprocess.run([sys.executable, '-c', script], env=environment,
+                                        cwd=Path(__file__).resolve().parents[1],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('JSONDecodeError', result.stderr)
+                self.assertEqual(self.path.read_bytes(), b'broken')
+                self.assertEqual(list(self.path.parent.glob('settings.corrupt-*')), [])
+        auth = self.path.parent / 'auth.json'
+        auth.write_bytes(b'broken')
+        result = subprocess.run([sys.executable, '-c', 'import app'], env=environment,
+                                cwd=Path(__file__).resolve().parents[1],
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('AuthStateError', result.stderr)
+        self.assertEqual(auth.read_bytes(), b'broken')
 
 
 class ProtectedDataValidationTest(unittest.TestCase):
