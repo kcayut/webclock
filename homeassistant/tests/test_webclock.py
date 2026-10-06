@@ -1,4 +1,4 @@
-"""Run with HA installed: python -m unittest discover -s homeassistant_tests."""
+"""Run with HA installed: python -m unittest discover -s homeassistant/tests."""
 import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -21,8 +21,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'homeassistant'))
 sys.path.insert(0, str(ROOT / 'tests'))
 import test_device_enrollment as enrollment
 from custom_components.webclock.api import ApiError, WebClockClient, normalize_url

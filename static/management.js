@@ -28,7 +28,7 @@
         languageSelect.addEventListener('change', function () {
             var select = this, language = select.value;
             select.disabled = true;
-            fetch('/api/management/language', {
+            fetch(window.webclockUrl ? window.webclockUrl('/api/management/language') : '/api/management/language', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content},
                 body: JSON.stringify({language: language})

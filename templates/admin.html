@@ -189,7 +189,7 @@
     <p class="help" data-i18n="manual_events_hint">{{ translations[language].manual_events_hint }}</p>
     {% if error %}<p class="form-error" role="alert" data-i18n="{{ error }}">{{ translations[language][error] }}</p>{% endif %}
         {% set draft = request.form if request.endpoint == 'add' else {} %}
-        <form action="/add" method="POST">
+        <form action="{{ url_for('add') }}" method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ note_fields(draft, 'add') }}
             {{ window_fields(draft, 'add') }}
@@ -216,12 +216,12 @@
             </div>
             <span data-note-group-summary="{{ note.id }}" class="content-group-summary"></span>
             <div class="note-actions">
-                <form action="/toggle/{{ note.id }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
-                <form action="/delete/{{ note.id }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
+                <form action="{{ url_for('toggle', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
+                <form action="{{ url_for('delete', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
             </div>
             <details {% if editing_id == note.id %}open{% endif %}>
                 <summary data-i18n="edit_note">{{ translations[language].edit_note }}</summary>
-                <form action="/schedule/{{ note.id }}" method="POST">
+                <form action="{{ url_for('schedule', id=note.id) }}" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
@@ -267,7 +267,7 @@
         </div>
         <section class="panel">
         <h2 data-i18n="backup_export">{{ translations[language].backup_export }}</h2>
-        <p><a class="btn primary" href="/api/backup" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
+        <p><a class="btn primary" href="{{ url_for('backup') }}" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
         </section>
         <section class="panel">
         <h2 data-i18n="backup_import">{{ translations[language].backup_import }}</h2>
@@ -396,7 +396,7 @@
 
         document.addEventListener('visibilitychange', function () {
             if (document.hidden || document.getElementById('time-format-select').disabled) return;
-            fetch('/api/status', {cache: 'no-store'}).then(function (response) {
+            fetch(window.webclockUrl ? window.webclockUrl('/api/status') : '/api/status', {cache: 'no-store'}).then(function (response) {
                 if (!response.ok) throw new Error('Settings unavailable');
                 return response.json();
             }).then(function (data) {
@@ -406,7 +406,7 @@
         applyTimeFormat(currentTimeFormat);
 
         function postSettings(payload, keepDraft) {
-            return fetch('/api/control', {
+            return fetch(window.webclockUrl ? window.webclockUrl('/api/control') : '/api/control', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content },
                 body: JSON.stringify(payload)
@@ -442,7 +442,7 @@
                 if (data.version !== 1 || !data.settings || !Array.isArray(data.notes)) throw new Error('Invalid backup');
                 if (!window.confirm(t('backup_confirm'))) return;
                 button.disabled = true;
-                var response = await fetch('/api/backup', {
+                var response = await fetch(window.webclockUrl ? window.webclockUrl('/api/backup') : '/api/backup', {
                     method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content}, body: JSON.stringify(data)
                 });
                 if (!response.ok) throw new Error('Restore failed');

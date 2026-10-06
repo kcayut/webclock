@@ -14,7 +14,8 @@
                 init.headers['X-CSRF-Token'] = document.getElementById('csrf-token').content;
                 init.body = JSON.stringify(body);
             }
-            const response = await fetch('/api/v1/groups/assignments', init), result = await response.json();
+            const url = window.webclockUrl ? window.webclockUrl('/api/v1/groups/assignments') : '/api/v1/groups/assignments';
+            const response = await fetch(url, init), result = await response.json();
             if (!response.ok) throw new Error('Assignment request failed');
             return result;
         }

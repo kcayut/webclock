@@ -1,7 +1,7 @@
 /* Optional ES5 device authorization. Private snapshots live in memory only. */
 (function () {
     'use strict';
-    var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
+    var origin = window.webclockBase || window.location.origin || (window.location.protocol + '//' + window.location.host);
     var source = '', mode = 'unknown', identity = null, group = null, pending = null, phase = 'unknown';
     var generation = 0, sequence = 0, handled = {}, listeners = [], joining = 0, enrolling = false;
     var resources = {}, bound = false, checked = false, checking = false, lastIdentityCheck = 0;
@@ -49,7 +49,7 @@
     }
     function setSource(value, bootMode) {
         value = String(value || '').replace(/\/+$/, '');
-        if (!/^https?:\/\/[A-Za-z0-9.\-:\[\]]+$/.test(value)) value = '';
+        if (value !== origin && !/^https?:\/\/[A-Za-z0-9.\-:\[\]]+$/.test(value)) value = '';
         if (value === source) return;
         source = value; mode = sameOrigin() && (bootMode === 'self' || bootMode === 'managed') ? bootMode : 'unknown';
         identity = null; pending = null; phase = 'unknown'; checked = false; checking = false; joining += 1; enrolling = false;

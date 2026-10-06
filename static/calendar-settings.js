@@ -62,7 +62,7 @@
     function send(method, url, payload, done) {
         var xhr = new XMLHttpRequest();
         var finished = false;
-        xhr.open(method, url, true);
+        xhr.open(method, window.webclockUrl ? window.webclockUrl(url) : url, true);
         xhr.timeout = 15000;
         function finish(ok, data) {
             if (finished) return;

@@ -49,7 +49,7 @@
             options.body = JSON.stringify(data);
         }
         if (method !== 'GET') options.headers['X-CSRF-Token'] = $('csrf-token').content;
-        const response = await fetch(url, options);
+        const response = await fetch(window.webclockUrl ? window.webclockUrl(url) : url, options);
         const result = await response.json();
         if (!response.ok) {
             const error = new Error(t(result.code === 'group_has_members' ? 'group_has_members' : 'group_request_failed'));

@@ -348,7 +348,7 @@
             </div>
         </form>
         <div id="local-events-list"></div>
-        <p><a id="alarm-manage" href="/admin">{{ translations[language].alarm_manage }}</a></p>
+        <p><a id="alarm-manage" href="{{ url_for('admin') }}">{{ translations[language].alarm_manage }}</a></p>
         <p id="alarm-help">{{ translations[language].alarm_sound_hint }}</p>
     </div>
 
@@ -368,7 +368,10 @@
         var STORAGE_SERVER_URL = 'webclock.serverUrl';
         var STORAGE_SETTINGS = 'webclock.settings';
         var STORAGE_LOCAL_EVENTS = 'webclock.localEvents';
-        var serverUrl = normalizeServerUrl(readStoredValue(STORAGE_SERVER_URL, window.location.origin)) || window.location.origin;
+        var localServerUrl = window.webclockBase || window.location.origin;
+        var storedServerUrl = readStoredValue(STORAGE_SERVER_URL, localServerUrl);
+        if (window.webclockBase && storedServerUrl === window.location.origin) storedServerUrl = localServerUrl;
+        var serverUrl = normalizeServerUrl(storedServerUrl) || localServerUrl;
         var deploymentMode = document.body.getAttribute('data-deployment-mode');
         var deviceSession = window.WebClockDeviceSession;
         var connectionMode = 'server';
@@ -449,6 +452,7 @@
                 trimmed = "http://" + trimmed;
             }
             trimmed = trimmed.replace(/\/+$/, "");
+            if (window.webclockBase && trimmed === window.webclockBase) return trimmed;
             // Only an origin is accepted: URL user-info could otherwise send
             // credentials even when cross-origin XHR credentials are disabled.
             if (!/^https?:\/\/[A-Za-z0-9.\-:\[\]]+$/i.test(trimmed)) return "";
@@ -580,7 +584,7 @@
 
         function settingsStorageKey() {
             if (deviceSession && deviceSession.getState().identity) return STORAGE_SETTINGS + '.' + encodeURIComponent(deviceSession.getState().scope);
-            if (serverUrl !== window.location.origin) return STORAGE_SETTINGS + '.public.' + encodeURIComponent(serverUrl);
+            if (serverUrl !== localServerUrl) return STORAGE_SETTINGS + '.public.' + encodeURIComponent(serverUrl);
             return STORAGE_SETTINGS;
         }
 
@@ -736,7 +740,7 @@
                 });
                 return;
             }
-            var safeShared = deploymentMode === 'self' && serverUrl === window.location.origin;
+            var safeShared = deploymentMode === 'self' && serverUrl === localServerUrl;
             var xhr = new XMLHttpRequest();
             var request = {
                 sourceUrl: serverUrl,

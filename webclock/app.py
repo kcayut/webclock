@@ -33,6 +33,7 @@ from webclock.access_control import register_access_control
 from webclock.services.device_access_service import AccessError, DeviceAccessService, calendar_content_allows
 from webclock.api.groups import groups_api
 from webclock.api.managed_device import managed_device_api
+from webclock.ingress import IngressPathMiddleware
 from webclock.translations.clock_enrollment import DEVICE_ENROLLMENT_TRANSLATIONS
 from webclock.translations.common import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, UI_TRANSLATIONS
 
@@ -46,6 +47,7 @@ SETTINGS_FILE = str(STATE_DIR / 'settings.json')
 CACHE_DURATION = 300
 
 app = Flask(__name__, root_path=str(ROOT))
+app.wsgi_app = IngressPathMiddleware(app.wsgi_app)
 _auth_services = {}
 
 
@@ -612,6 +614,7 @@ def template_context():
     if language not in SUPPORTED_LANGUAGES:
         language = DEFAULT_SETTINGS['language']
     return {
+        'app_base': request.script_root.rstrip('/') if has_request_context() else '',
         'language': language,
         'time_format': display_settings.get('time_format', '24h'),
         'languages': SUPPORTED_LANGUAGES,

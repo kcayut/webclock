@@ -1,15 +1,71 @@
 # Home Assistant
 
-WebClock 可作為 Home Assistant（HA）的受管顯示來源。一次加入建立一個裝置身份，時間、行事曆、鬧鐘三種卡片共用該身份；群組與內容仍由 WebClock 後台管理。
+WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；自訂整合則把同一台 Server 的時間、行事曆與鬧鐘帶進 HA。一次加入建立一個裝置身份，三種卡片共用該身份；群組與內容仍由 WebClock 管理頁管理。
 
-## 安裝與加入
+## 專案目錄
 
-1. 更新 WebClock Server 至包含 `/api/v2/device/token/prepare`、`token/join`、`token/leave` 的版本。本次程式須先部署至你的 Server；只有安裝 HA 整合不會更新 Server。
-2. 將本專案的 `custom_components/webclock` 整個資料夾複製到 HA 的 `/config/custom_components/webclock`，重新啟動 HA。這是自訂整合，目前使用手動安裝。
-3. 在 WebClock「裝置」管理頁建立群組、勾選要顯示的行事曆／提醒／鬧鐘，產生六位英數加入碼。新群組沒有指派內容時只顯示時間。
-4. HA → 設定 → 裝置與服務 → 新增整合 → 搜尋 **WebClock**，輸入 Server 位址及加入碼，例如 `A7K9M2`。位址使用 `https://clock.example` 或可信任自用區網的 `http://192.168.1.20:5000`；目前不支援反向代理子路徑。
-5. 帳密／受管部署必須使用有效憑證的 HTTPS；整合不提供略過 TLS 驗證的選項。Server 位址必須從 HA 主機可達。
-6. 加入後，在 WebClock 裝置面板可看到類型 `homeassistant` 的裝置。HA 建立時間、行事曆、鬧鐘三個 sensor。HA 重啟、重新載入及增加卡片會沿用原身份，不再消耗加入名額。
+Home Assistant 專用檔案集中在 `homeassistant/`：
+
+```text
+homeassistant/
+├── addon/                       # HA App 設定與容器映像建置檔
+├── custom_components/webclock/  # 複製到 HA 的自訂整合
+└── tests/                       # 整合及卡片測試
+```
+
+Server 端的加入 API 仍是 WebClock 主程式的一部分，不能只複製上述資料夾而略過 Server 更新。
+
+## 在 Home Assistant 內執行 WebClock Server
+
+App 的發行映像發布後，可從 HA 的「設定 → Apps → App 商店 → 儲存庫」加入：
+
+```text
+https://github.com/kcayut/webclock
+```
+
+接著安裝 **WebClock**、啟動 App，再按「開啟網頁介面」。管理頁透過 Home Assistant Ingress 顯示在側邊欄，預設不會對區網開放額外連接埠。WebClock 的設定、行事曆來源、裝置身份與鬧鐘都保存在 App 的 `/data`，並使用冷備份模式由 HA 備份。
+
+目前原始碼已包含 App 的第一版設定與映像建置檔，但 `ghcr.io/kcayut/webclock-addon` 尚未在這次工作中發布；映像發布前，App 商店安裝會顯示無法取得映像。開發者可從專案根目錄驗證映像：
+
+```bash
+docker build -f homeassistant/addon/Dockerfile -t webclock-addon .
+```
+
+若網頁時鐘、ESP 或區網上的其他裝置也要連線，請在 App 的「網路」設定把容器連接埠 `8099` 指定到主機連接埠。不要直接公開到 Internet；對外存取應由 HTTPS 反向代理及 WebClock managed 模式保護。
+
+同一台 HA 內的 WebClock 自訂整合可使用 `http://webclock:8099` 連到 App。`webclock` 是 App 提供的固定內部 DNS 別名，不必依賴安裝來源產生的動態名稱。
+
+## 自訂整合安裝前準備
+
+1. WebClock Server 須更新至包含 `/api/v2/device/token/prepare`、`token/join`、`token/leave` 的版本。
+2. 確認 HA 主機可以連到 WebClock Server。正式的受管部署使用有效憑證的 HTTPS；可信任的自用區網可以使用 HTTP。
+3. WebClock Server 位址只填來源，例如 `https://clock.example`、`http://192.168.1.20:5000`，或同機 App 的 `http://webclock:8099`。自訂整合目前不接受任意反向代理子路徑；App 的 Ingress 子路徑由 Server 自動處理。
+
+## 安裝整合
+
+將專案中的 `homeassistant/custom_components/webclock` 整個資料夾複製到 HA 的 `/config/custom_components/webclock`，然後重新啟動 HA。請保留 `webclock` 這層目錄，不要只複製其中的 Python 檔案。
+
+若可在 HA 主機使用終端機，可從 WebClock 專案根目錄執行：
+
+```bash
+mkdir -p /config/custom_components
+cp -R homeassistant/custom_components/webclock /config/custom_components/
+```
+
+重新啟動後，進入「設定 → 裝置與服務 → 新增整合」，搜尋 **WebClock**。如果搜尋不到，先檢查 `/config/custom_components/webclock/manifest.json` 是否存在，再查看 HA 日誌中的自訂整合載入錯誤。
+
+## 用六位加入碼連接
+
+1. 在 WebClock 管理頁的「裝置」區建立或選擇群組，指派要顯示的行事曆、提醒與鬧鐘。
+2. 為該群組產生六位英數加入碼，例如 `A7K9M2`。加入碼有期限與名額限制，並不是長期密碼。
+3. 在 HA 新增 **WebClock** 整合，輸入 Server 位址與加入碼。整合不要求 WebClock 管理員帳密。
+4. 成功後，WebClock 裝置面板會出現類型 `homeassistant` 的裝置；HA 會建立時間、行事曆、鬧鐘三個 sensor。
+
+三個 sensor 及其卡片共用同一裝置身份。重新啟動 HA、重新載入整合或增加卡片不會再次註冊，也不會重複消耗加入名額。需要顯示另一個群組時，才另外新增一個 WebClock 整合實例。
+
+加入失敗時先確認加入碼尚未過期、群組仍啟用且名額未滿。受管模式拒絕無效憑證的 HTTPS；本整合不提供略過 TLS 驗證的選項。
+
+## 加入儀表板卡片
 
 卡片 JavaScript 由整合自動提供及載入，無需另填 token 或卡片資源網址。安裝後若儀表板已開啟，重新載入瀏覽器，再從新增卡片清單選擇 **WebClock Time / Calendar / Alarms**；選取該整合對應的 sensor 即可。
 
@@ -26,7 +82,7 @@ cards:
     entity: sensor.webclock_alarms
 ```
 
-三種卡片支援繁體中文、English、日文，跟隨 Server 群組的顯示語言、時區與 12／24 小時制。HA 的整合設定頁則跟隨 HA 介面語言。
+三種卡片支援繁體中文、English、日文，跟隨 Server 群組的顯示語言、時區與 12／24 小時制。HA 的整合設定頁則跟隨 HA 介面語言。卡片是唯讀顯示；行事曆與鬧鐘的新增、修改、群組指派仍在 WebClock 管理頁完成。
 
 ## 卡片與同步
 
@@ -58,6 +114,20 @@ actions: []
 
 同一實例的同次鬧鐘在發事件前先記錄，不因重啟或重複快照再次發送；錯過時間不補發。若恰在保存後、發送前當機，該次可能漏發，採「最多一次」而非宣稱保證送達。鬧鐘只在有效租約內排程，撤權／租約到期／卸載會取消待發事件；暫時斷線仍可能在有效租約內發事件。實際通知、揚聲器播放及播放完成由 HA 自動化負責驗收。
 
+## 管理、更新與移除
+
+- **改名、移組、停用、恢復、要求同步**：在 WebClock 裝置管理頁操作。HA 最多約 15 秒後取得更新；要求同步的 ACK 代表資料已取得，不代表通知或揚聲器已實際執行。
+- **憑證撤銷**：WebClock 撤銷裝置後，HA 會要求重新授權。請在 WebClock 產生新的加入碼，再從 HA 的修復提示輸入；原裝置憑證不會恢復。
+- **更新整合**：以新版 `homeassistant/custom_components/webclock` 覆蓋 HA 的 `/config/custom_components/webclock`，重新啟動 HA，並重新載入瀏覽器。不要刪除 HA 的整合項目，否則會退出 Server 裝置身份。
+- **移除整合**：在 HA「設定 → 裝置與服務 → WebClock」刪除該項目。HA 會嘗試通知 Server 移除裝置；若 Server 當時離線，請再到 WebClock 裝置管理頁手動撤銷殘留裝置。
+
+## 常見問題
+
+- **卡片清單找不到 WebClock**：重新啟動 HA 後強制重新載入瀏覽器，並確認整合已成功載入。卡片資源由整合自動註冊，不需要手動新增 JavaScript URL。
+- **只有時間，沒有行事曆或鬧鐘**：檢查 WebClock 群組是否已指派內容、裝置是否啟用，以及授權租約是否有效。新建的空群組原本就只顯示時間。
+- **暫時斷線**：已校準時間會繼續顯示；私人行事曆與鬧鐘僅保留到 Server 核發的租約到期，之後會清除。
+- **事件沒有播放聲音**：`webclock_alarm` 只是一個 HA 事件。必須另建自動化並指定通知或 `media_player` 動作；整合本身不直接控制揚聲器。
+
 ## 驗證
 
 測試環境：Home Assistant Core **2026.9.4**、Python **3.14**。其他 HA 版本尚未逐一驗收。
@@ -65,12 +135,12 @@ actions: []
 ```bash
 python -m unittest discover -s tests -p 'test_*.py'
 # 下列測試另外需要 Home Assistant 與 WebClock 的 Python 依賴：
-python -m unittest discover -s homeassistant_tests -v
-node tests/test_homeassistant_cards.js
-node --check custom_components/webclock/www/webclock-cards.js
+python -m unittest discover -s homeassistant/tests -p 'test_webclock.py' -v
+node homeassistant/tests/test_cards.js
+node --check homeassistant/custom_components/webclock/www/webclock-cards.js
 ```
 
-本機驗證已通過 Server 266 項測試、既有 JavaScript 回歸、HA 6 項整合／HTTPS 測試及卡片測試。在隔離的真實 HA 安裝中，也已操作錯碼重試保留輸入、六碼加入、三卡共用單一裝置、桌面／手機顯示、重啟保留身份及選項、到點只發一次事件、後台改名、停用／恢復、移組內容隔離與同步 ACK。正式環境部署、使用者的 HA 主機、實際通知／揚聲器及 ESP／舊 iPad 實機尚未驗收。
+本機驗證已通過 Server 269 項測試、既有 JavaScript 回歸、HA 6 項整合／HTTPS 測試及卡片測試。在隔離的真實 HA 安裝中，也已操作錯碼重試保留輸入、六碼加入、三卡共用單一裝置、桌面／手機顯示、重啟保留身份及選項、到點只發一次事件、後台改名、停用／恢復、移組內容隔離與同步 ACK。App 容器映像建置、正式環境部署、使用者的 HA 主機、實際通知／揚聲器及 ESP／舊 iPad 實機尚未驗收。
 
 測試環境限制：macOS 上的隔離 HA Core 程序兩次在收到停止訊號後，以 SIGSEGV／139 結束；崩潰堆疊位於 Python 3.14.6 清理物件與模組階段，原因尚未定位。重新啟動後身份與資料仍可恢復，但不能據此宣稱主機穩定性已通過。該環境也未配置 FFmpeg／TTS，未進行聲音播放驗收。
 

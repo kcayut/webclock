@@ -17,7 +17,7 @@
         return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : deviceNow();
     }
     function now() { return baseTime === null ? deviceNow() : baseTime + elapsedNow() - baseElapsedTime; }
-    function sourceUrl() { return window.serverUrl || window.location.origin; }
+    function sourceUrl() { return window.serverUrl || window.webclockBase || window.location.origin; }
     function sourceScope() { return session ? session.getState().scope : sourceUrl(); }
     function storageKey() { return 'webclock.dismissedAlarms.' + source; }
     function ready() { return !!(window.AlarmAudio && window.AlarmAudio.isReady()); }
@@ -119,7 +119,7 @@
             return;
         }
         if (!document.body.getAttribute || document.body.getAttribute('data-deployment-mode') !== 'self') return;
-        if (target !== window.location.origin) return;
+        if (target !== (window.webclockBase || window.location.origin)) return;
         var sequence = ++requestNumber;
         var xhr = new XMLHttpRequest();
         xhr.open('GET', target + '/api/v1/browser-alarms', true);

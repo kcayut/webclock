@@ -53,6 +53,9 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
     def owner():
         return auth_provider().owner_id()
 
+    def cookie_path():
+        return request.script_root.rstrip('/') + '/api/v2/device'
+
     def authorize():
         """Called by the app guard before its CSRF check, including in self mode."""
         g.device_bearer_authenticated = False
@@ -136,7 +139,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         if result['token'] is not None:
             response.set_cookie(DEVICE_COOKIE, result['token'], max_age=COOKIE_SECONDS,
                 secure=auth_provider().mode() == 'managed', httponly=True, samesite='Lax',
-                path='/api/v2/device')
+                path=cookie_path())
         return response
 
     @api.route('/identity')
@@ -156,7 +159,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         body(())
         access_provider().leave(g.device_token, owner())
         response = jsonify(status='left')
-        response.delete_cookie(DEVICE_COOKIE, path='/api/v2/device',
+        response.delete_cookie(DEVICE_COOKIE, path=cookie_path(),
                               secure=auth_provider().mode() == 'managed', httponly=True, samesite='Lax')
         return response
 

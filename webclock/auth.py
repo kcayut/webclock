@@ -53,13 +53,14 @@ def register_auth(app, service_getter):
 
     def page(error=None):
         lang = language()
-        return render_template('login.html', language=lang, login_text=LOGIN_TEXT[lang], error=error)
+        return render_template('login.html', language=lang, login_text=LOGIN_TEXT[lang], error=error,
+                               back_url=request.script_root.rstrip('/') + '/')
 
     @auth.route('/login', methods=['GET', 'POST'])
     def login():
         service = service_getter()
         if service.mode() == 'self':
-            return redirect('/admin')
+            return redirect(request.script_root.rstrip('/') + '/admin')
         if request.method == 'GET':
             return page()
         if not request.is_secure:
@@ -86,7 +87,7 @@ def register_auth(app, service_getter):
         if request.is_json:
             return jsonify(owner_id=identity['owner_id'], expires_at=identity['expires_at'],
                            csrf_token=session['csrf_token'])
-        return redirect('/admin')
+        return redirect(request.script_root.rstrip('/') + '/admin')
 
     @auth.route('/logout', methods=['POST'])
     def logout():
@@ -95,6 +96,6 @@ def register_auth(app, service_getter):
         session['csrf_token'] = secrets.token_urlsafe(32)
         if request.is_json:
             return jsonify(ok=True, csrf_token=session['csrf_token'])
-        return redirect('/login')
+        return redirect(request.script_root.rstrip('/') + '/login')
 
     app.register_blueprint(auth)

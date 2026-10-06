@@ -136,7 +136,7 @@
             <ul id="device-list" class="device-list"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
             <section class="other-schedules" aria-labelledby="other-schedules-title">
                 <div class="section-heading"><h2 id="other-schedules-title" data-schedule-i18n="other_schedules">{{ t.other_schedules }}</h2><button id="add-other-schedule" type="button" data-schedule-i18n="add_other">{{ t.add_other }}</button></div>
-                <p class="help"><span data-schedule-i18n="other_hint">{{ t.other_hint }}</span> <a href="/admin#calendar-title" data-schedule-i18n="calendar_settings">{{ t.calendar_settings }}</a></p>
+                <p class="help"><span data-schedule-i18n="other_hint">{{ t.other_hint }}</span> <a href="{{ url_for('admin', _anchor='calendar-title') }}" data-schedule-i18n="calendar_settings">{{ t.calendar_settings }}</a></p>
                 <ul id="other-schedule-list" class="schedule-list" data-schedule-aria-label="other_schedules" aria-label="{{ t.other_schedules }}"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
             </section>
             <details id="legacy-devices" class="panel legacy-devices" hidden>

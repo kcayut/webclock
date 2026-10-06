@@ -1,4 +1,4 @@
-/* Runnable without HA/npm dependencies: node tests/test_homeassistant_cards.js */
+/* Runnable without HA/npm dependencies: node homeassistant/tests/test_cards.js */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');

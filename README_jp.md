@@ -1,6 +1,6 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
-Home Assistant：6桁の英数字コードで参加し、時刻・カレンダー・アラームカードを利用できます。[導入手順](doc/home-assistant.md)をご覧ください。
+Home Assistant：App として Server を実行し、6桁の英数字コードで参加して、時刻・カレンダー・アラームカードを利用できます。[導入手順](doc/home-assistant.md)をご覧ください。
 
 # WebClock
 

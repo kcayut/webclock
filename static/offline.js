@@ -10,7 +10,7 @@
         show('unavailable');
         return;
     }
-    navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(function () {
+    navigator.serviceWorker.register(window.webclockUrl ? window.webclockUrl('/sw.js') : 'sw.js', {updateViaCache: 'none'}).then(function () {
         return navigator.serviceWorker.ready;
     }).then(function () {
         show('ready');

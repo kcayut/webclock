@@ -1,6 +1,6 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
-Home Assistant：支援六位英數加入碼與時間／行事曆／鬧鐘卡片，詳見[安裝與操作說明](doc/home-assistant.md)。
+Home Assistant：可直接以 App 執行 Server，並支援六位英數加入碼與時間／行事曆／鬧鐘卡片，詳見[安裝與操作說明](doc/home-assistant.md)。
 
 # WebClock
 
