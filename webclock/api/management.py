@@ -211,7 +211,18 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         if device_access is None:
             abort(503, description='Device authorization is unavailable')
         access = device_access()
-        return jsonify(device=access.update_device(owner_id(), device_id, request.get_json()))
+        with storage_lock:
+            device = access.update_device(owner_id(), device_id, request.get_json())
+            return jsonify(device=device, display_settings=access.get_device_display(owner_id(), device_id))
+
+    @api.route('/api/v1/devices/<device_id>/display-settings', methods=['GET', 'PATCH'])
+    def device_display_settings(device_id):
+        if device_access is None:
+            abort(503, description='Device authorization is unavailable')
+        access = device_access()
+        if request.method == 'PATCH':
+            return jsonify(access.update_device_display(owner_id(), device_id, request.get_json()))
+        return jsonify(access.get_device_display(owner_id(), device_id))
 
     @api.route('/api/v1/devices/<device_id>/commands', methods=['POST'])
     def device_command(device_id):

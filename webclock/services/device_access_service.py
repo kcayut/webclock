@@ -182,7 +182,8 @@ class DeviceAccessService:
                              'credential_generation', 'created_at', 'assignment_revision', 'rejoin_required'}
             digests = set()
             for device_id, row in data['devices'].items():
-                if (not isinstance(row, dict) or set(row) != device_fields or row['id'] != device_id
+                if (not isinstance(row, dict) or not device_fields <= set(row)
+                        or set(row) - (device_fields | {'display_overrides'}) or row['id'] != device_id
                         or not isinstance(device_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', device_id)
                         or row['group_id'] not in data['groups']
                         or row['owner_id'] != data['groups'][row['group_id']]['owner_id']
@@ -191,6 +192,8 @@ class DeviceAccessService:
                         or type(row['credential_generation']) is not int or row['credential_generation'] < 1
                         or type(row['assignment_revision']) is not int or row['assignment_revision'] < 1):
                     raise ValueError('Invalid stored device identity')
+                if 'display_overrides' in row:
+                    self._device_overrides(row['display_overrides'])
                 digest = row['credential_digest']
                 if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest)
                                            or digest in digests):
@@ -292,6 +295,58 @@ class DeviceAccessService:
             if link and set(link['source_ids']) - (available['calendar_source_ids'] | {'local'}):
                 raise ValueError('Selected alarm depends on a missing calendar source')
         return result
+
+    def _device_overrides(self, overrides):
+        # Night mode is one override, so parent changes cannot create an invalid
+        # start/end combination from different layers.
+        if not isinstance(overrides, dict):
+            raise ValueError('Display overrides must be an object')
+        if 'night' in overrides and (not isinstance(overrides['night'], dict)
+                or set(overrides['night']) != set(self._defaults()['night'])):
+            raise ValueError('Override the complete night settings or inherit them')
+        return self._settings(overrides)[0]
+
+    def _device_display(self, state, row):
+        group = state['groups'][row['group_id']]
+        inherited = self._settings(group['display_overrides'])[1]
+        overrides = self._device_overrides(row.get('display_overrides', {}))
+        sources = {}
+        for key, value in inherited.items():
+            if key == 'night':
+                for field in value:
+                    sources['night.' + field] = ('device' if key in overrides else
+                        'group' if field in group['display_overrides'].get(key, {}) else 'default')
+            else:
+                sources[key] = 'device' if key in overrides else 'group' if key in group['display_overrides'] else 'default'
+        return dict(display_overrides=deepcopy(overrides), inherited_settings=inherited,
+                    effective_settings=dict(inherited, **deepcopy(overrides)), sources=sources,
+                    revision=revision([row['assignment_revision'], row['group_id'], group['enabled'],
+                                       group['display_overrides'], inherited, overrides]))
+
+    def get_device_display(self, owner_id, device_id):
+        with storage_lock:
+            state = self._load()
+            return self._device_display(state, self._owned_device(state, owner_id, device_id))
+
+    def update_device_display(self, owner_id, device_id, data):
+        if not isinstance(data, dict) or set(data) != {'display_overrides', 'revision'}:
+            raise ValueError('Expected display overrides and their revision')
+        with storage_lock:
+            state = self._load()
+            row = self._owned_device(state, owner_id, device_id)
+            if row['status'] == 'revoked' or row['rejoin_required'] or row['credential_digest'] is None:
+                raise AccessError('This device must join again', 409, 'device_rejoin_required')
+            current = self._device_display(state, row)
+            if data['revision'] != current['revision']:
+                raise AccessError('Display settings changed; reload before saving', 409, 'display_settings_changed')
+            overrides = self._device_overrides(data['display_overrides'])
+            if overrides != row.get('display_overrides', {}):
+                if overrides:
+                    row['display_overrides'] = overrides
+                else:
+                    row.pop('display_overrides', None)
+                save_json(self.path, state)
+            return self._device_display(state, row)
 
     def _assignment_item(self, item, catalog):
         if not isinstance(item, dict) or item.get('kind') not in ('manual_note', 'schedule', 'calendar'):
@@ -460,9 +515,20 @@ class DeviceAccessService:
             return [self._public_group(row) for row in self._load()['groups'].values()
                     if row.get('owner_id') == owner_id]
 
-    def get_group(self, owner_id, group_id):
+    def get_group(self, owner_id, group_id, device_id=None):
         with storage_lock:
-            return self._public_group(self._group(self._load(), owner_id, group_id))
+            state = self._load()
+            if device_id is not None:
+                row = state['devices'].get(device_id)
+                if row is None:
+                    raise AccessError('Device credential is required', 401, 'device_authentication_required')
+                self._active_identity(state, row, owner_id)
+                if row['group_id'] != group_id:
+                    raise AccessError('Device authorization changed', 403, 'device_authorization_revoked')
+            group = self._public_group(self._group(state, owner_id, group_id))
+            if device_id is not None:
+                group['effective_settings'] = self._device_display(state, row)['effective_settings']
+            return group
 
     def create_group(self, owner_id, data):
         with storage_lock:
@@ -762,7 +828,8 @@ class DeviceAccessService:
             state = self._load()
             observed = {row['id']: row for row in DeviceService(self.path.with_name('devices.json')).list()}
             result = [dict(observed.get(row['id'], dict(DeviceService._public({'id': row['id']}), online=None)),
-                           **self._public_authorization(state, row), can_revoke=True, reported=row['id'] in observed)
+                           **self._public_authorization(state, row), can_revoke=True, reported=row['id'] in observed,
+                           display_settings=self._device_display(state, row))
                       for row in state['devices'].values() if row['owner_id'] == owner_id]
             if include_legacy:
                 result.extend(dict(row, can_revoke=False, reported=True) for key, row in observed.items()

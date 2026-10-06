@@ -190,7 +190,9 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 
 managed 的 `GET /api/v1/devices` 列出目前 owner 的授權裝置，尚未回報也會出現，`can_revoke: true`；`reported: false` 時管理頁停用改名及同步。self 保留舊觀察列表，legacy 裝置的 `can_revoke: false`；既存未標來源的觀察無法判定是否為歷史退出殘留，因此保留、不猜測刪除。DELETE 對不存在、其他 owner 或只有共用 token 的裝置回 404；不能用它逐台撤銷 legacy 共用 token。
 
-`PATCH /api/v1/devices/<id>/authorization` 只接受非空物件，欄位為 `enabled`（布林值）及／或 `group_id`（既存群組 ID）。移入的群組須屬於同一 owner 且已啟用；目前群組已停用仍可停用／恢復該裝置或移出，恢復裝置不會同時啟用群組。成功回 `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}}`；這些欄位也附於 GET 裝置列表，不覆寫裝置 `name`。`authorization_status` 為 `active|disabled|revoked`；`rejoin_required: true` 表示需要重新加入，包含已撤銷或憑證已清除的歷史記錄。回應不含憑證或其摘要。
+`GET /api/v1/devices/<id>/display-settings` 回 `{display_overrides, inherited_settings, effective_settings, sources, revision}`；`sources` 以 `brightness`、`night.enabled` 等路徑標示 `device|group|default`。GET 裝置列表每筆及移組／停用回應頂層亦附 `display_settings`。PATCH 同一路徑須提交 `{"revision":"讀取時的版本","display_overrides":{"brightness":10}}`，整份取代單台覆寫；省略欄位恢復繼承，`{}` 全部恢復。只接受既有顯示欄位，`night` 須完整五欄，`false`／`0` 保留；不接受內容、身份或私人來源。伺服器依單台 > 群組 > 全體計算，移組保留覆寫，不改 `assignment_revision`；有效設定變更會更新裝置 `config_revision`／ETag，鬧鐘仍依台灣時間排程。版本涵蓋單台與上層設定／所屬群組，過期回 409 `display_settings_changed` 且不寫入；不存在／其他 owner／legacy 為 404，需重加入為 409 `device_rejoin_required`，驗證、CSRF、儲存與破損資料沿用 400／403／500／503。
+
+`PATCH /api/v1/devices/<id>/authorization` 只接受非空物件，欄位為 `enabled`（布林值）及／或 `group_id`（既存群組 ID）。移入的群組須屬於同一 owner 且已啟用；目前群組已停用仍可停用／恢復該裝置或移出，恢復裝置不會同時啟用群組。成功回 `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}, display_settings}`；這些欄位也附於 GET 裝置列表，不覆寫裝置 `name`。`authorization_status` 為 `active|disabled|revoked`；`rejoin_required: true` 表示需要重新加入，包含已撤銷或憑證已清除的歷史記錄。回應不含憑證或其摘要。
 
 一次請求在單一授權檔原子保存，實際改動只增加一次 `assignment_revision`；相同值重送不寫檔。移組與停用／恢復保留同一憑證、裝置名稱、能力、回報與同步 ACK，不增減邀請已用額度。停用立即拒絕私人 API；恢復可用原 cookie 重新確認身份。移組後回新群組範圍與新 revision，舊 ETag 不會沿用，讀取途中移組或停用也不回舊資料／304。離線裝置仍受最長 300 秒私人內容租約限制。
 

@@ -92,7 +92,7 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .schedule-editor-footer .save-actions { margin-left: auto; }
 .save-actions button { min-width: 92px; }
 #editor-actions { gap: 8px; }
-.device-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 32px; }
+.device-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; margin-bottom: 32px; }
 .device-list > li { min-width: 0; }
 .device-list > .panel { margin-bottom: 0; }
 .device-list > .empty { grid-column: 1 / -1; }
@@ -213,3 +213,13 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 @media (max-width: 680px) {
     .device-group-editor { flex-basis: 100%; }
 }
+
+.device-display-settings { width: 100%; min-width: 0; }
+.device-display-settings > summary { font-size: 16px; }
+.device-display-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 18px 0; }
+.device-display-row > input, .device-display-row > select, .device-night-settings > select { width: 100%; min-width: 0; }
+.device-display-row > label { font-weight: 600; }
+.device-display-row .device-setting-current { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.device-night-settings { min-width: 0; margin: 20px 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
+.device-night-settings legend { font-weight: 600; padding: 0 4px; }
+.device-display-settings .actions { flex-wrap: wrap; gap: 10px; }

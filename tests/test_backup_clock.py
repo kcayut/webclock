@@ -306,6 +306,8 @@ class HostBackupTest(unittest.TestCase):
     def test_managed_historical_restore_rotates_all_credentials_in_custom_state(self):
         project, values, roots = self.installation('protected-source', True)
         source_state, auth, access = self.protect(project, values)
+        access['devices']['device']['display_overrides'] = {'brightness': 10}
+        (source_state / 'device-access.json').write_text(json.dumps(access))
         target, target_values, target_roots = self.installation('protected-target', True)
         state, _, _ = self.protect(target, target_values)
         directory, rollback = self.root / 'protected-backup', self.root / 'protected-rollback'
@@ -331,6 +333,7 @@ class HostBackupTest(unittest.TestCase):
         self.assertEqual(device['status'], 'revoked')
         self.assertIsNone(device['credential_digest'])
         self.assertEqual(device['credential_generation'], 4)
+        self.assertEqual(device['display_overrides'], {'brightness': 10})
         self.assertTrue(device['rejoin_required'])
         self.assertEqual((state / 'devices.json').read_bytes(), (source_state / 'devices.json').read_bytes())
         for name in ('auth.json', 'auth-required', 'device-access.json'):

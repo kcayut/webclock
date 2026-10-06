@@ -205,8 +205,78 @@ async function calendarSelection() {
     assert.deepEqual(cleared.content.calendar_targets, [], 'PATCH explicitly clears prior targets instead of retaining omitted fields');
     respond('/' + row.id, {...row, ...cleared}, 'PATCH'); await flush(); await access(row.id);
 }
+async function deviceSettingsChecks() {
+    const settings = (revision, overrides = {}, inherited = defaultSettings) => ({revision,
+        display_overrides: plain(overrides), inherited_settings: plain(inherited),
+        effective_settings: {...plain(inherited), ...plain(overrides)},
+        sources: Object.fromEntries(window.WebClockDeviceSettings.fields.map(([path]) =>
+            [path, path.split('.')[0] in overrides ? 'device' : 'group']))});
+    let device = {id: 'display-test', display_settings: settings('one')}, pending, language = 'en';
+    const editor = window.WebClockDeviceSettings.create({t: key => language + ':' + key, onBusy() {},
+        request(id, method, data) { return new Promise((resolve, reject) => { pending = {id, method, data, resolve, reject}; }); }});
+    const root = editor.render(device), form = root.children.find(child => child.tag === 'form');
+    const controls = descendants(root), save = controls.find(child => child.type === 'submit');
+    const reload = controls.find(child => child.tag === 'button' && child.type === 'button');
+    const status = controls.find(child => child.getAttribute('role') === 'status');
+    const field = name => $('device-display-test-' + name);
+    root.open = true;
+    assert.equal(field('brightness').disabled, true);
+    await trigger('device-display-test-brightness-policy', 'change', 'custom');
+    await trigger('device-display-test-brightness', 'input', '0');
+    await trigger('device-display-test-night-policy', 'change', 'custom');
+    await trigger('device-display-test-night-enabled', 'input', 'false');
+    const firstSave = form.trigger('submit');
+    assert.equal(pending.data.display_overrides.brightness, 0);
+    assert.equal(pending.data.display_overrides.night.enabled, false);
+    assert.equal(Object.keys(pending.data.display_overrides.night).length, 5);
+    assert.equal(editor.busy(device.id), true);
+    const saved = settings('two', pending.data.display_overrides);
+    await trigger('device-display-test-brightness', 'input', '12');
+    pending.resolve(saved); await firstSave;
+    device.display_settings = saved;
+    field('brightness').focus(); language = 'ja';
+    assert.equal(editor.render(device), root);
+    assert.equal(root.open, true);
+    assert.equal(active, field('brightness'));
+    assert.equal(field('brightness').value, '12');
+    assert.equal(status.textContent, 'ja:group_saved_more_drafts');
+    device.display_settings = settings('remote', {brightness: 30});
+    editor.render(device);
+    assert.equal(field('brightness').value, '12');
+    assert.equal(save.disabled, true);
+    assert.equal(status.textContent, 'ja:device_display_conflict');
+    window.confirm = () => false;
+    await reload.trigger('click');
+    assert.equal(field('brightness').value, '12');
+    window.confirm = () => true;
+    const refreshing = reload.trigger('click');
+    assert.equal(pending.method, 'GET'); pending.resolve(device.display_settings); await refreshing;
+    assert.equal(field('brightness').value, '30');
+    await trigger('device-display-test-brightness-policy', 'change', 'inherit');
+    assert.equal(field('brightness').disabled, true);
+    assert.equal(field('brightness').value, '80');
+    const resetting = form.trigger('submit');
+    assert.deepEqual(plain(pending.data.display_overrides), {});
+    pending.reject(new Error('disk full')); await resetting;
+    assert.equal(status.textContent, 'ja:group_save_failed');
+    assert.equal(field('brightness-policy').value, 'inherit');
+    const conflict = form.trigger('submit');
+    pending.reject(Object.assign(new Error('changed'), {code: 'display_settings_changed'})); await flush();
+    assert.equal(pending.method, 'GET');
+    pending.resolve(settings('remote-new', {brightness: 20})); await conflict;
+    assert.equal(field('brightness-policy').value, 'inherit');
+    assert.equal(save.disabled, true);
+    assert.equal(status.textContent, 'ja:device_display_conflict');
+    const reloading = reload.trigger('click');
+    await trigger('device-display-test-brightness-policy', 'change', 'custom');
+    await trigger('device-display-test-brightness', 'input', '5');
+    pending.resolve(settings('latest', {brightness: 50})); await reloading;
+    assert.equal(field('brightness').value, '5', 'Slow reload keeps later edits');
+    assert.equal(save.disabled, true);
+}
 async function main() {
     vm.runInContext(chooserSource, context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/device-settings.js'), 'utf8'), context);
     vm.runInContext(source, context);
     await load();
     assert.equal($('group-name').value, 'Room A');
@@ -375,6 +445,7 @@ async function main() {
     chooser.render([{id: 'cal', name: 'Calendar'}], {source_ids: ['cal'], targets: [deniedOccurrence], exclusions: [seriesDeny, deniedOccurrence]}, new Set());
     assert.equal(allowedChild.checked, false, 'An exact occurrence exclusion has highest priority');
     assert.doesNotMatch(source, /localStorage|sessionStorage/);
-    console.log('Group UI: drafts, focus, failures, calendar source/series/occurrence trees and visible same-level Shift ranges passed.');
+    await deviceSettingsChecks();
+    console.log('Group/device UI: inheritance, conflicts, drafts, focus, failures and calendar selection passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

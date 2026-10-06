@@ -71,6 +71,103 @@ class DeviceManagementTest(unittest.TestCase):
         return self.call('/api/v1/devices/' + device['identity']['device_id'] + '/authorization',
                          'PATCH', json=data, headers=self.headers)
 
+    def display_settings(self, device, overrides=None, revision=None):
+        path = '/api/v1/devices/' + device['identity']['device_id'] + '/display-settings'
+        if overrides is None:
+            return self.call(path)
+        revision = revision or self.call(path).json['revision']
+        return self.call(path, 'PATCH', headers=self.headers,
+                         json=dict(display_overrides=overrides, revision=revision))
+
+    def test_device_display_inheritance_reset_move_and_peer_isolation(self):
+        device = self.device('Bedroom')
+        service, group_id = self.service(), device['identity']['group_id']
+        attempt = service.prepare(self.owner, 'peer')
+        peer = service.join(self.owner, attempt['token'], attempt['attempt_id'], device['invite']['code'], 'peer')['identity']
+        service.update_group(self.owner, group_id, {'display_overrides': {'brightness': 30}})
+        before = self.device_call(device)
+        original = service._load()['devices'][device['identity']['device_id']]
+        night = dict(clock.DEFAULT_NIGHT, enabled=False, brightness=0, black=False)
+        overrides = dict(brightness=0, mode='black', time_format='12h', language='ja', night=night)
+        result = self.display_settings(device, overrides)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json['effective_settings']['night'], night)
+        self.assertEqual(result.json['sources']['brightness'], 'device')
+        self.assertEqual(result.json['sources']['timezone_offset'], 'default')
+        self.assertEqual(result.json['sources']['night.enabled'], 'device')
+        self.assertEqual(service._load()['devices'][device['identity']['device_id']], dict(original, display_overrides=overrides))
+        after = self.device_call(device, headers={'If-None-Match': before.headers['ETag']})
+        self.assertEqual(after.status_code, 200)
+        self.assertEqual(after.json['settings']['brightness'], 0)
+        self.assertEqual(after.json['settings']['language'], 'ja')
+        self.assertNotEqual(after.json['config_revision'], before.json['config_revision'])
+        self.assertEqual(after.json['schedule_revision'], before.json['schedule_revision'])
+        self.assertEqual(after.json['config_revision'], self.device_call(device, 'browser-alarms').json['config_revision'])
+        service.update_group(self.owner, group_id, {'display_overrides': {'brightness': 40, 'timezone_offset': 9}})
+        settings = self.display_settings(device).json
+        self.assertEqual(settings['effective_settings']['brightness'], 0)
+        self.assertEqual(settings['effective_settings']['timezone_offset'], 9)
+        self.assertEqual(settings['sources']['timezone_offset'], 'group')
+        self.assertEqual(service.get_device_display(self.owner, peer['device_id'])['effective_settings']['brightness'], 40)
+        clock.display_settings['time_format'] = '12h'
+        clock.display_settings['language'] = 'en'
+        reset = self.display_settings(device, {}).json
+        self.assertEqual(reset['display_overrides'], {})
+        self.assertEqual(reset['effective_settings']['brightness'], 40)
+        self.assertEqual(reset['effective_settings']['language'], 'en')
+        self.assertEqual(reset['sources']['brightness'], 'group')
+        self.assertEqual(reset['sources']['time_format'], 'default')
+        self.assertNotIn('display_overrides', service._load()['devices'][device['identity']['device_id']])
+        self.assertEqual(self.display_settings(device, {'brightness': 10}).status_code, 200)
+        target = service.create_group(self.owner, {'name': 'Office', 'display_overrides': {'timezone_offset': -5}})
+        moved = self.update_authorization(device, {'group_id': target['id']})
+        self.assertEqual(moved.json['display_settings']['effective_settings']['brightness'], 10)
+        self.assertEqual(moved.json['display_settings']['effective_settings']['timezone_offset'], -5)
+        self.assertEqual(self.device_call(device).json['settings']['timezone_offset'], -5)
+        self.assertEqual(self.rows()[device['identity']['device_id']]['display_settings'], moved.json['display_settings'])
+
+    def test_device_display_conflicts_validation_and_owner_boundary(self):
+        device = self.device()
+        service = self.service()
+        initial = self.display_settings(device).json
+        self.assertEqual(self.display_settings(device, {'brightness': 10}, initial['revision']).status_code, 200)
+        stale = self.display_settings(device, {'brightness': 20}, initial['revision'])
+        self.assertEqual((stale.status_code, stale.json['code']), (409, 'display_settings_changed'))
+        current = self.display_settings(device).json
+        service.update_group(self.owner, device['identity']['group_id'], {'display_overrides': {'brightness': 30}})
+        self.assertEqual(self.display_settings(device, {}, current['revision']).status_code, 409)
+        current = self.display_settings(device).json
+        clock.display_settings['language'] = 'en'
+        self.assertEqual(self.display_settings(device, {}, current['revision']).status_code, 409)
+        for invalid in ({'brightness': 101}, {'brightness': False}, {'language': 'zh-CN'},
+                        {'night': {'enabled': False}}, {'night': dict(clock.DEFAULT_NIGHT, start='07:00', end='07:00')},
+                        {'content': {}}, {'timezone_offset': 8.5}):
+            original = service.path.read_bytes()
+            self.assertEqual(self.display_settings(device, invalid).status_code, 400, invalid)
+            self.assertEqual(service.path.read_bytes(), original)
+        foreign = self.device('Foreign', owner='other-owner')
+        self.assertEqual(self.display_settings(foreign).status_code, 404)
+        self.assertEqual(self.display_settings(foreign, {}, 'unknown').status_code, 404)
+        original = service.path.read_bytes()
+        with patch('webclock.services.device_access_service.save_json', side_effect=OSError('disk full')):
+            self.assertEqual(self.display_settings(device, {'brightness': 20}).status_code, 500)
+        self.assertEqual(service.path.read_bytes(), original)
+        self.assertEqual(self.display_settings(device).json['effective_settings']['brightness'], 10)
+
+    def test_device_display_inflight_change_does_not_return_stale_config_or_304(self):
+        device = self.device()
+        respond = clock.managed_response
+        for index, path in enumerate(('display', 'browser-alarms')):
+            before = self.device_call(device, path)
+            def update_during_response(*args, **kwargs):
+                self.assertEqual(self.display_settings(device, {'brightness': 10 + index}).status_code, 200)
+                return respond(*args, **kwargs)
+            with patch.object(clock, 'managed_response', side_effect=update_during_response):
+                response = self.device_call(device, path, headers={'If-None-Match': before.headers['ETag']})
+            self.assertEqual((response.status_code, response.json['code']), (409, 'display_scope_changed'))
+            self.assertNotIn('ETag', response.headers)
+            self.assertNotIn('settings', response.json)
+
     def test_move_and_pause_preserve_credential_reports_ack_and_invitation_seats(self):
         device = self.device('Original group')
         device_id = device['identity']['device_id']

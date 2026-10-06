@@ -8,17 +8,7 @@
     const t = key => (packs[document.documentElement.lang] || packs['zh-TW'])[key] || key;
     const fmt = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, key) => values[key]);
     const NEW = '__new';
-    const fields = [
-        ['brightness', 'group_brightness', 'number', 0, 100],
-        ['mode', 'group_mode', [['normal', 'group_normal'], ['black', 'group_black']]],
-        ['timezone_offset', 'group_timezone', 'number', -12, 14],
-        ['time_format', 'group_time_format', [['24h', 'group_24h'], ['12h', 'group_12h']]],
-        ['language', 'group_display_language', [['zh-TW', '繁體中文'], ['en', 'English'], ['ja', '日文']]],
-        ['night.enabled', 'group_night_enabled', 'boolean'],
-        ['night.start', 'group_night_start', 'time'], ['night.end', 'group_night_end', 'time'],
-        ['night.brightness', 'group_night_brightness', 'number', 0, 100],
-        ['night.black', 'group_night_black', 'boolean']
-    ];
+    const fields = window.WebClockDeviceSettings.fields;
     const contentFields = [
         ['calendar_source_ids', 'calendar_sources', 'name'],
         ['manual_note_ids', 'manual_notes', 'text'], ['schedule_ids', 'schedules', 'name']

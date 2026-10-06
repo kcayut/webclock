@@ -14,6 +14,19 @@
     const deviceRevoking = new Set();
     const deviceGroupDrafts = new Map(), deviceAuthorizationSaving = new Set(), deviceAuthorizationMessages = new Map();
     let deviceDataStale = false;
+    const deviceSettings = window.WebClockDeviceSettings ? window.WebClockDeviceSettings.create({
+        t, onBusy: () => renderDevices(),
+        async request(id, method, data) {
+            ++deviceRequest;
+            try {
+                const result = await api('/devices/' + encodeURIComponent(id) + '/display-settings',
+                    data === undefined ? {method} : json(method, data));
+                ++deviceRequest;
+                devices = devices.map(row => row.id === id ? Object.assign({}, row, {display_settings: result}) : row);
+                return result;
+            } finally { ++deviceRequest; }
+        }
+    }) : null;
     const capabilityFields = ["display", "audio", "notifications", "background", "calendar"];
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
@@ -147,7 +160,11 @@
         const url = window.webclockUrl ? window.webclockUrl("/api/v1" + path) : "/api/v1" + path;
         const response = await fetch(url, options);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error === "Occurrence already skipped; wait for resume" ? t("pause_pending") : data.error || t("request_failed"));
+        if (!response.ok) {
+            const error = new Error(data.error === "Occurrence already skipped; wait for resume" ? t("pause_pending") : data.error || t("request_failed"));
+            error.code = data.code;
+            throw error;
+        }
         return data;
     }
     const json = (method, body) => ({method: method, headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
@@ -749,9 +766,12 @@
         return device.can_revoke === true && !device.rejoin_required &&
             ["active", "disabled"].includes(device.authorization_status);
     }
+    function deviceBusy(id) {
+        return deviceAuthorizationSaving.has(id) || !!(deviceSettings && deviceSettings.busy(id));
+    }
     async function updateDeviceAuthorization(device, change) {
         const current = devices.find(item => item.id === device.id);
-        if (!current || !manageableDevice(current) || deviceAuthorizationSaving.has(device.id) ||
+        if (!current || !manageableDevice(current) || deviceBusy(device.id) ||
                 deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id)) return;
         if (change.group_id !== undefined) {
             const groups = assignments && assignments.groups ? assignments.groups() : null;
@@ -768,6 +788,7 @@
                 if (item.id !== device.id || item.assignment_revision > updated.assignment_revision) return item;
                 const next = Object.assign({}, item);
                 ["group_id", "group_name", "group_enabled", "enabled", "authorization_status", "assignment_revision", "rejoin_required"].forEach(key => { next[key] = updated[key]; });
+                if (result.display_settings) next.display_settings = result.display_settings;
                 return next;
             });
             if (change.group_id !== undefined && deviceGroupDrafts.get(device.id) === change.group_id) deviceGroupDrafts.delete(device.id);
@@ -780,7 +801,7 @@
         }
     }
     async function revokeDevice(device) {
-        if (deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id) || deviceAuthorizationSaving.has(device.id) ||
+        if (deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id) || deviceBusy(device.id) ||
                 !devices.some(item => item.id === device.id && item.can_revoke === true) ||
                 !window.confirm(format("device_revoke_confirm", {name: device.name || device.id}))) return;
         deviceRevoking.add(device.id);
@@ -792,6 +813,7 @@
             ++deviceRequest;
             devices = devices.filter(item => item.id !== device.id);
             deviceNameDrafts.delete(device.id);
+            if (deviceSettings) deviceSettings.forget(device.id);
             deviceGroupDrafts.delete(device.id); deviceAuthorizationMessages.delete(device.id);
             renderDevices();
             if (window.WebClockGroups) window.WebClockGroups.memberRemoved(device.id);
@@ -809,8 +831,8 @@
         const active = document.activeElement;
         const activeDevice = active && active.getAttribute ? active.getAttribute("data-device-name") : null;
         const activeControl = active && active.getAttribute ? active.getAttribute("data-device-control") : null;
-        const selectionStart = activeDevice && typeof active.selectionStart === "number" ? active.selectionStart : null;
-        const selectionEnd = activeDevice && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
+        const selectionStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+        const selectionEnd = active && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
         let refocus = null, legacyCount = 0;
         function control(element, key) {
             element.setAttribute("data-device-control", key);
@@ -867,7 +889,7 @@
                     select.value = draftGroup; select.disabled = !groups || !available.length || deviceRevoking.has(device.id);
                     select.addEventListener("change", () => { deviceGroupDrafts.set(device.id, select.value); deviceAuthorizationMessages.delete(device.id); renderDevices(); });
                     label.append(select);
-                    const blocked = deviceAuthorizationSaving.has(device.id) || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id);
+                    const blocked = deviceBusy(device.id) || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id);
                     const move = control(action(t("device_move_group"), () => updateDeviceAuthorization(device, {group_id: select.value})), "move:" + device.id);
                     move.disabled = blocked || draftGroup === device.group_id || !available.some(group => group.id === draftGroup);
                     field.append(label, move); authorization.append(field);
@@ -880,6 +902,13 @@
                 }
                 card.append(authorization);
             }
+            if (manageableDevice(device) && deviceSettings) {
+                const editor = deviceSettings.render(device, deviceAuthorizationSaving.has(device.id) || deviceRevoking.has(device.id));
+                if (editor) {
+                    if (active && editor.contains(active)) refocus = active;
+                    card.append(editor);
+                }
+            }
             const rename = node("div", undefined, "device-name-editor");
             const label = node("label", t("admin_name"));
             const input = node("input");
@@ -891,7 +920,7 @@
             input.addEventListener("input", () => deviceNameDrafts.set(device.id, input.value));
             label.append(input);
             const saveName = action(t("save_name"), async () => {
-                if (device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id) || deviceAuthorizationSaving.has(device.id)) return;
+                if (device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id) || deviceBusy(device.id)) return;
                 const submittedName = input.value;
                 deviceNamesSaving.add(device.id);
                 ++deviceRequest;
@@ -908,22 +937,22 @@
                     renderDevices();
                 }
             }, "primary");
-            saveName.disabled = device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id) || deviceAuthorizationSaving.has(device.id);
+            saveName.disabled = device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id) || deviceBusy(device.id);
             rename.append(label, saveName);
             card.append(rename);
             if (activeDevice === device.id) refocus = input;
             const actions = node("div", undefined, "actions");
             const syncButton = action(t("sync"), async () => {
-                if (device.reported === false || deviceRevoking.has(device.id) || deviceAuthorizationSaving.has(device.id)) return;
+                if (device.reported === false || deviceRevoking.has(device.id) || deviceBusy(device.id)) return;
                 await api("/devices/" + encodeURIComponent(device.id) + "/commands", json("POST", {action: "sync"}));
                 notice(t("pending"));
                 await loadDevices();
             });
-            syncButton.disabled = device.reported === false || deviceRevoking.has(device.id) || deviceAuthorizationSaving.has(device.id);
+            syncButton.disabled = device.reported === false || deviceRevoking.has(device.id) || deviceBusy(device.id);
             actions.append(syncButton);
             if (device.can_revoke === true) {
                 const revoke = action(t("device_revoke"), () => revokeDevice(device), "danger");
-                revoke.disabled = deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id) || deviceAuthorizationSaving.has(device.id);
+                revoke.disabled = deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id) || deviceBusy(device.id);
                 actions.append(revoke);
             }
             card.append(actions);

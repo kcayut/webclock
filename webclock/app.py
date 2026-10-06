@@ -1179,7 +1179,7 @@ def device_service():
 def managed_content(identity):
     """Resolve references on the server; a deleted dependency grants no fallback."""
     with storage_lock:
-        group = group_service().get_group(identity['owner_id'], identity['group_id'])
+        group = group_service().get_group(identity['owner_id'], identity['group_id'], identity['device_id'])
         content = group['content']
         all_notes = load_notes()
         notes = [row for row in all_notes if row['id'] in content['manual_note_ids']]
