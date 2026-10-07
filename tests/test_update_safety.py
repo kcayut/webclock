@@ -516,6 +516,9 @@ class UpdaterTest(unittest.TestCase):
                         configuration = REAL_CONFIGURATION(self.project)
                         self.assertEqual(configuration['WEBCLOCK_STATE_DIR'], '/from-systemd/state')
                         self.assertEqual(configuration['NOTES_FILE'], '/from-systemd/notes.json')
+                        (process / 'environ').write_bytes(environment + b'WEBCLOCK_TLS_CERT=/cert.pem\0WEBCLOCK_TLS_KEY=/key.pem\0')
+                        with self.assertRaisesRegex(RuntimeError, 'Native HTTPS.*nothing updated'):
+                            REAL_SERVICE_URL(self.project)
                         (process / 'environ').write_bytes(environment + b'PYTHON_DOTENV_DISABLED=1\0')
                         self.assertEqual(REAL_CONFIGURATION(self.project), {'PORT': '80', 'HOST': '0.0.0.0'})
         self.assertEqual(url, 'http://127.0.0.1:80')

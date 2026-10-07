@@ -43,6 +43,8 @@ def service_url(project):
             or not any((project / arg).resolve() == project / 'app.py' for arg in args[1:])):
         raise RuntimeError('Expected the existing project-local venv and app.py service.')
     defaults = service_configuration(project)
+    if defaults.get('WEBCLOCK_TLS_CERT') or defaults.get('WEBCLOCK_TLS_KEY'):
+        raise RuntimeError('Native HTTPS is not supported by this updater; nothing updated. See doc/installation.md.')
     port = int(defaults.get('PORT', 5000))
     if not 1 <= port <= 65535:
         raise RuntimeError('Invalid existing service port.')
@@ -56,7 +58,8 @@ def service_url(project):
 
 def service_configuration(project):
     """Read only relevant settings, with the running service environment taking precedence."""
-    keys = ('HOST', 'PORT', 'WEBCLOCK_STATE_DIR', 'NOTES_FILE', 'DEVICE_API_TOKEN')
+    keys = ('HOST', 'PORT', 'WEBCLOCK_STATE_DIR', 'NOTES_FILE', 'DEVICE_API_TOKEN',
+            'WEBCLOCK_TLS_CERT', 'WEBCLOCK_TLS_KEY')
     pid = int(service_property('MainPID'))
     environment = dict(entry.split('=', 1) for entry in
                        (Path('/proc') / str(pid) / 'environ').read_bytes().decode().split('\0') if '=' in entry)

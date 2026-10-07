@@ -1,7 +1,5 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
-Home Assistant: run the Server as an App, enroll with a six-character code, and use the time, calendar and alarm cards. See the [installation guide](doc/home-assistant.md).
-
 # WebClock
 
 [繁體中文](README.md) · **English** · [日本語](README_jp.md)
@@ -22,39 +20,21 @@ The self-hosted UI supports Traditional Chinese, English, and Japanese. It can s
 
 The clock renders time, date, and weekday first; connection, browser-storage, or optional-feature failures should not stop an already loaded page running in the foreground. Device management supports naming, reported capabilities, and sync confirmation. Groups, six-character enrollment, per-device authorization, movement, disable/resume and revocation are available. Managed mode requires explicit host-side activation; existing installations remain in self mode by default. See the [guide](doc/guide_en.md#device-sync-status) for operation and limits, and the [phase-A acceptance record](doc/phase-a-acceptance.md) / [Phase B groups and authorization acceptance](doc/phase-b-acceptance.md) for current evidence and pending checks (Traditional Chinese). CI and iPad mini 1 / iOS 9 physical acceptance are tracked separately.
 
-## Quick installation
+## Installation options
 
-Clone the project and create the configuration file:
+| Method | Environment |
+| --- | --- |
+| **Bare metal** | Raspberry Pi OS, Debian or Ubuntu; installs an automatically started systemd service |
+| **Docker** | Computers, NAS devices or Linux hosts with Docker Compose |
+| **Home Assistant** | A local App on HA OS, managed through the HA sidebar; dashboard cards use a separate integration |
 
-```bash
-git clone https://github.com/kcayut/webclock.git
-cd webclock
-cp .env.example .env
-```
+**[Open the installation guide →](doc/installation.md)** (Traditional Chinese): quick commands, prerequisites, self/managed activation and HTTPS setup for all three methods.
 
-Choose one method:
+**[Set up a clock display →](doc/display-devices.md)** (Traditional Chinese): home-screen shortcuts, fullscreen and keeping the screen awake on iPad/iPhone, Android, Windows and Mac, with version-specific steps including iPad mini 1/iOS 9.
 
-```bash
-# Docker (default: http://HOST_IP/)
-touch manual_notes.json
-mkdir -p webclock_state
-docker compose up -d --build
+Linux and Docker default to **self** mode. For administrator sign-in and per-device authorization, add `--managed` to a fresh installation and configure HTTPS. The HA App protects management through HA sign-in; this is different from WebClock managed mode. Use the documented local build flow; installation from a prebuilt App image has not been verified.
 
-# Raspberry Pi OS / Ubuntu / Debian (default port: 5000)
-sudo bash setup.sh
-
-# Manual Python run
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-Open the clock home page when installation finishes. Management is at `/admin`; alarms and devices are at `/schedules`.
-
-Set the initial interface language in `.env` before deployment with `WEBCLOCK_LANGUAGE=zh-TW`, `en`, or `ja`. The Linux installer asks when it first creates `.env`. After deployment, the language remains available at the bottom of the management sidebar and is saved to `webclock_state/settings.json`.
-
-**More information:** [English guide](doc/guide_en.md) · [Device API](doc/server-api_en.md) · [ESPHome development guide](doc/esp-home.md) · [Firmware preparation](firmware/README.md) (last two links: Traditional Chinese; no installable firmware yet).
+**More information:** [English guide](doc/guide_en.md) · [Home Assistant integration and cards](doc/home-assistant.md) · [Device API](doc/server-api_en.md) · [ESPHome development](doc/esp-home.md) · [Firmware](firmware/README.md) (HA and firmware guides: Traditional Chinese).
 
 ## Support WebClock
 

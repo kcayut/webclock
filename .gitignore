@@ -11,6 +11,7 @@ venv/
 !.env.example
 manual_notes.json
 webclock_state/
+tls/
 .webclock-update-*/
 .webclock-update.lock
 .webclock-backup*/

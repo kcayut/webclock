@@ -1,7 +1,5 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
-Home Assistant：可直接以 App 執行 Server，並支援六位英數加入碼與時間／行事曆／鬧鐘卡片，詳見[安裝與操作說明](doc/home-assistant.md)。
-
 # WebClock
 
 **繁體中文** · [English](README_en.md) · [日本語](README_jp.md)
@@ -22,39 +20,21 @@ Home Assistant：可直接以 App 執行 Server，並支援六位英數加入碼
 
 時鐘會先顯示時間、日期與星期；已載入且在前景執行時，連線、瀏覽器儲存或附加功能失敗不應讓它停住。裝置管理可命名、查看自報能力與同步確認狀態；群組、六碼加入、逐台授權、移組、停用／恢復與刪除授權已提供；managed 模式由主機端明確啟用，既有安裝預設維持 self。操作與限制見[使用指南](doc/guide.md#裝置同步狀態)，目前驗證與待辦見 [A 階段驗收紀錄](doc/phase-a-acceptance.md) / [B 階段群組與授權驗收](doc/phase-b-acceptance.md)；CI 與 iPad mini 1／iOS 9 實機驗收狀態分開記錄。
 
-## 快速安裝
+## 安裝方式
 
-先取得專案並建立設定檔：
+| 方式 | 適合環境 |
+| --- | --- |
+| **Bare metal** | Raspberry Pi OS、Debian、Ubuntu；直接安裝並開機自動執行 |
+| **Docker** | 已有 Docker 的電腦、NAS 或 Linux 主機 |
+| **Home Assistant** | 在 HA OS 安裝本機 App，以 HA 側邊欄管理；卡片另裝自訂整合 |
 
-```bash
-git clone https://github.com/kcayut/webclock.git
-cd webclock
-cp .env.example .env
-```
+**[前往完整安裝指南 →](doc/installation.md)**：三種方式的快速指令、必要條件、self／managed 啟用方式與 HTTPS 設定。
 
-選擇一種方式：
+**[把裝置變成時鐘 →](doc/display-devices.md)**：依 iPad／iPhone、Android、Windows、Mac 分版本整理主畫面圖示、全螢幕與螢幕恆亮，包含 iPad mini 1／iOS 9。
 
-```bash
-# Docker（預設 http://主機IP/）
-touch manual_notes.json
-mkdir -p webclock_state
-docker compose up -d --build
+Linux／Docker 預設使用 **self（自用）**；需要獨立管理員登入與逐台授權時，全新安裝加 `--managed` 並設定 HTTPS。HA App 由 HA 登入保護管理入口，不等同 WebClock managed 模式；目前採本機建置；預建映像的商店安裝尚未驗證。
 
-# Raspberry Pi OS / Ubuntu / Debian（預設連接埠 5000）
-sudo bash setup.sh
-
-# 手動執行
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-完成後開啟時鐘首頁；管理畫面在 `/admin`，鬧鐘與裝置管理在 `/schedules`。
-
-部署前可在 `.env` 設定初始介面語言：`WEBCLOCK_LANGUAGE=zh-TW`（繁體中文）、`en`（English）或 `ja`（日本語）。Linux 安裝腳本會在首次建立 `.env` 時詢問；部署後也可隨時從管理側欄底部切換，選擇結果會儲存在 `webclock_state/settings.json`。
-
-**詳細說明：**[繁體中文使用指南](doc/guide.md) · [裝置 API](doc/server-api.md) · [ESPHome 原型指南](doc/esp-home.md) · [ESP32-S3 接線、YAML 與燒錄](firmware/README.md)
+**使用說明：**[繁體中文使用指南](doc/guide.md) · [Home Assistant 整合與卡片](doc/home-assistant.md) · [裝置 API](doc/server-api.md) · [ESPHome 原型指南](doc/esp-home.md) · [ESP32-S3 韌體](firmware/README.md)
 
 ESP32-S3 鬧鐘原型已通過交叉編譯，支援 OLED、固定規則鬧鐘同步與運轉中斷網響鈴；尚未實機驗收，行事曆聯動與 RTC 斷電保時仍待開發。
 

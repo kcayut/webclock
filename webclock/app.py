@@ -1390,4 +1390,8 @@ app.register_blueprint(managed_device_api(group_service, device_service, auth_se
 def main():
     port = int(os.getenv('PORT', 5000))
     host = os.getenv('HOST', '0.0.0.0')
-    app.run(host=host, port=port)
+    cert = os.getenv('WEBCLOCK_TLS_CERT')
+    key = os.getenv('WEBCLOCK_TLS_KEY')
+    if bool(cert) != bool(key):
+        raise ValueError('Set both WEBCLOCK_TLS_CERT and WEBCLOCK_TLS_KEY for HTTPS.')
+    app.run(host=host, port=port, ssl_context=(cert, key) if cert else None)

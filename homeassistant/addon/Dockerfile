@@ -1,9 +1,9 @@
-ARG BUILD_FROM=python:3.13-slim-bookworm
-FROM ${BUILD_FROM}
+FROM python:3.13-slim-bookworm
 
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=unknown
 LABEL io.hass.name="WebClock" \
+      io.hass.type="app" \
       io.hass.version="${BUILD_VERSION}" \
       io.hass.arch="${BUILD_ARCH}"
 

@@ -1,5 +1,9 @@
 # WebClock 繁體中文使用指南
 
+三種安裝方式與 self／managed 啟用步驟，統一見[安裝指南](installation.md)。
+
+平板與電腦的主畫面捷徑、全螢幕、螢幕恆亮，見[裝置顯示設定](display-devices.md)；iPad mini 1 請直接看 [iOS 9 完整步驟](display-devices.md#ipad-ios9)。
+
 ## 管理員登入與裝置授權
 
 既有自架安裝保持自用模式。需要逐台授權隔離時，先依下方備份流程停止所有寫入者並備份，再以服務帳號執行 `./venv/bin/python scripts/manage_auth.py --state-dir /path/to/webclock_state setup --username admin --enable-managed`，互動輸入至少 12 字元密碼。請換成實際 state 路徑；重啟後以 HTTPS 開 `/admin` 登入。舊 `--enable-managed-test` 仍相容，未提供明確旗標不會切換模式。舊名稱、能力、ACK 與內容保留，但舊自報 ID／共用 token 不會升格為裝置授權；顯示端須以六碼重新加入。`reset-password` 使用相同 state 路徑，清除所有管理 session；登入最多 8 小時，登出不撤銷獨立裝置憑證。
@@ -47,7 +51,7 @@ WebClock 最初為初代 iPad mini 設計，時鐘頁以舊平板能穩定顯示
 - `/admin`：顯示設定、行事曆、文字提醒、公告、備份與還原。
 - `/schedules`：網頁鬧鐘與裝置同步狀態。
 
-Docker 預設使用主機的 `80` 連接埠；Linux 安裝腳本與手動執行預設為 `5000`。完整的快速安裝命令在 [README](../README.md#快速安裝)。`.env` 的基本設定如下：
+Docker 預設使用主機的 `80` 連接埠；Linux 安裝腳本與手動執行預設為 `5000`。完整的快速安裝命令在 [安裝指南](installation.md)。`.env` 的基本設定如下：
 
 ```env
 PORT=5000
@@ -196,6 +200,8 @@ venv/bin/python scripts/backup_clock.py restore "$HOME/private-webclock-backups/
 `restore` 必須提供 `--yes` 與全新的 `--rollback-dir`，先保留還原前完整副本，再替換目標資料；一般內容在備份中不存在時也會還原成不存在；授權 marker、秘密及憑證依前述安全還原規則處理，不得降低保護模式。失敗會嘗試回復，停電不會自動續作。若回復不完整，保持服務停止並保留還原前副本與 `.webclock-restore-*` 暫存資料，確認狀態後再處理。檔案複製會保留原數字 UID／GID；以管理權限還原到新主機或外部目錄後，尤其須確認服務帳號可通過父目錄並讀寫資料。成功後由操作者檢查資料、路徑與權限，再手動啟動服務。這不代表 Raspberry Pi、Docker 或 iPad 已完成實機驗收。
 
 ### 更新程式
+
+安裝與更新入口見[安裝指南](installation.md#update)；原生 HTTPS 安裝不適用下方只支援 HTTP 健康檢查的 Linux 更新器。
 
 Docker 取得新版程式後，重新執行：
 

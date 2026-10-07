@@ -17,23 +17,13 @@ Server 端的加入 API 仍是 WebClock 主程式的一部分，不能只複製�
 
 ## 在 Home Assistant 內執行 WebClock Server
 
-App 的發行映像發布後，可從 HA 的「設定 → Apps → App 商店 → 儲存庫」加入：
+安裝方式、前提條件與啟用模式統一見[安裝指南：Home Assistant](installation.md#home-assistant)。目前使用本機 App 建置：準備 `/addons/webclock`，再於 App 商店安裝、啟動，不依賴預建映像是否已發布。
 
-```text
-https://github.com/kcayut/webclock
-```
+App 管理頁透過 HA 登入與 Ingress 使用，WebClock 儲存模式保持 self；這與獨立 WebClock managed 登入不同。選用的 `8100` 區網連接埠只提供時鐘、六碼加入與裝置同步。所有可變資料保存在 `/data`，由 HA 冷備份保存。
 
-接著安裝 **WebClock**、啟動 App，再按「開啟網頁介面」。管理頁透過 Home Assistant Ingress 顯示在側邊欄，預設不會對區網開放額外連接埠。WebClock 的設定、行事曆來源、裝置身份與鬧鐘都保存在 App 的 `/data`，並使用冷備份模式由 HA 備份。
+要用 iPad／Android／電腦持續顯示時鐘，請把外部時鐘入口建立成主畫面圖示，再從圖示完成六碼加入；全螢幕與恆亮步驟見[裝置顯示設定](display-devices.md#clock-url)。
 
-目前原始碼已包含 App 的第一版設定與映像建置檔，但 `ghcr.io/kcayut/webclock-addon` 尚未在這次工作中發布；映像發布前，App 商店安裝會顯示無法取得映像。開發者可從專案根目錄驗證映像：
-
-```bash
-docker build -f homeassistant/addon/Dockerfile -t webclock-addon .
-```
-
-若網頁時鐘、ESP 或區網上的其他裝置也要連線，請在 App 的「網路」設定把容器連接埠 `8100` 指定到主機連接埠，再開啟 `http://HOME_ASSISTANT_IP:指定連接埠`。這個連接埠只提供時鐘、六碼配對與裝置同步；管理頁及管理 API 只能經由 HA Ingress 使用。預設不對區網開放，也不要把它直接公開到 Internet。
-
-同一台 HA 內的 WebClock 自訂整合可使用 `http://webclock:8100` 連到 App。`webclock` 是 App 提供的固定內部 DNS 別名，不必依賴安裝來源產生的動態名稱。內部整合和外部顯示都透過六位加入碼取得各自的裝置身份；外部顯示可以加入其他群組，不會改變 HA 儀表板選定的群組。
+同機自訂整合的 Server 填 `http://webclock:8100`；`webclock` 是 App 的固定內部 DNS 別名。外部顯示可各自加入其他群組，不會改變 HA 儀表板的群組。若需要 WebClock managed 模式，請使用 [bare metal／Docker + HTTPS](installation.md#https) Server，整合填該 HTTPS 來源。
 
 ## 自訂整合安裝前準備
 

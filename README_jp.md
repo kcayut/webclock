@@ -1,7 +1,5 @@
 <img src="static/brand/logo.svg" width="64" height="64" alt="WebClock logo">
 
-Home Assistant：App として Server を実行し、6桁の英数字コードで参加して、時刻・カレンダー・アラームカードを利用できます。[導入手順](doc/home-assistant.md)をご覧ください。
-
 # WebClock
 
 [繁體中文](README.md) · [English](README_en.md) · **日本語**
@@ -22,39 +20,21 @@ iPad、タブレット、使っていない画面を大きな時計にできま�
 
 時計は時刻・日付・曜日を先に表示し、読み込み済みで前面実行中のページは通信・保存領域・追加機能の失敗で停止しない設計です。端末管理では名前、自報能力、同期確認状態を扱えます。グループ、6文字の参加コード、端末別認可、移動、無効化・再開、取り消しに対応します。managedモードはホスト側で明示的に有効化し、既存環境は既定でselfを維持します。操作と制限は[ガイド](doc/guide_jp.md#端末同期状態)、現在の検証と未実施項目は [A 段階の検収記録](doc/phase-a-acceptance.md) / [B 段階のグループ・認証検証](doc/phase-b-acceptance.md)（繁体字中国語）を参照してください。CI と iPad mini 1／iOS 9 の実機検収は分けて記録します。
 
-## クイックインストール
+## インストール方法
 
-プロジェクトを取得し、設定ファイルを作成します。
+| 方法 | 対象環境 |
+| --- | --- |
+| **Bare metal** | Raspberry Pi OS、Debian、Ubuntu。systemd による自動起動 |
+| **Docker** | Docker Compose が使えるパソコン、NAS、Linux |
+| **Home Assistant** | HA OS のローカル App。管理は HA サイドバー、カードは別途カスタム統合を導入 |
 
-```bash
-git clone https://github.com/kcayut/webclock.git
-cd webclock
-cp .env.example .env
-```
+**[インストールガイドへ →](doc/installation.md)**（繁体字中国語）：3 種類の手順、前提条件、self／managed の有効化、HTTPS 設定をまとめています。
 
-いずれか 1 つを選びます。
+**[端末を時計として使う →](doc/display-devices.md)**（繁体字中国語）：iPad／iPhone、Android、Windows、Mac のホーム画面アイコン、全画面表示、スリープ防止をバージョン別に説明。初代 iPad mini／iOS 9 も含みます。
 
-```bash
-# Docker（既定: http://ホストIP/）
-touch manual_notes.json
-mkdir -p webclock_state
-docker compose up -d --build
+Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` を追加し、HTTPS を設定します。HA App は HA ログインで管理画面を保護し、WebClock managed モードとは異なります。現在の手順はローカルビルド方式です。ビルド済み App イメージからの直接インストールは未検証です。
 
-# Raspberry Pi OS / Ubuntu / Debian（既定ポート: 5000）
-sudo bash setup.sh
-
-# Python で手動実行
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-完了後、時計のトップページを開きます。管理画面は `/admin`、アラームと端末管理は `/schedules` です。
-
-デプロイ前に `.env` の `WEBCLOCK_LANGUAGE=zh-TW`、`en`、`ja` で初期表示言語を設定できます。Linux インストーラーは `.env` の初回作成時に選択を求めます。デプロイ後も管理サイドバー下部から切り替えられ、選択結果は `webclock_state/settings.json` に保存されます。
-
-**詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [端末 API](doc/server-api_jp.md) · [ESPHome 開発ガイド](doc/esp-home.md) · [ファームウェア開発準備](firmware/README.md)（最後の 2 件は繁体字中国語。書き込み可能なファームウェアはまだありません）。
+**詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [Home Assistant 統合とカード](doc/home-assistant.md) · [端末 API](doc/server-api_jp.md) · [ESPHome 開発](doc/esp-home.md) · [ファームウェア](firmware/README.md)（HA・ファームウェア関連は繁体字中国語）。
 
 ## 開発支援
 

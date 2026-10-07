@@ -1,5 +1,9 @@
 # WebClock English Guide
 
+See the [installation guide](installation.md) (Traditional Chinese) for all three installation methods and self/managed activation.
+
+For home-screen shortcuts, fullscreen and keeping the screen awake, see [display device setup](display-devices.md), including [iPad mini 1/iOS 9](display-devices.md#ipad-ios9) (Traditional Chinese).
+
 ## Administrator sign-in and device authorization
 
 Existing installations remain in self mode. To enable per-device isolation, stop all writers and make a host backup using the steps below, then run `./venv/bin/python scripts/manage_auth.py --state-dir /path/to/webclock_state setup --username admin --enable-managed` as the service user. Enter a password of at least 12 characters interactively. Use the actual state path, restart, and sign in at `/admin` over HTTPS. The old `--enable-managed-test` flag remains compatible; no mode change occurs without an explicit flag. Existing names, capabilities, ACKs and content remain, but self-reported IDs/shared tokens do not become device credentials: displays must enroll with a six-character code. `reset-password` uses the same state path and revokes all admin sessions. Sessions last at most 8 hours; signing out does not revoke independent device credentials.
@@ -47,7 +51,7 @@ The self-hosted version provides these routes:
 - `/admin`: display settings, calendars, text reminders, backup, and restore.
 - `/schedules`: browser alarms and device sync status.
 
-Docker uses host port `80` by default. The Linux installer and manual run default to port `5000`. See the [README quick installation](../README_en.md#quick-installation) for commands. Basic `.env` settings are:
+Docker uses host port `80` by default. The Linux installer and manual run default to port `5000`. See the [installation guide](installation.md) for commands. Basic `.env` settings are:
 
 ```env
 PORT=5000
@@ -196,6 +200,8 @@ Target data paths come only from the target host's effective environment, `.env`
 `restore` requires `--yes` and a new `--rollback-dir`. It retains a complete pre-restore copy before replacing target data; ordinary content absent from the backup is restored as absent. Authorization markers, secrets and credentials follow the protected-restore rules above and cannot lower the protection mode. It attempts recovery on failure but does not resume automatically after power loss. If recovery is incomplete, keep services stopped and retain the pre-restore copy and `.webclock-restore-*` staging data for recovery. Copies preserve numeric UID/GID. After a privileged restore to another host or an external directory, check that the service account can traverse parent directories and read/write the data. After success, check data, paths, and permissions before manually starting services. This does not establish Raspberry Pi, Docker, or iPad acceptance.
 
 ### Updating the application
+
+See the [installation guide](installation.md#update) for update options. The Linux updater below supports HTTP health checks only; it does not support native HTTPS installations.
 
 After obtaining updated source, rebuild Docker with:
 
