@@ -212,7 +212,7 @@ def revoke_restored_access(state):
                 'credential_generation', 'created_at', 'assignment_revision', 'rejoin_required'}
         for identity, device in data['devices'].items():
             if (not isinstance(device, dict) or not keys <= set(device)
-                    or set(device) - (keys | {'display_overrides'}) or device.get('id') != identity
+                    or set(device) - (keys | {'display_overrides', 'content_overrides'}) or device.get('id') != identity
                     or type(device.get('credential_generation')) is not int or device['credential_generation'] < 1
                     or type(device.get('assignment_revision')) is not int or device['assignment_revision'] < 1
                     or type(device.get('enabled')) is not bool or type(device.get('rejoin_required')) is not bool

@@ -46,7 +46,44 @@
         </div>
     </fieldset>
     {% endmacro %}
+    {% macro announcement_fields(values, suffix) %}
+        {% set is_announcement = values.get('announcement', '1' if values.get('announcement_targets') else '') == '1' %}
+        {% set targets = values.get('announcement_targets', {}) %}
+        {% set selected_groups = values.getlist('announcement_group_ids') if values.getlist is defined else targets.get('group_ids', []) %}
+        {% set selected_devices = values.getlist('announcement_device_ids') if values.getlist is defined else targets.get('device_ids', []) %}
+        <div class="field">
+            <label for="note-kind-{{ suffix }}" data-i18n="note_kind">{{ translations[language].note_kind }}</label>
+            <select id="note-kind-{{ suffix }}" name="announcement" onchange="setAnnouncementMode(this)">
+                <option value="" {% if not is_announcement %}selected{% endif %} data-i18n="note_kind_reminder">{{ translations[language].note_kind_reminder }}</option>
+                <option value="1" {% if is_announcement %}selected{% endif %} data-i18n="announcements">{{ translations[language].announcements }}</option>
+            </select>
+        </div>
+        <fieldset data-announcement-options {% if not is_announcement %}hidden disabled{% endif %}>
+            <legend data-i18n="announcement_targets">{{ translations[language].announcement_targets }}</legend>
+            <p class="help" data-i18n="announcement_hint">{{ translations[language].announcement_hint }}</p>
+            {% for key, items, selected_ids, title in [('group_ids', announcement_groups, selected_groups, 'announcement_groups'), ('device_ids', announcement_devices, selected_devices, 'announcement_devices')] %}
+            <fieldset>
+                <legend data-i18n="{{ title }}">{{ translations[language][title] }}</legend>
+                <div class="announcement-target-list">
+                    {% for item in items %}
+                    <label class="group-choice"><input type="checkbox" name="announcement_{{ key }}" value="{{ item.id }}" {% if item.id in selected_ids %}checked{% endif %}><span>{{ item.name or item.id }}{% if key == 'device_ids' %} · {{ item.group_name or item.group_id }}{% endif %}</span></label>
+                    {% endfor %}
+                    {% for id in selected_ids if id not in items|map(attribute='id')|list %}
+                    <label class="group-choice"><input type="checkbox" name="announcement_{{ key }}" value="{{ id }}" checked><span>{{ id }} · <span data-i18n="announcement_missing_target">{{ translations[language].announcement_missing_target }}</span></span></label>
+                    {% endfor %}
+                    {% if not items and not selected_ids %}<p class="help" data-i18n="announcement_no_targets">{{ translations[language].announcement_no_targets }}</p>{% endif %}
+                </div>
+            </fieldset>
+            {% endfor %}
+            <div class="field">
+                <label for="announcement-expires-{{ suffix }}" data-i18n="announcement_expires">{{ translations[language].announcement_expires }}</label>
+                <input id="announcement-expires-{{ suffix }}" name="expires_at" type="datetime-local" value="{{ values.get('announcement_expires_local', values.get('expires_at', '')) }}">
+                <p class="help" data-i18n="announcement_expiry_hint">{{ translations[language].announcement_expiry_hint }}</p>
+            </div>
+        </fieldset>
+    {% endmacro %}
     {% macro note_fields(values, suffix) %}
+        {{ announcement_fields(values, suffix) }}
         <div class="field">
         <label for="note-text-{{ suffix }}" data-i18n="event_text">{{ translations[language].event_text }}</label>
         <input id="note-text-{{ suffix }}" type="text" name="note_text" maxlength="1000" value="{{ values.get('note_text', values.get('text', '')) }}" required>
@@ -161,6 +198,10 @@
         </div>
     </form>
 
+    <div class="panel">
+        <p id="settings-status" role="status" aria-live="polite"></p>
+        <button id="settings-reload" type="button" onclick="reloadSettings()" data-i18n="settings_reload">{{ translations[language].settings_reload }}</button>
+    </div>
     </section>
 
     <section class="management-panel{{ ' is-current' if error else '' }}" data-management-panel="calendar" aria-labelledby="calendar-title">
@@ -185,7 +226,7 @@
         <button id="calendar-retry" type="button" data-i18n="calendar_retry" hidden>{{ translations[language].calendar_retry }}</button>
     </form>
     <section class="panel">
-    <h2 data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
+    <h2 id="announcements-title" data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
     <p class="help" data-i18n="manual_events_hint">{{ translations[language].manual_events_hint }}</p>
     {% if error %}<p class="form-error" role="alert" data-i18n="{{ error }}">{{ translations[language][error] }}</p>{% endif %}
         {% set draft = request.form if request.endpoint == 'add' else {} %}
@@ -201,11 +242,12 @@
     <p class="help" data-i18n="calendar_window_timezone">{{ translations[language].calendar_window_timezone }}</p>
     <div class="actions"><button id="calendar-list-refresh" type="button" data-i18n="calendar_list_refresh">{{ translations[language].calendar_list_refresh }}</button><span id="calendar-list-status" role="status" aria-live="polite"></span></div>
     <ul id="calendar-current-list" class="note-list cards">
-        {% for note in notes %}
+        {% for note in notes + announcements %}
         <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}">
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag" data-time-value="{{ note.due_date }}">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
+                {% if note.get('announcement_targets') %}<span class="window-tag" data-i18n="announcements">{{ translations[language].announcements }}</span>{% endif %}
                 {% if not note.get('enabled', True) %}<span data-i18n="paused">{{ translations[language].paused }}</span>{% endif %}
                 {% if note.get('weekdays') and note.get('display_mode') == 'daily' %}
                 <span class="window-tag">{% for day in note.weekdays %}<span data-weekday="{{ (day + 1) % 7 }}">{{ translations[language].weekdays[(day + 1) % 7] }}</span> {% endfor %}</span>
@@ -214,7 +256,18 @@
                 <span class="window-tag"><span data-i18n="{{ 'daily_mode' if note.display_mode == 'daily' else 'range_mode' }}">{{ translations[language]['daily_mode' if note.display_mode == 'daily' else 'range_mode'] }}</span>: <span data-time-value="{{ note.display_start }}">{{ note.display_start | replace('T', ' ') }}</span> ~ <span data-time-value="{{ note.display_end }}">{{ note.display_end | replace('T', ' ') }}</span></span>
                 {% endif %}
             </div>
+            {% if note.get('announcement_targets') %}
+            <p class="help announcement-summary">
+                {% for key, items, title in [('group_ids', announcement_groups, 'announcement_groups'), ('device_ids', announcement_devices, 'announcement_devices')] %}
+                <span data-i18n="{{ title }}">{{ translations[language][title] }}</span>:
+                {% for id in note.announcement_targets[key] %}{% set target = items|selectattr('id', 'equalto', id)|first %}{{ target.name if target else id }}{% if not loop.last %} · {% endif %}{% else %}—{% endfor %}<br>
+                {% endfor %}
+                <span data-i18n="announcement_expires">{{ translations[language].announcement_expires }}</span>:
+                {% if note.get('announcement_expires_local') %}<span data-time-value="{{ note.announcement_expires_local }}">{{ note.announcement_expires_local|replace('T', ' ') }}</span>{% else %}<span data-i18n="announcement_no_expiry">{{ translations[language].announcement_no_expiry }}</span>{% endif %}
+            </p>
+            {% else %}
             <span data-note-group-summary="{{ note.id }}" class="content-group-summary"></span>
+            {% endif %}
             <div class="note-actions">
                 <form action="{{ url_for('toggle', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
                 <form action="{{ url_for('delete', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
@@ -225,7 +278,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
-                    <div data-note-group-editor="{{ note.id }}"></div>
+                    {% if not note.get('announcement_targets') %}<div data-note-assignment-wrapper {% if editing_id == note.id and request.form.get('announcement') == '1' %}hidden{% endif %}><div data-note-group-editor="{{ note.id }}"></div></div>{% endif %}
                     <div class="actions"><button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button></div>
                 </form>
             </details>
@@ -345,6 +398,11 @@
         var currentLanguage = {{ language | tojson }};
         var currentTimeFormat = {{ time_format | tojson }};
         var displayLanguage = {{ settings.language | tojson }};
+        var settingsRevision = {{ settings_revision | tojson }};
+        var settingsQueue = Promise.resolve(), settingsConflict = false, settingsPending = 0, settingsMessage = '', settingsEdits = 0;
+        ['input', 'change'].forEach(function (event) {
+            document.querySelector('[data-management-panel="display"]').addEventListener(event, function () { settingsEdits++; });
+        });
 
         document.getElementById('timezone-select').value = "{{ settings.timezone_offset }}";
 
@@ -360,6 +418,7 @@
                 el.textContent = t('weekdays')[Number(el.getAttribute('data-weekday'))];
             });
             applyTimeFormat(currentTimeFormat);
+            document.getElementById('settings-status').textContent = settingsMessage ? t(settingsMessage) : '';
             if (window.CalendarSettings) window.CalendarSettings.applyLanguage();
         };
 
@@ -370,6 +429,13 @@
                 input.type = select.value === 'daily' ? 'time' : 'datetime-local';
             });
             applyTimeFormat(currentTimeFormat);
+        }
+
+        function setAnnouncementMode(select) {
+            var form = select.form, fields = form.querySelector('[data-announcement-options]');
+            fields.hidden = fields.disabled = select.value !== '1';
+            var groups = form.querySelector('[data-note-assignment-wrapper]');
+            if (groups) groups.hidden = select.value === '1';
         }
 
         function applyTimeFormat(format) {
@@ -385,38 +451,78 @@
         function setTimeFormat(format) {
             var select = document.getElementById('time-format-select');
             select.disabled = true;
+            applyTimeFormat(format);
             return postSettings({time_format: format}, true).then(function (result) {
                 if (result) {
                     applyTimeFormat(format);
                     document.getElementById('time-format-status').textContent = t('saved');
-                } else select.value = currentTimeFormat;
+                }
                 select.disabled = false;
             });
         }
 
-        document.addEventListener('visibilitychange', function () {
-            if (document.hidden || document.getElementById('time-format-select').disabled) return;
-            fetch(window.webclockUrl ? window.webclockUrl('/api/status') : '/api/status', {cache: 'no-store'}).then(function (response) {
-                if (!response.ok) throw new Error('Settings unavailable');
-                return response.json();
-            }).then(function (data) {
-                if (data.settings && data.settings.time_format !== currentTimeFormat) applyTimeFormat(data.settings.time_format);
-            }).catch(function () {});
-        });
         applyTimeFormat(currentTimeFormat);
 
-        function postSettings(payload, keepDraft) {
-            return fetch(window.webclockUrl ? window.webclockUrl('/api/control') : '/api/control', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content },
-                body: JSON.stringify(payload)
-            }).then(function (response) {
-                if (!response.ok) throw new Error('Settings not saved');
-                return response.json();
-            }).catch(function () {
-                alert(t('settings_save_error'));
-                if (!keepDraft) window.location.reload();
+        function postSettings(payload) {
+            settingsEdits++;
+            settingsPending++;
+            document.getElementById('settings-reload').disabled = true;
+            settingsQueue = settingsQueue.then(function () {
+                if (settingsConflict) return;
+                return fetch(window.webclockUrl ? window.webclockUrl('/api/control') : '/api/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content,
+                               'If-Match': '"' + settingsRevision + '"' },
+                    body: JSON.stringify(payload)
+                }).then(function (response) {
+                    if (response.status === 409) settingsConflict = true;
+                    if (!response.ok) throw new Error('Settings not saved');
+                    return response.json();
+                }).then(function (result) {
+                    settingsRevision = result.revision;
+                    settingsMessage = 'saved';
+                    return result;
+                }).catch(function () { settingsMessage = settingsConflict ? 'settings_conflict' : 'settings_save_error'; });
+            }).then(function (result) {
+                settingsPending--;
+                document.getElementById('settings-reload').disabled = settingsPending > 0;
+                document.getElementById('settings-status').textContent = t(settingsMessage);
+                return result;
             });
+            return settingsQueue;
+        }
+
+        function reloadSettings() {
+            if (settingsPending || !window.confirm(t('settings_reload_confirm'))) return;
+            var button = document.getElementById('settings-reload');
+            var edits = settingsEdits;
+            button.disabled = true;
+            return fetch(window.webclockUrl ? window.webclockUrl('/api/control') : '/api/control', {cache: 'no-store'})
+                .then(function (response) {
+                    if (!response.ok) throw new Error('Settings unavailable');
+                    return response.json();
+                }).then(function (data) {
+                    if (edits !== settingsEdits) return;
+                    var settings = data.settings, night = settings.night;
+                    settingsRevision = data.revision; settingsConflict = false; settingsMessage = '';
+                    document.getElementById('settings-status').textContent = '';
+                    document.getElementById('brightness-control').value = settings.brightness;
+                    document.getElementById('bright-val').textContent = settings.brightness;
+                    document.getElementById('timezone-select').value = settings.timezone_offset;
+                    document.getElementById('display-language-select').value = displayLanguage = settings.language;
+                    ['normal', 'black'].forEach(function (mode) {
+                        var selected = settings.mode === mode, control = document.getElementById('mode-' + mode);
+                        control.classList.toggle('active', selected); control.setAttribute('aria-pressed', String(selected));
+                    });
+                    ['enabled', 'black'].forEach(function (key) { document.getElementById('night-' + key).checked = night[key]; });
+                    ['start', 'end', 'brightness'].forEach(function (key) { document.getElementById('night-' + key).value = night[key]; });
+                    document.getElementById('night-value').textContent = night.brightness;
+                    document.getElementById('night-status').textContent = document.getElementById('time-format-status').textContent = '';
+                    applyTimeFormat(settings.time_format);
+                }).catch(function () {
+                    settingsMessage = 'settings_load_error';
+                    document.getElementById('settings-status').textContent = t(settingsMessage);
+                }).then(function () { button.disabled = settingsPending > 0; });
         }
 
         function saveNight() {
@@ -480,7 +586,6 @@
             var requested = select.value;
             postSettings({language: requested}, true).then(function (result) {
                 if (result) displayLanguage = requested;
-                else select.value = displayLanguage;
                 select.disabled = false;
             });
         }

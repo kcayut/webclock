@@ -24,6 +24,8 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 
 `display_overrides` で省略した項目は共通設定を継承し、`night` 内も項目ごとに継承します。`false` と `0` は有効な指定値です。`content` は `calendar_source_ids`、`manual_note_ids`、`schedule_ids` と任意の `calendar_targets` を含み、空配列は選択なし、メモ ID は正の整数です。グループの表示言語は管理画面言語と独立し、共通の表示 `language` は引き続き `/api/control` で更新します。
 
+グループの GET／一覧／保存応答は、グループ内容と有効表示設定を含む `revision` を返します。PATCH に取得時の版を指定でき、不一致は書き込まず 409 `group_settings_changed` です。共通設定は `GET /api/control` で `{settings, revision}` を取得し、既存の設定オブジェクトを `If-Match: "<revision>"` 付きで POST します。不一致は 409 `settings_changed`、成功は最新の `settings`／`revision` を返します。管理画面は常に版を送信し、同一画面の共通設定保存を順番に処理します。版を付けない旧 CLI／API の無条件更新は互換性のため維持します。ハッシュは現在状態の比較値で、変更履歴ではありません。
+
 `calendar_targets` は `{source_id, uid, scope, recurrence_id}` の配列で、表示専用の `title` は任意です。`scope` は `series` または `occurrence`。`recurrence_id` は系列・繰り返さない予定では空文字列、繰り返しの個別予定では元の `RECURRENCE-ID` を使い、日時変更後も追跡します。参照元全体は引き続き `calendar_source_ids` で指定します。除外指定がない場合、正規化では参照元や系列に含まれる重複選択を除きます。除外指定がある場合は必要な個別選択を維持します。参照元・系列の全選択は今後の予定も含みます。`calendar_targets` がない旧データや `[]` は互換で、PATCH は省略したリストを維持します。一覧の 366 日の範囲外でも選択済みの対象は保持します。
 
 各グループの招待は 6 文字、600 秒有効、既定 5 台（1–100）、全体で最大 100 台です。平文は生成 POST の応答だけに含み、GET・永続状態・メンバー一覧には含めません。終了・再生成は参加済みメンバーを変更しません。期限切れ・満員・終了済み・グループ無効時は参加できません。参加関連の制限は送信元ごとに 60 秒 10 回、全体で 100 回で、429 に `Retry-After` を付けます。
@@ -36,7 +38,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 | `/api/v2/device/identity` | GET Cookie 往復確認。`pending` 試行は group を含まず、`active` は `{status: "active", identity, group: {id, name}}` を返す |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`。枠消費と参加を原子的に保存。初回 201、同じ確定済み試行の再送は 200 |
 | `/api/v2/device/leave` | POST `{}`。Cookie と同一オリジンの CSRF のみ。この端末の認可と観測記録を削除し、200 `{status: "left"}` を返して同じパスの Cookie を削除する |
-| `/api/v2/device/display` | GET グループの有効設定、選択済み予定、次の予定 |
+| `/api/v2/device/display` | GET 端末／グループの有効設定、選択済み予定、次の予定、対象のお知らせ |
 | `/api/v2/device/browser-alarms` | GET 選択済みアラームと計算結果 |
 | `/api/v2/device/status` | POST 名前・能力・revision・指令 ACK。認証情報から端末を決定し、`id`・`group_id` の自己指定は不可 |
 
@@ -46,7 +48,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 
 display・alarms は `schema_version: 3`、`identity`、config・schedule・holiday revision、ミリ秒 `server_timestamp`、最大 300 秒の `lease` を返します。identity は owner・device・group ID、認証世代、割り当て revision、`identity_revision` を含みます。304 を含む応答の直前に現在の認証と内容範囲を再確認し、I/O 中の範囲変更は古い内容ではなく 409 `display_scope_changed` を返します。ETag 応答は `private, no-cache` と `Vary: Cookie, Authorization` を使い、304 は `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` で期限を更新します。参加・identity 応答は `no-store` です。
 
-非公開キャッシュは端末認証の範囲で分離します。401・403、認証の変更、期限切れで非公開予定とブラウザーアラームを消去し、通信エラー時はその実行中の期限内データだけを維持できます。アラームはグループの表示タイムゾーンと独立して `Asia/Taipei` で計算します。連動参照元が欠ける場合は該当アラームを除外し、毎日発音へ戻しません。ESP の 7 日間オフライン発生一覧や、旧 iPad・ロック画面音声・実機検収を意味する機能ではありません。
+非公開キャッシュは端末認証の範囲で分離します。401・403、認証の変更、期限切れで非公開予定・お知らせ・ブラウザーアラームを消去し、通信エラー時はその実行中の期限内データだけを維持できます。アラームはグループの表示タイムゾーンと独立して `Asia/Taipei` で計算します。連動参照元が欠ける場合は該当アラームを除外し、毎日発音へ戻しません。ESP の 7 日間オフライン発生一覧や、旧 iPad・ロック画面音声・実機検収を意味する機能ではありません。
 
 [繁體中文](server-api.md) · [English](server-api_en.md) · **日本語** · [README](../README_jp.md)
 
@@ -56,11 +58,13 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 
 現在の試作版の使用手順と制限は [ESPHome 端末ガイド](esp-home.md)、完全な応答例は [API 詳細](server-api.md#裝置-api)を参照してください。どちらも繁体字中国語です。起動のたびに時刻の取得と Server 設定の検証が成功してからアラームを有効にします。その後の通信断ではキャッシュで動作しますが、オフライン再起動時に自動で有効にはしません。
 
-現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。schema 3 は認証済み端末に所属グループの内容を配信します。複数ユーザーアカウントとマルチテナントは未実装です。
+現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。schema 3 は認証済み端末に端末指定とグループを解決した内容を配信します。複数ユーザーアカウントとマルチテナントは未実装です。
 
 ### 項目ごとのグループ割り当てと表示区間
 
 `GET /api/v1/groups/assignments` は現在の管理者のグループとリマインダー・予定の割り当てを返します。カレンダー項目の割り当ては `GET /api/calendar/display-items` に含まれます。`PUT /api/v1/groups/assignments` は `item`（`{kind:"manual_note",id}`、`{kind:"schedule",id}`、`{kind:"calendar",target}`）と `group_ids` を受け取り、関連グループを一度に原子的に保存します。空配列は割り当て解除です。`all:true` は保存時点の全グループを指し、今後作成するグループは含みません。系列の `keep_partial_group_ids` は未操作の部分割り当てを維持し、選択済みグループと重複できません。不明な項目や別管理者のグループは書き込み全体を拒否します。
+
+各 assignment は `revision` を含みます。PUT に取得時の版を渡せ、不一致は 409 `assignment_changed` です。`GET /api/v1/groups/assignments?item=<URLエンコードJSON>` は単一項目の再読み込み用に `{groups, assignment}` を返します。版には現在のグループ一覧と当該項目の割り当て、関連する系列・個別予定の選択／除外を含めます。部分割り当ての表示が同じでも新しい例外を上書きしません。無関係な項目の変更は保存を妨げず、項目別変更は古いグループ全体の編集を無効化します。版なしの旧呼び出しは互換ですが、現在の管理画面は必ず版を渡し、409 後は自動再送しません。
 
 任意の `content.calendar_exclusions` は `calendar_targets` と同じ識別形式を使用し、省略時は空です。表示認可は個別除外、個別選択、系列除外、系列選択、参照元全体の順で決定します。継承された個別予定の解除ではその予定だけを除外し、参照元や将来の予定は維持します。系列全体の選択・解除はその系列の個別例外を置き換えます。アラームの参照元認可は独立しています。
 
@@ -68,6 +72,16 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 
 `GET /api/calendar/display-items` は選択済み予定、安全な参照元名、時刻、表示区間、グループ割り当て、未検出状態を時刻順に返します。明示的に選んだ系列は代表カード1件にまとめ、個別例外は別に表示します。非公開URLを含まず、取得失敗は空の選択ではなく503です。ホストバックアップには保存されますが、管理画面のversion 1 JSONは引き続きsettingsとnotesのみです。
 
+
+### 対象を指定するお知らせ
+
+お知らせは `manual_notes.json` と既存のフォームルートを使います。POST `/add` で追加、POST `/schedule/<id>` で編集、POST `/toggle/<id>` で一時停止・再開、POST `/delete/<id>` で削除します。管理認証と CSRF の規則は従来どおりです。フォームは `announcement=1` と複数の `announcement_group_ids`／`announcement_device_ids` を送ります。任意の `expires_at` は `YYYY-MM-DDTHH:MM` で、管理表示タイムゾーンからタイムゾーン付き ISO 8601 に変換します。通常のリマインダーは `announcement` を空にし、お知らせの期限を持ちません。
+
+保存する note に `announcement_targets: {group_ids: [], device_ids: []}` と `expires_at` を追加できます。各 ID 配列は最大 100 件で、保存時に重複を除きます。ID は ASCII `[A-Za-z0-9_-]` の 1–128 文字です。`expires_at` はタイムゾーン付き ISO 8601 文字列で、空文字列は追加の絶対期限なしを意味します。グループまたは端末のどちらかに一致し、現在の端末・グループ認可が有効なら配信します。空の対象には配信しません。日付、range／daily、曜日、enabled、絶対期限は管理タイムゾーンで判定し、アラームの `Asia/Taipei` 規則とは独立しています。
+
+`GET /api/v2/device/display` に `announcements: [{id, text, visible_until}]` を追加します。`visible_until` は Unix ミリ秒で、現在のスナップショットの最長 300 秒、絶対期限、現在の表示区間終了の最も早い値です。display／アラーム全体のリースは短縮しません。`events`、`next_event`、サーバー側 local カレンダー、browser-alarms には混ぜず、`schedules.type=announcement` も使いません。旧 schema 1／2 の契約は維持します。匿名 self 状態のお知らせは空で、登録済みの self 端末は v2 から対象のお知らせを取得できます。ブラウザーには永続保存せず、認可喪失、認証・範囲変更、リース期限、個別期限で消去します。
+
+フォームは空の対象を配信なしで保存できますが、存在しない対象や他 owner の対象は拒否します。version 1 `/api/backup` は `notes` のお知らせ欄を保持し、読み込み時に構造と存在する対象の所有者を検証します。存在しない過去の ID は保持できますが、認可や対象の新規作成は行いません。完全ホストバックアップはデータを保持し、履歴復元時は端末資格情報を無効化します。操作は[お知らせガイド](guide_jp.md#グループ端末を指定するお知らせ)を参照してください。
 
 ## 起動と構成
 
@@ -159,13 +173,18 @@ API は JSON を受け取ります。一致した API ルートのエラーは `
 | `/api/v1/devices` | GET 登録端末と未確認指令 |
 | `/api/v1/devices/<id>` | PATCH `{"name":"リビングの時計"}`、200 と `device` を返す。DELETE は現在の owner の独立した端末認可を取り消し、200 `{status: "revoked"}` を返す |
 | `/api/v1/devices/<id>/authorization` | PATCH `{"group_id":"移動先グループID","enabled":false}`。片方の項目だけでも可。移動または無効化／再開し、200 と安全な `device` 認可情報を返す |
+| `/api/v1/devices/<id>/content-settings` | GET/PATCH 端末の内容指定・継承・有効プレビュー。PATCH は revision が必須 |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`、202 を返す |
 
 managed の `GET /api/v1/devices` は現在の owner の認可済み端末を、未報告でも `can_revoke: true` として表示します。`reported: false` では管理画面の改名・同期操作を無効にします。self は旧観測一覧を維持し、legacy 端末は `can_revoke: false` です。既存の出所不明な観測記録は過去の退出による残存か判定できないため、推測で削除せず保持します。DELETE は存在しない端末、他の owner、共有 token のみの旧端末に 404 を返します。共有 token は端末ごとに失効できません。
 
 `GET /api/v1/devices/<id>/display-settings` は `{display_overrides, inherited_settings, effective_settings, sources, revision}` を返します。`sources` は `brightness`、`night.enabled` などのパスに `device|group|default` を返します。端末一覧の各行と認可変更の応答にも `display_settings` を追加します。同じ URL への PATCH は `{"revision":"取得時の版","display_overrides":{"brightness":10}}` で個別指定全体を置換し、省略項目は継承、`{}` は全継承です。表示項目のみ受け付け、`night` は 5 項目すべてが必要です。`false`／`0` を保持し、内容・認証情報・非公開参照元は受け付けません。端末 > グループ > 共通設定で計算し、移動時も個別指定を保持します。表示変更は `assignment_revision` を変更せず、有効値の変更で `config_revision`／ETag が変わります。アラームは引き続き台北時間です。版には端末・上位設定と所属が含まれ、競合は 409 `display_settings_changed` で保存しません。不存在・他 owner・legacy は 404、再参加が必要なら 409 `device_rejoin_required`。入力・CSRF・保存・破損状態は既存の 400／403／500／503 に従います。
 
-`PATCH /api/v1/devices/<id>/authorization` は、`enabled`（真偽値）と／または `group_id`（既存グループ ID）だけを持つ空でないオブジェクトを受け付けます。別の移動先は同じ owner に属し、有効である必要があります。現在のグループが無効でも端末の無効化・再開・移動は可能ですが、端末を再開してもグループは有効になりません。成功応答は `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}, display_settings}` です。GET 端末一覧にも同じ項目を追加し、端末の `name` は維持します。`authorization_status` は `active|disabled|revoked`。`rejoin_required: true` は、取り消し済みまたは認証情報が消去された過去の記録も含みます。認証情報とその digest は返しません。
+`GET /api/v1/devices/<id>/content-settings` は `{content_overrides, inherited_content, effective_content, sources, revision}` を返します。`sources` の `calendar`、`manual_note_ids`、`schedule_ids` は `device|group` です。端末一覧と認可変更応答にも `content_settings` を含みます。PATCH は `{"revision":"取得時の版","content_overrides":{"manual_note_ids":[],"schedule_ids":["alarm-id"]}}` を必須とし、個別指定全体を置換します。省略した種類は継承、`{}` は全継承、明示的な空リストは配信なしです。カレンダー個別指定は `calendar_source_ids` が必須で、`calendar_targets`／`calendar_exclusions` と一組です。後二者の省略は空リストです。既存 ID を検証・重複排除し、非公開 URL や共通原本の変更は受け付けません。
+
+実際の変更は原子的に保存して `assignment_revision` を増やし、旧 identity／ETag を無効化します。同値の再送は書き込みません。移動時は端末指定を保持し、継承項目を新グループから再計算します。読み取りには有効な端末認可が必要で、削除した参照元・予定を全内容へフォールバックしません。版は上位内容と端末割り当てを含み、古い保存は 409 `content_settings_changed` です。404、再参加が必要な 409、400／403／500／503 は端末表示設定と同じです。完全ホストバックアップと過去の復元は `content_overrides` を保持し、旧認証情報は失効します。管理画面の version 1 JSON は端末認可データを含みません。
+
+`PATCH /api/v1/devices/<id>/authorization` は、`enabled`（真偽値）と／または `group_id`（既存グループ ID）だけを持つ空でないオブジェクトを受け付けます。別の移動先は同じ owner に属し、有効である必要があります。現在のグループが無効でも端末の無効化・再開・移動は可能ですが、端末を再開してもグループは有効になりません。成功応答は `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}, display_settings, content_settings}` です。GET 端末一覧にも同じ項目を追加し、端末の `name` は維持します。`authorization_status` は `active|disabled|revoked`。`rejoin_required: true` は、取り消し済みまたは認証情報が消去された過去の記録も含みます。認証情報とその digest は返しません。
 
 認可ファイルを一度の原子的な書き込みで保存します。実際の変更で `assignment_revision` が一度増え、同じ値の再送では書き込みません。移動・無効化／再開は認証情報、端末名、能力、報告、同期 ACK を保持し、招待の使用数を変えません。無効化後の非公開 API は拒否され、再開後は元の cookie で再び本人確認できます。移動後は新しいグループ範囲と revision を返し、旧 ETag や読み込み途中の旧データ／304 を許可しません。オフラインの非公開内容には最長 300 秒の lease が適用されます。
 

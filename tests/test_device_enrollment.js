@@ -97,6 +97,15 @@ page.advance(1001); page.session.expire();
 assert.equal(page.session.hasLease('display'), false, '304 without explicit scoped renewal cannot extend a lease');
 assert.ok(page.changes.some(event => event.type === 'expired' && event.resource === 'display'));
 
+const delayed = browser(); delayed.activate();
+let snapshotElapsed = null;
+delayed.session.fetchDisplay((data, privateSnapshot, requestElapsed) => {
+    assert.equal(privateSnapshot, true); snapshotElapsed = requestElapsed;
+});
+const delayedSnapshot = delayed.snapshot(); delayed.advance(2500);
+delayed.respond('/display', delayedSnapshot);
+assert.equal(snapshotElapsed, 2500, 'Display deadlines receive conservative request time to subtract from their remaining lifetime');
+
 const denial = browser(); denial.activate();
 denial.session.fetchDisplay(() => true); denial.respond('/display', denial.snapshot());
 denial.session.fetchDisplay(() => assert.fail('stale success must not revive revoked content'));

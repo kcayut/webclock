@@ -7,16 +7,17 @@
         const t = options.t, editors = new Set(), summaries = new Map();
         let data = null, loading = null, failed = false, epoch = 0;
         const empty = () => ({group_ids: [], partial_group_ids: []});
-        async function request(method, body) {
+        async function request(method, body, item) {
             const init = {method, credentials: 'same-origin', cache: 'no-store', headers: {}};
             if (body) {
                 init.headers['Content-Type'] = 'application/json';
                 init.headers['X-CSRF-Token'] = document.getElementById('csrf-token').content;
                 init.body = JSON.stringify(body);
             }
-            const url = window.webclockUrl ? window.webclockUrl('/api/v1/groups/assignments') : '/api/v1/groups/assignments';
+            const route = '/api/v1/groups/assignments' + (item ? '?item=' + encodeURIComponent(JSON.stringify(item)) : '');
+            const url = window.webclockUrl ? window.webclockUrl(route) : route;
             const response = await fetch(url, init), result = await response.json();
-            if (!response.ok) throw new Error('Assignment request failed');
+            if (!response.ok) { const error = new Error('Assignment request failed'); error.code = result.code; throw error; }
             return result;
         }
         function valid(assignment) {
@@ -58,7 +59,7 @@
             container.className += ' content-group-editor'; allLabel.append(all, allText); actions.append(save, retry);
             container.append(title, allLabel, list, hint, actions, status);
             let item = null, current = null;
-            function mark() { current.dirty = true; current.message = 'assignment_pending'; current.sequence++; renderEditor(); }
+            function mark() { current.dirty = true; current.message = current.conflict ? 'assignment_conflict' : 'assignment_pending'; current.sequence++; renderEditor(); }
             all.addEventListener('change', () => {
                 if (!current || !data) return;
                 current.value = {group_ids: all.checked ? data.groups.map(group => group.id) : [], partial_group_ids: []}; mark();
@@ -68,8 +69,9 @@
                 if (!item || !current) return;
                 title.textContent = t('assignment_title'); allText.textContent = t('assignment_all'); hint.textContent = t('assignment_independent');
                 save.textContent = t('assignment_save'); retry.textContent = t('assignment_retry');
-                all.disabled = save.disabled = current.busy || !data || !current.ready;
-                retry.hidden = !failed; retry.disabled = !!loading;
+                all.disabled = current.busy || !data || !current.ready;
+                save.disabled = all.disabled || current.conflict;
+                retry.hidden = !failed && !current.conflict; retry.disabled = !!loading || current.busy;
                 const groups = data?.groups || [], value = current.value;
                 const count = groups.filter(group => value.group_ids.includes(group.id)).length;
                 all.checked = groups.length > 0 && count === groups.length && !value.partial_group_ids.length;
@@ -97,27 +99,44 @@
                 choices.forEach((choice, id) => { if (!live.has(id)) { choice.label.remove(); choices.delete(id); } });
                 const message = failed ? 'assignment_load_failed' : current.message || (!data || !current.ready ? 'assignment_loading' : !groups.length ? 'assignment_empty' : '');
                 status.textContent = message ? t(message) : '';
-                status.className = current.message === 'assignment_failed' || failed ? 'form-error' : 'help';
+                status.className = current.message === 'assignment_failed' || current.conflict || failed ? 'form-error' : 'help';
             }
             save.addEventListener('click', async () => {
-                if (!item || !data || !current.ready || current.busy) return;
+                if (!item || !data || !current.ready || current.busy || current.conflict) return;
                 const draft = current, sentItem = copy(item), sequence = draft.sequence;
-                const body = {item: sentItem, group_ids: draft.value.group_ids.slice()};
+                const body = {item: sentItem, group_ids: draft.value.group_ids.slice(), revision: draft.revision};
                 if (draft.value.partial_group_ids.length) body.keep_partial_group_ids = draft.value.partial_group_ids.slice();
                 draft.busy = true; draft.message = 'loading'; ++epoch; renderEditor();
                 try {
                     const result = await request('PUT', body);
-                    if (!valid(result.assignment)) throw new Error('Invalid assignment');
+                    if (!valid(result.assignment) || typeof result.assignment.revision !== 'string') throw new Error('Invalid assignment');
                     failed = false;
                     if (Array.isArray(result.groups)) data.groups = result.groups;
                     if (sentItem.kind !== 'calendar') data[sentItem.kind === 'manual_note' ? 'manual_notes' : 'schedules'][String(sentItem.id)] = result.assignment;
+                    draft.revision = result.assignment.revision;
                     if (draft.sequence === sequence) { draft.value = copy(result.assignment); draft.dirty = false; draft.message = 'saved'; }
                     else draft.message = 'assignment_pending';
                     if (options.onSaved) options.onSaved(sentItem, result.assignment);
-                } catch (error) { draft.message = 'assignment_failed'; }
+                } catch (error) { draft.conflict = error.code === 'assignment_changed'; draft.message = draft.conflict ? 'assignment_conflict' : 'assignment_failed'; }
                 finally { ++epoch; draft.busy = false; changed(); }
             });
-            retry.addEventListener('click', load);
+            retry.addEventListener('click', async () => {
+                if (!current?.conflict) { load(); return; }
+                if (current.busy || !window.confirm(t('assignment_reload_confirm'))) return;
+                const draft = current, sentItem = copy(item), sequence = draft.sequence;
+                draft.busy = true; ++epoch; renderEditor();
+                try {
+                    const result = await request('GET', undefined, sentItem);
+                    if (!valid(result.assignment) || typeof result.assignment.revision !== 'string' || !Array.isArray(result.groups)) throw new Error('Invalid assignment');
+                    if (draft.sequence !== sequence) return;
+                    data.groups = result.groups;
+                    if (sentItem.kind !== 'calendar') data[sentItem.kind === 'manual_note' ? 'manual_notes' : 'schedules'][String(sentItem.id)] = result.assignment;
+                    draft.value = copy(result.assignment); draft.revision = result.assignment.revision;
+                    draft.dirty = false; draft.conflict = false; draft.message = '';
+                    if (options.onSaved) options.onSaved(sentItem, result.assignment);
+                } catch (error) { draft.message = 'assignment_failed'; }
+                finally { draft.busy = false; ++epoch; changed(); }
+            });
             const editor = {
                 set(nextItem, assignment) {
                     item = nextItem;
@@ -125,7 +144,10 @@
                         const key = itemKey(item);
                         if (!drafts.has(key)) drafts.set(key, {value: empty(), ready: false, dirty: false, busy: false, sequence: 0, message: ''});
                         current = drafts.get(key);
-                        if (!current.dirty && !current.busy && valid(assignment)) { current.value = copy(assignment); current.ready = true; }
+                        if (!current.dirty && !current.busy && !current.conflict && valid(assignment)) {
+                            current.value = copy(assignment); current.revision = assignment.revision;
+                            current.ready = typeof assignment.revision === 'string';
+                        }
                     }
                     renderEditor();
                 },

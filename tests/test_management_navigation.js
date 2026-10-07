@@ -54,6 +54,9 @@ function checkNavigation(initial, names) {
         selected(name);
     }
     window.location.hash = '#management-main'; events.hashchange(); selected(names[names.length - 1]);
+    if (names.includes('calendar')) {
+        window.location.hash = '#announcements-title'; events.hashchange(); selected('calendar');
+    }
     window.location.hash = '#unknown'; events.hashchange(); selected(initial);
     window.location.hash = ''; events.hashchange(); selected(initial);
 }
@@ -76,10 +79,10 @@ async function checkLanguage() {
     const window = {location: {hash: '', reload: () => { reloads++; }}, addEventListener() {},
         CalendarSettings: {applyLanguage: () => { calendarRefreshes++; }},
         requestAnimationFrame: callback => callback(), scrollTo() {}, alert() { alerts++; }};
-    const context = {window, I18N: packs, currentLanguage: 'zh-TW', currentTimeFormat: '12h',
+    const context = {window, I18N: packs, currentLanguage: 'zh-TW', currentTimeFormat: '12h', settingsMessage: '',
         applyTimeFormat: format => { assert.equal(format, '12h'); timeRefreshes++; },
         document: {documentElement: {lang: 'zh-TW'}, body: {getAttribute: () => 'display'},
-            getElementById: id => id === 'management-language-select' ? select : id === 'management-i18n' ? {textContent: JSON.stringify(packs)} : id === 'csrf-token' ? {content: 'language-csrf-token'} : null,
+            getElementById: id => id === 'management-language-select' ? select : id === 'management-i18n' ? {textContent: JSON.stringify(packs)} : id === 'csrf-token' ? {content: 'language-csrf-token'} : id === 'settings-status' ? {textContent: ''} : null,
             querySelectorAll: selector => selector === '[data-i18n]' ? [label] : selector === '[data-weekday]' ? [weekday] : []},
         fetch(url, options) { request = {url, options}; return failure === 'network' ? Promise.reject(new Error('offline')) : Promise.resolve({ok: !failure}); }};
     vm.createContext(context);

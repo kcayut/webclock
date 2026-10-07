@@ -36,7 +36,7 @@ for (const field of ['calendar_source_ids', 'manual_note_ids', 'schedule_ids']) 
 const $ = id => { assert.ok(elements.has(id), 'Missing ' + id); return elements.get(id); };
 $('csrf-token').content = 'test-csrf';
 const labels = {
- group_unsaved: 'Unsaved', group_saved_more_drafts: 'More edits remain', group_save_failed: 'Save failed',
+ group_conflict: 'Conflict retained', group_reload: 'Reload group', group_reload_confirm: 'Discard edits?', group_unsaved: 'Unsaved', group_saved_more_drafts: 'More edits remain', group_save_failed: 'Save failed',
  group_stale: 'Stale data', group_invite_details: '{state} {remaining}/{capacity} {expires}',
  group_inherit_value: 'Default {value}', group_invite_active: 'Active', group_member_active: 'Authorized',
  group_invite_none: 'No code', group_members_empty: 'No members', group_new: 'New group',
@@ -50,7 +50,7 @@ $('schedule-i18n').textContent = JSON.stringify({en: labels, 'zh-TW': {...labels
 const defaultSettings = {brightness: 80, mode: 'normal', timezone_offset: 8, time_format: '24h', language: 'zh-TW',
     night: {enabled: true, start: '22:00', end: '07:00', brightness: 15, black: true}};
 const content = {calendar_source_ids: [], manual_note_ids: [], schedule_ids: []};
-const makeRow = (id, name) => ({id, name, enabled: true, display_overrides: {}, content: plain(content), effective_settings: plain(defaultSettings)});
+const makeRow = (id, name) => ({id, name, revision: id + '-r1', enabled: true, display_overrides: {}, content: plain(content), effective_settings: plain(defaultSettings)});
 const rowA = makeRow('a', 'Room A'), rowB = makeRow('b', 'Room B');
 const catalog = {defaults: defaultSettings, calendar_sources: [{id: 'cal', name: 'Calendar'}],
     manual_notes: [{id: 7, text: 'Reminder'}], schedules: [{id: 'alarm', name: 'Alarm'}]};
@@ -274,6 +274,72 @@ async function deviceSettingsChecks() {
     assert.equal(field('brightness').value, '5', 'Slow reload keeps later edits');
     assert.equal(save.disabled, true);
 }
+async function deviceContentChecks() {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/device-content.js'), 'utf8'), context);
+    const target = {source_id: 'cal', uid: 'series', scope: 'occurrence', recurrence_id: 'one', title: 'Meeting'};
+    const inherited = {calendar_source_ids: ['cal'], calendar_targets: [], calendar_exclusions: [target], manual_note_ids: [7], schedule_ids: ['alarm']};
+    const settings = (revision, overrides = {}) => ({revision, content_overrides: plain(overrides),
+        inherited_content: plain(inherited), effective_content: {...plain(inherited), ...plain(overrides)},
+        sources: {calendar: 'calendar_source_ids' in overrides ? 'device' : 'group',
+            manual_note_ids: 'manual_note_ids' in overrides ? 'device' : 'group', schedule_ids: 'schedule_ids' in overrides ? 'device' : 'group'}});
+    let device = {id: 'content-test', content_settings: settings('one')}, pending, language = 'en', catalogFails = false;
+    const editor = window.WebClockDeviceContent.create({t: key => language + ':' + key, onBusy() {},
+        loadCatalog: async () => {
+            if (catalogFails) throw new Error('offline');
+            return {calendar_sources: [{id: 'cal', name: 'Calendar'}], manual_notes: [{id: 7, text: 'Reminder'}], schedules: [{id: 'alarm', name: 'Alarm'}]};
+        }, loadEvents: async () => ({events: []}),
+        request(id, method, data) { return new Promise((resolve, reject) => { pending = {id, method, data, resolve, reject}; }); }});
+    const root = editor.render(device); root.open = true;
+    await editor.refreshCatalog();
+    const form = root.children.find(child => child.tag === 'form');
+    const save = descendants(root).find(child => child.type === 'submit');
+    const reload = descendants(root).find(child => child.textContent === 'en:device_content_reload');
+    const status = form.children.find(child => child.getAttribute('role') === 'status');
+    const policy = key => $('device-content-content-test-' + key);
+    const select = (key, value) => trigger('device-content-content-test-' + key, 'change', value);
+    const contentChoice = key => descendants(root).find(child => child.getAttribute('data-device-content-choice') === key);
+    await select('calendar_source_ids', 'custom');
+    await select('manual_note_ids', 'custom');
+    const note = contentChoice('manual_note_ids:7'); note.checked = false; await note.trigger('change');
+    const first = form.trigger('submit');
+    assert.equal(pending.method, 'PATCH');
+    assert.deepEqual(plain(pending.data), {revision: 'one', content_overrides: {
+        calendar_source_ids: ['cal'], calendar_targets: [], calendar_exclusions: [target], manual_note_ids: []}});
+    assert.equal(editor.busy(device.id), true);
+    const saved = settings('two', pending.data.content_overrides);
+    await select('schedule_ids', 'custom');
+    pending.resolve(saved); await first;
+    device.content_settings = saved;
+    note.focus(); language = 'ja';
+    assert.equal(editor.render(device), root); assert.equal(active, note); assert.equal(root.open, true);
+    assert.equal(note.checked, false); assert.equal(policy('schedule_ids').value, 'custom');
+    assert.equal(status.textContent, 'ja:group_saved_more_drafts');
+    device.content_settings = settings('moved-group'); editor.render(device);
+    assert.equal(note.checked, false); assert.equal(save.disabled, true);
+    assert.equal(status.textContent, 'ja:device_content_conflict');
+    window.confirm = () => false; await reload.trigger('click'); assert.equal(note.checked, false);
+    window.confirm = () => true;
+    const loading = reload.trigger('click'); pending.resolve(device.content_settings); await loading;
+    assert.equal(policy('manual_note_ids').value, 'inherit');
+    await select('calendar_source_ids', 'custom'); await select('calendar_source_ids', 'inherit');
+    const restoring = form.trigger('submit'); assert.deepEqual(plain(pending.data.content_overrides), {});
+    pending.reject(Object.assign(new Error('conflict'), {code: 'content_settings_changed'})); await flush();
+    assert.equal(pending.method, 'GET'); pending.reject(new Error('offline')); await restoring;
+    assert.equal(save.disabled, true, 'A failed conflict readback must still block stale writes');
+    assert.equal(status.textContent, 'ja:device_content_conflict');
+    const slowReload = reload.trigger('click'); await select('manual_note_ids', 'custom');
+    note.checked = false; await note.trigger('change');
+    device.content_settings = settings('latest'); pending.resolve(device.content_settings); await slowReload;
+    assert.equal(note.checked, false, 'Edits during a slow reload survive'); assert.equal(save.disabled, true);
+    catalogFails = true; await editor.refreshCatalog();
+    assert.equal(contentChoice('manual_note_ids:7'), note); assert.equal(note.checked, false);
+    assert.ok(descendants(root).some(child => child.textContent === 'ja:device_content_catalog_failed'));
+    const latest = reload.trigger('click'); pending.resolve(device.content_settings); await latest;
+    assert.equal(policy('manual_note_ids').value, 'inherit');
+    const replacement = editor.render(device, true);
+    assert.equal(replacement, root); assert.equal(policy('manual_note_ids').disabled, true);
+    editor.forget(device.id); assert.notEqual(editor.render(device), root, 'Revocation discards the device draft');
+}
 async function main() {
     vm.runInContext(chooserSource, context);
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/device-settings.js'), 'utf8'), context);
@@ -300,6 +366,7 @@ async function main() {
     const save = next('/a', 'PATCH');
     assert.equal(save.options.headers['X-CSRF-Token'], 'test-csrf');
     const payload = JSON.parse(save.options.body);
+    assert.equal(payload.revision, 'a-r1', 'The draft keeps the revision it was based on');
     assert.equal(payload.display_overrides.brightness, 0);
     assert.equal(payload.display_overrides.night.enabled, false);
     assert.deepEqual(payload.content.manual_note_ids, [7]);
@@ -422,6 +489,26 @@ async function main() {
     let exceptionPayload = JSON.parse(next('/exceptions', 'PATCH').options.body);
     assert.deepEqual(exceptionPayload.content.calendar_exclusions, [deniedOccurrence], 'Other group edits retain exact exclusions');
     respond('/exceptions', {...excludedRow, ...exceptionPayload}, 'PATCH'); await flush(); await access('exceptions');
+    await trigger('group-name', 'input', 'Retained conflict draft'); trigger('group-form', 'submit');
+    respond('/exceptions', {code: 'group_settings_changed'}, 'PATCH', false); await flush(); await access('exceptions');
+    assert.equal($('group-name').value, 'Retained conflict draft');
+    assert.equal($('group-form-status').textContent, 'Conflict retained'); assert.equal($('group-save').disabled, true);
+    const requestCount = requests.length;
+    await trigger('group-form', 'submit'); assert.equal(requests.length, requestCount, 'Conflicts cannot be resent without reload');
+    window.confirm = () => false;
+    await trigger('group-reload', 'click'); assert.equal(requests.length, requestCount, 'Cancelling reload preserves the entire draft');
+    window.confirm = () => true;
+    trigger('group-reload', 'click');
+    await trigger('group-name', 'input', 'Typed while reloading');
+    respond('/exceptions', {...excludedRow, revision: 'exceptions-r2', name: 'Latest server group'}); respond('/catalog', catalog); await flush();
+    assert.equal($('group-name').value, 'Typed while reloading'); assert.equal($('group-save').disabled, true);
+    trigger('group-reload', 'click');
+    respond('/exceptions', {...excludedRow, revision: 'exceptions-r2', name: 'Latest server group'}); respond('/catalog', catalog); await flush();
+    assert.equal($('group-name').value, 'Latest server group'); assert.equal($('group-reload').hidden, true);
+    await trigger('group-name', 'input', 'Edited after reload'); trigger('group-form', 'submit');
+    const reloadedPayload = JSON.parse(next('/exceptions', 'PATCH').options.body);
+    assert.equal(reloadedPayload.revision, 'exceptions-r2');
+    respond('/exceptions', {...excludedRow, ...reloadedPayload}, 'PATCH'); await flush(); await access('exceptions');
     await clickChoice(targetChoice('weekly', 'occurrence', 'original-1'), false);
     await clickChoice(targetChoice('weekly', 'occurrence', 'original-2'), true);
     trigger('group-form', 'submit'); exceptionPayload = JSON.parse(next('/exceptions', 'PATCH').options.body);
@@ -446,6 +533,7 @@ async function main() {
     assert.equal(allowedChild.checked, false, 'An exact occurrence exclusion has highest priority');
     assert.doesNotMatch(source, /localStorage|sessionStorage/);
     await deviceSettingsChecks();
+    await deviceContentChecks();
     console.log('Group/device UI: inheritance, conflicts, drafts, focus, failures and calendar selection passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

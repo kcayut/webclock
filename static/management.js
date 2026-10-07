@@ -3,7 +3,7 @@
     'use strict';
     var panels = document.querySelectorAll('[data-management-panel]');
     var links = document.querySelectorAll('[data-management-link]');
-    var aliases = {'calendar-title': 'calendar', 'devices-title': 'devices'};
+    var aliases = {'calendar-title': 'calendar', 'announcements-title': 'calendar', 'devices-title': 'devices'};
     var initial = document.body.getAttribute('data-initial-panel');
     var themeToggle = document.getElementById('management-theme-toggle');
     if (themeToggle) {

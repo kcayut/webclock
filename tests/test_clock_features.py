@@ -33,6 +33,26 @@ class ClockFeaturesTest(unittest.TestCase):
         with patch.object(clock, 'get_local_now', return_value=now), patch.object(clock, 'get_calendar_events', return_value=[]):
             return self.client.get('/api/status').json
 
+    def test_shared_settings_version_rejects_stale_page_and_preserves_failed_write(self):
+        initial = self.client.get('/api/control')
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.headers['Cache-Control'], 'no-store')
+        headers = {'If-Match': '"' + initial.json['revision'] + '"'}
+        saved = self.client.post('/api/control', json={'brightness': 0}, headers=headers)
+        self.assertEqual(saved.status_code, 200)
+        self.assertNotEqual(saved.json['revision'], initial.json['revision'])
+        before = Path(clock.SETTINGS_FILE).read_bytes()
+        stale = self.client.post('/api/control', json={'brightness': 50}, headers=headers)
+        self.assertEqual((stale.status_code, stale.json['code']), (409, 'settings_changed'))
+        self.assertEqual(Path(clock.SETTINGS_FILE).read_bytes(), before)
+        headers['If-Match'] = '"' + saved.json['revision'] + '"'
+        with patch.object(clock, 'save_display_settings', side_effect=OSError('disk full')):
+            self.assertEqual(self.client.post('/api/control', json={'brightness': 80}, headers=headers).status_code, 500)
+        self.assertEqual(self.client.get('/api/control').json['revision'], saved.json['revision'])
+        self.assertEqual(clock.display_settings['brightness'], 0)
+        # Existing maintenance/updater clients remain compatible.
+        self.assertEqual(self.client.post('/api/control', json={'brightness': 40}).status_code, 200)
+
     def test_clock_keeps_language_switching_without_management_labels(self):
         page = self.client.get('/').text
         labels = json.loads(re.search(r'var I18N = (.*);', page).group(1))
@@ -114,6 +134,8 @@ class ClockFeaturesTest(unittest.TestCase):
         night = dict(enabled=True, start='22:00', end='07:00', brightness=12, black=True)
         self.assertEqual(self.client.post('/api/control', json={'night': night}).status_code, 200)
         self.assertEqual(clock.load_display_settings()['night'], night)
+        self.assertEqual(self.client.get('/api/control').json['settings']['night'], night)
+        self.assertEqual(self.client.get('/admin').status_code, 200)
         for invalid in [dict(night, brightness=101), dict(night, start='7:00'), dict(night, end='22:00'),
                         dict(night, enabled=1), dict(night, black='true'), {}, dict(night, extra=True)]:
             self.assertEqual(self.client.post('/api/control', json={'night': invalid}).status_code, 400)

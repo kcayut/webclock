@@ -50,7 +50,7 @@
     }
     const api = (path, method, data) => request('/api/v1/groups' + path, method, data);
     function dataOf(row) {
-        return {name: row.name, enabled: row.enabled, display_overrides: copy(row.display_overrides), content: copy(row.content)};
+        return {name: row.name, enabled: row.enabled, display_overrides: copy(row.display_overrides), content: copy(row.content), revision: row.revision};
     }
     function createDraft(data) {
         return {data: copy(data), dirty: false, sequence: 0, busy: false, message: '', error: false, capacity: '5', open: new Set()};
@@ -76,8 +76,8 @@
         change(draft.data);
         draft.sequence++;
         draft.dirty = true;
-        draft.message = '';
-        draft.error = false;
+        draft.message = draft.conflict ? 'group_conflict' : '';
+        draft.error = !!draft.conflict;
         renderActions();
     }
     function displayValue(field, value) {
@@ -240,7 +240,10 @@
         const draft = current(), existing = selected && selected !== NEW;
         $('group-form').hidden = !draft;
         $('group-access').hidden = !existing;
-        $('group-save').disabled = !draft || draft.busy;
+        $('group-save').disabled = !draft || draft.busy || draft.conflict;
+        reload.hidden = !draft?.conflict;
+        reload.disabled = !!draft?.busy;
+        reload.textContent = t('group_reload');
         $('group-delete').hidden = !existing;
         $('group-delete').disabled = !draft || draft.busy || invitationBusy.has(selected);
         $('group-form-status').textContent = draft ? t(draft.message || (draft.dirty ? 'group_unsaved' : '')) : '';
@@ -344,9 +347,10 @@
     async function save(event) {
         event.preventDefault();
         const draft = current(), id = selected;
-        if (!draft || draft.busy) return;
+        if (!draft || draft.busy || draft.conflict) return;
         if ($('group-form').reportValidity && !$('group-form').reportValidity()) return;
         const sent = copy(draft.data), sequence = draft.sequence;
+        if (id !== NEW && typeof sent.revision !== 'string') { draft.message = 'group_save_failed'; draft.error = true; renderActions(); return; }
         // Group content PATCH merges fields; omission must not retain old targets.
         if (id !== NEW && !sent.content.calendar_targets) sent.content.calendar_targets = [];
         if (id !== NEW && !sent.content.calendar_exclusions) sent.content.calendar_exclusions = [];
@@ -355,17 +359,34 @@
             const row = await api(id === NEW ? '' : '/' + encodeURIComponent(id), id === NEW ? 'POST' : 'PATCH', sent);
             ++mutationVersion;
             rows = rows.filter(item => item.id !== row.id); rows.push(row);
+            draft.data.revision = row.revision;
             if (draft.sequence === sequence) { draft.data = dataOf(row); draft.dirty = false; draft.message = 'saved'; }
             else draft.message = 'group_saved_more_drafts';
             if (id === NEW) {
                 drafts.delete(NEW); drafts.set(row.id, draft);
                 if (selected === NEW) selected = row.id;
             }
-        } catch (error) { draft.message = 'group_save_failed'; draft.error = true; }
+        } catch (error) {
+            draft.conflict = error.code === 'group_settings_changed';
+            draft.message = draft.conflict ? 'group_conflict' : 'group_save_failed'; draft.error = true;
+        }
         finally {
             draft.busy = false; ++mutationVersion;
             renderSelector(); renderValues(); if (selected !== NEW) loadAccess();
         }
+    }
+    async function reloadGroup() {
+        const draft = current(), id = selected;
+        if (!draft?.conflict || draft.busy || !window.confirm(t('group_reload_confirm'))) return;
+        const sequence = draft.sequence;
+        draft.busy = true; ++mutationVersion; renderActions();
+        try {
+            const [row, available] = await Promise.all([api('/' + encodeURIComponent(id)), api('/catalog')]);
+            if (draft.sequence !== sequence) return;
+            rows = rows.filter(item => item.id !== id); rows.push(row); catalog = available;
+            draft.data = dataOf(row); draft.dirty = false; draft.conflict = false; draft.message = ''; draft.error = false;
+        } catch (error) { draft.message = 'group_save_failed'; draft.error = true; }
+        finally { draft.busy = false; ++mutationVersion; renderSelector(); renderValues(); }
     }
     async function invite(method) {
         const id = selected;
@@ -384,6 +405,8 @@
         } catch (error) { panelErrors.add(id); }
         finally { ++mutationVersion; invitationBusy.delete(id); if (selected === id) renderAccess(); }
     }
+    const reload = node('button'); reload.id = 'group-reload'; reload.type = 'button'; reload.hidden = true;
+    reload.addEventListener('click', reloadGroup); $('group-form').append(reload);
     $('group-select').addEventListener('change', () => choose($('group-select').value));
     $('group-add').addEventListener('click', () => {
         if (!drafts.has(NEW)) drafts.set(NEW, createDraft({name: '', enabled: true, display_overrides: {},

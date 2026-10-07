@@ -57,7 +57,8 @@ class DeviceAccessTest(unittest.TestCase):
             self.assertEqual(write.call_count, 1)
         self.assertEqual(self.path.read_bytes(), original)
         result = self.service.set_assignments('owner1', body)
-        self.assertEqual(result['assignment'], {'group_ids': [second['id']], 'partial_group_ids': []})
+        self.assertEqual(result['assignment']['group_ids'], [second['id']])
+        self.assertEqual(result['assignment']['partial_group_ids'], [])
         self.assertEqual(self.service.get_group('owner1', first['id'])['content']['schedule_ids'], ['alarm2'])
         self.assertEqual(self.service.get_group('owner2', foreign['id']), foreign)
         all_result = self.service.set_assignments('owner1', {'item': {'kind': 'schedule', 'id': 'alarm1'}, 'all': True})
@@ -84,7 +85,8 @@ class DeviceAccessTest(unittest.TestCase):
         self.assertTrue(calendar_content_allows(content, dict(once, uid='unrelated')))
         series = dict(once, scope='series', recurrence_id='')
         mixed = self.service.item_assignments('owner1', [dict(kind='calendar', target=series)])[0]
-        self.assertEqual(mixed, {'group_ids': [], 'partial_group_ids': [group['id']]})
+        self.assertEqual(mixed['group_ids'], [])
+        self.assertEqual(mixed['partial_group_ids'], [group['id']])
         self.service.set_assignments('owner1', dict(item=item, group_ids=[group['id']]))
         restored = self.make_service().get_group('owner1', group['id'])['content']
         self.assertNotIn('calendar_exclusions', restored)
@@ -107,7 +109,8 @@ class DeviceAccessTest(unittest.TestCase):
         self.assertEqual(self.make_service().get_group('owner1', group['id'])['content'], saved)
         result = self.service.set_assignments('owner1', {'item': {'kind': 'calendar', 'target': series},
             'group_ids': [other['id']], 'keep_partial_group_ids': [group['id']]})
-        self.assertEqual(result['assignment'], {'group_ids': [other['id']], 'partial_group_ids': [group['id']]})
+        self.assertEqual(result['assignment']['group_ids'], [other['id']])
+        self.assertEqual(result['assignment']['partial_group_ids'], [group['id']])
         self.assertEqual(self.service.get_group('owner1', group['id'])['content'], saved)
         self.service.set_assignments('owner1', {'item': {'kind': 'calendar', 'target': series}, 'all': True})
         content = self.service.get_group('owner1', group['id'])['content']
@@ -156,6 +159,67 @@ class DeviceAccessTest(unittest.TestCase):
         self.assertEqual(other['content'], {key: [] for key in group['content']})
         self.defaults['brightness'] = 50
         self.assertEqual(self.service.get_group('owner1', group['id'])['effective_settings']['brightness'], 50)
+
+    def test_group_and_item_revisions_reject_stale_writes_without_touching_storage(self):
+        group = self.create()
+        item = {'kind': 'manual_note', 'id': 1}
+        initial = self.service.get_assignments('owner1', item)['assignment']
+        self.service.set_assignments('owner1', dict(item=item, group_ids=[group['id']], revision=initial['revision']))
+        before = self.path.read_bytes()
+        for operation in (
+            lambda: self.service.update_group('owner1', group['id'], {'name': 'Stale', 'revision': group['revision']}),
+            lambda: self.service.set_assignments('owner1', dict(item=item, group_ids=[], revision=initial['revision'])),
+        ):
+            with self.assertRaises(AccessError) as caught:
+                operation()
+            self.assertEqual(caught.exception.status, 409)
+            self.assertEqual(self.path.read_bytes(), before)
+        latest = self.service.get_group('owner1', group['id'])
+        assignment = self.service.get_assignments('owner1', item)['assignment']
+        # Another content item and display defaults do not invalidate this item's membership.
+        self.service.update_group('owner1', group['id'], {'content': {'schedule_ids': ['alarm1']}})
+        self.defaults['brightness'] = 42
+        self.assertEqual(self.service.get_assignments('owner1', item)['assignment']['revision'], assignment['revision'])
+        before = self.path.read_bytes()
+        with self.assertRaises(AccessError):
+            self.service.update_group('owner1', group['id'], {'revision': latest['revision'], 'display_overrides': {}})
+        self.assertEqual(self.path.read_bytes(), before)
+        latest = self.service.get_group('owner1', group['id'])
+        self.service.update_group('owner1', group['id'], {'revision': latest['revision'], 'name': 'Latest'})
+        self.service.set_assignments('owner1', dict(item=item, group_ids=[], revision=assignment['revision']))
+        current = self.service.get_assignments('owner1', item)['assignment']
+        self.create()
+        with self.assertRaises(AccessError):
+            self.service.set_assignments('owner1', dict(item=item, group_ids=[], revision=current['revision']))
+        self.assertNotIn('revision', load_json(self.path, {})['groups'][group['id']])
+
+    def test_calendar_revision_detects_changed_partial_selection_and_api_reload(self):
+        from flask import Flask
+        from webclock.api.groups import groups_api
+        group = self.create(content={'calendar_source_ids': ['cal1']})
+        series = {'kind': 'calendar', 'target': dict(source_id='cal1', uid='weekly', scope='series', recurrence_id='')}
+        once = {'kind': 'calendar', 'target': dict(series['target'], scope='occurrence', recurrence_id='first')}
+        self.service.set_assignments('owner1', dict(item=once, group_ids=[]))
+        initial = self.service.get_assignments('owner1', series)['assignment']
+        self.service.set_assignments('owner1', dict(item={'kind': 'calendar', 'target': dict(once['target'], recurrence_id='second')}, group_ids=[]))
+        changed = self.service.get_assignments('owner1', series)['assignment']
+        self.assertEqual(initial['partial_group_ids'], changed['partial_group_ids'])
+        self.assertNotEqual(initial['revision'], changed['revision'])
+        app = Flask(__name__)
+        app.register_blueprint(groups_api(lambda: self.service, lambda: 'owner1'))
+        client = app.test_client()
+        url = '/api/v1/groups/assignments'
+        self.assertEqual(client.get(url, query_string={'item': json.dumps(series)}).json['assignment'], changed)
+        self.assertEqual(client.get(url, query_string={'item': '{'}).status_code, 400)
+        before = self.path.read_bytes()
+        response = client.put(url, json=dict(item=series, all=True, revision=initial['revision']))
+        self.assertEqual((response.status_code, response.json['code']), (409, 'assignment_changed'))
+        response = client.patch('/api/v1/groups/' + group['id'], json={'name': 'Stale', 'revision': group['revision']})
+        self.assertEqual((response.status_code, response.json['code']), (409, 'group_settings_changed'))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(client.put(url, json=dict(item=series, all=True, revision=changed['revision'])).status_code, 200)
+        # Existing scripts without revisions retain their explicit unconditional API behavior.
+        self.assertEqual(client.patch('/api/v1/groups/' + group['id'], json={'name': 'Legacy'}).status_code, 200)
 
     def test_overrides_preserve_false_zero_empty_and_name_changes_do_not_change_content(self):
         group = self.create(display_overrides={'brightness': 0, 'night': {'enabled': False, 'black': False}})

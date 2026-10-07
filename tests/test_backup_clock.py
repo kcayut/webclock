@@ -434,13 +434,23 @@ class HostBackupTest(unittest.TestCase):
         project, values, roots = self.installation('real-enrollment')
         state, auth, access = self.protect(project, values)
         service = DeviceAccessService(state / 'device-access.json', auth['invite_secret'],
-            lambda data: data, lambda: {}, lambda: {'schedules': [{'id': 'private'}]})
+            lambda data: data, lambda: {}, lambda: {'schedules': [{'id': 'private'}], 'calendar_source_ids': ['calendar']})
         group_id = next(iter(access['groups']))
         invitation = service.create_invite('owner', group_id)
         prepared = service.prepare('owner', 'browser')
         identity = service.join('owner', prepared['token'], prepared['attempt_id'],
                                 invitation['code'], 'browser')['identity']
         self.assertEqual(service.authenticate(prepared['token'], 'owner'), identity)
+        overrides = dict(manual_note_ids=[], schedule_ids=[], calendar_source_ids=[], calendar_exclusions=[],
+                         calendar_targets=[dict(source_id='calendar', uid='series', scope='series', recurrence_id='')])
+        settings = service.get_device_content('owner', identity['device_id'])
+        service.update_device_content('owner', identity['device_id'],
+                                      dict(content_overrides=overrides, revision=settings['revision']))
+        notes_path = backup.updater.data_layout(project, values, True)[1]
+        announcement = dict(id=1, text='Private notice', due_date='',
+            announcement_targets=dict(group_ids=[group_id], device_ids=[identity['device_id']]),
+            expires_at='2026-10-08T09:00:00+08:00')
+        notes_path.write_text(json.dumps([announcement]))
         directory, rollback = self.root / 'enrollment-backup', self.root / 'enrollment-rollback'
         backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
         current = service._load()
@@ -460,6 +470,9 @@ class HostBackupTest(unittest.TestCase):
         self.assertEqual(final['attempts'], {})
         self.assertEqual(final['devices'][identity['device_id']]['status'], 'revoked')
         self.assertIsNone(final['devices'][identity['device_id']]['credential_digest'])
+        self.assertEqual(final['devices'][identity['device_id']]['content_overrides'], overrides)
+        self.assertEqual(restored.get_device_content('owner', identity['device_id'])['content_overrides'], overrides)
+        self.assertEqual(json.loads(notes_path.read_text()), [announcement])
         self.assertTrue(final['invites'][group_id]['closed'])
         self.assertEqual(final['groups'], access['groups'])
         self.assertGreater(invitation['remaining'], 1, 'The old code must have spare capacity before restore')

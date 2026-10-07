@@ -27,6 +27,21 @@
             } finally { ++deviceRequest; }
         }
     }) : null;
+    const deviceContent = window.WebClockDeviceContent ? window.WebClockDeviceContent.create({
+        t, onBusy: () => renderDevices(),
+        loadCatalog: () => api('/groups/catalog'),
+        loadEvents: id => api('/calendar-events?source_id=' + encodeURIComponent(id)),
+        async request(id, method, data) {
+            ++deviceRequest;
+            try {
+                const result = await api('/devices/' + encodeURIComponent(id) + '/content-settings',
+                    data === undefined ? {method} : json(method, data));
+                ++deviceRequest;
+                devices = devices.map(row => row.id === id ? Object.assign({}, row, {content_settings: result}) : row);
+                return result;
+            } finally { ++deviceRequest; }
+        }
+    }) : null;
     const capabilityFields = ["display", "audio", "notifications", "background", "calendar"];
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
@@ -752,6 +767,7 @@
         devices = data.devices;
         deviceDataStale = false;
         renderDevices();
+        if (deviceContent && devices.some(device => device.content_settings)) deviceContent.refreshCatalog();
     }
     function renderDeviceRefreshStatus() {
         $("device-refresh-status").textContent = deviceDataStale ? t("device_data_stale") : "";
@@ -767,7 +783,7 @@
             ["active", "disabled"].includes(device.authorization_status);
     }
     function deviceBusy(id) {
-        return deviceAuthorizationSaving.has(id) || !!(deviceSettings && deviceSettings.busy(id));
+        return deviceAuthorizationSaving.has(id) || !!(deviceSettings && deviceSettings.busy(id)) || !!(deviceContent && deviceContent.busy(id));
     }
     async function updateDeviceAuthorization(device, change) {
         const current = devices.find(item => item.id === device.id);
@@ -789,6 +805,7 @@
                 const next = Object.assign({}, item);
                 ["group_id", "group_name", "group_enabled", "enabled", "authorization_status", "assignment_revision", "rejoin_required"].forEach(key => { next[key] = updated[key]; });
                 if (result.display_settings) next.display_settings = result.display_settings;
+                if (result.content_settings) next.content_settings = result.content_settings;
                 return next;
             });
             if (change.group_id !== undefined && deviceGroupDrafts.get(device.id) === change.group_id) deviceGroupDrafts.delete(device.id);
@@ -814,6 +831,7 @@
             devices = devices.filter(item => item.id !== device.id);
             deviceNameDrafts.delete(device.id);
             if (deviceSettings) deviceSettings.forget(device.id);
+            if (deviceContent) deviceContent.forget(device.id);
             deviceGroupDrafts.delete(device.id); deviceAuthorizationMessages.delete(device.id);
             renderDevices();
             if (window.WebClockGroups) window.WebClockGroups.memberRemoved(device.id);
@@ -902,12 +920,16 @@
                 }
                 card.append(authorization);
             }
-            if (manageableDevice(device) && deviceSettings) {
-                const editor = deviceSettings.render(device, deviceAuthorizationSaving.has(device.id) || deviceRevoking.has(device.id));
-                if (editor) {
-                    if (active && editor.contains(active)) refocus = active;
-                    card.append(editor);
-                }
+            if (manageableDevice(device)) {
+                [deviceSettings, deviceContent].forEach(component => {
+                    const other = component === deviceSettings ? deviceContent : deviceSettings;
+                    const editor = component && component.render(device, deviceAuthorizationSaving.has(device.id) ||
+                        deviceRevoking.has(device.id) || !!(other && other.busy(device.id)));
+                    if (editor) {
+                        if (active && editor.contains(active)) refocus = active;
+                        card.append(editor);
+                    }
+                });
             }
             const rename = node("div", undefined, "device-name-editor");
             const label = node("label", t("admin_name"));

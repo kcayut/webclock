@@ -71,16 +71,33 @@ Python 回歸涵蓋最後名額競態、成功回應遺失後重送、保存失�
 
 ## 單台顯示覆寫（2026-10-07 本機工作目錄）
 
-沿用群組及逐台身份，伺服器依「單台 > 群組 > 全體」計算外觀；內容仍由群組明確指派。裝置卡片提供生效值／來源、恢復繼承及保存版本檢查。夜間模式整組繼承或自訂，避免上下層時段混合。舊資料不需遷移；完整主機還原保留覆寫但仍撤銷舊憑證。
+此段記錄先前的單台外觀批次；當時內容仍由群組明確指派，後續內容覆寫與公告見下一節。伺服器依「單台 > 群組 > 全體」計算外觀，裝置卡片提供生效值／來源、恢復繼承及保存版本檢查。夜間模式整組繼承或自訂，避免上下層時段混合。舊資料不需遷移；完整主機還原保留覆寫但仍撤銷舊憑證。
 
 - 278 項 Python、11 組 JavaScript 與差異檢查通過。涵蓋 0／false、上層更新、恢復繼承、同群組隔離、移組、跨 owner 拒絕、儲存失敗、歷史還原、請求途中變更及 config revision／ETag。
 - Browser plugin not available；改以 Playwright CLI／Chromium 154.0.8037.98 在隔離本機 self 伺服器操作，桌面 1365×1000、手機 390×844 截圖視讀通過，無水平溢出。實際保存、15 秒輪詢保留草稿／焦點、三語切換、恢復繼承與移組通過；雙管理頁衝突保留草稿，重新載入確認可取消或接受。主控台只有刻意觸發的 HTTP 409，沒有其他頁面錯誤。
 - 本次結果屬未提交工作目錄；尚未執行此批次 CI、部署、iOS 9／實體裝置驗收，不沿用上方舊 SHA 的 Linux 結果作為本次證明。操作與 API 見 [指南](guide.md#群組設定與裝置加入)及 [管理 API](server-api.md#管理-api)。
 
+## 單台內容、共用設定衝突與公告（2026-10-07 本機工作目錄）
+
+依序完成單台內容指派與生效預覽、群組／全體設定版本保護，再新增指定群組／裝置公告：
+
+- 行事曆、文字提醒、鬧鐘分別繼承或自訂；自訂空清單不授予內容，日曆來源／系列／單次／排除一起處理。移組保留已保存的單台覆寫，繼承項目跟隨新群組。預覽是伺服器計算結果，不代表裝置已顯示或響鈴。
+- 群組與逐項群組指派在鎖內比較 revision，全體設定使用 If-Match；目前管理頁固定帶版本，舊維護 API 未帶版本仍相容。409 保留草稿，不自動覆蓋或重送；重新載入須確認放棄，讀取期間的新輸入與失敗草稿也保留。同頁全體設定依序保存。
+- 公告沿用文字提醒 CRUD、日期／每日／星期時段與暫停，另有明確目標與管理時區到期。schema 3 display 的獨立 announcements 欄位不混入事件、local 行事曆或鬧鐘，也不改舊 schema 2。時鐘獨立區域顯示，黑畫面／亮度 0 同樣套用；個別期限、離線快照最長 300 秒、scope 與撤權均清除，基本時計持續。
+- 完整主機備份保留單台覆寫與公告，歷史還原仍撤銷憑證；管理頁 version 1 備份僅以 notes 帶公告對象／到期，不包含群組與裝置授權。
+
+最終全量 296 項 Python 測試通過（19.988 秒），涵蓋內容繼承／隔離、鎖內版本衝突、備份還原、公告目標／期限／舊契約，以及無效公告表單不建立授權狀態的回歸。12 組核心 JavaScript 回歸及 Home Assistant `test_cards.js` 通過。Acorn 8.15 以 `ecmaVersion: 5` 解析實際 render 的時鐘及全部 14 份 script 通過；`bash -n setup.sh scripts/setup.sh update_clock.sh` 與 `git diff --check` 亦通過。這些語法檢查不等同 iOS 9 執行驗收。
+
+Browser plugin not available；改用既有 Playwright CLI／Chromium 154 在隔離本機 HTTPS `127.0.0.1:5127` 及臨時合成資料驗證。管理頁桌面 1365×1000、手機 390×844 通過單台自訂保存／預覽、同群隔離、兩頁單台內容及群組 409 草稿保留、全體夜間設定衝突與重新載入取消／確認。公告以桌面 1365×900、手機 390×844 驗證指定對象可見、匿名不可見、黑畫面、亮度 0、獨立區域與無水平溢出；在載入前安裝模擬時鐘，斷線後推進 301 秒，公告按期限清除且時間繼續。截圖已視讀，公告頁未捕捉到例外；管理頁刻意產生的 409 不當作未預期錯誤。
+
+這一批仍是本機未提交工作目錄，未執行本批次 CI、映像發布、正式部署或 iPad mini 1／iOS 9、ESP 實機驗收。上方舊 SHA 的 Linux／CI 紀錄不適用於本批次。實機待辦保留於 [TODO](../TODO.md)，操作及欄位見[三語指南](guide.md)與[裝置 API](server-api.md)。臨時 QA 截圖與資料未加入儲存庫。
+
 ## 重現命令
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 venv/bin/python -m unittest discover -s tests
+webclock_test_state="$(mktemp -d "${TMPDIR:-/tmp}/webclock-tests.XXXXXX")"
+WEBCLOCK_STATE_DIR="$webclock_test_state" NOTES_FILE="$webclock_test_state/manual_notes.json" ICAL_URL='' \
+  PYTHONDONTWRITEBYTECODE=1 venv/bin/python -m unittest discover -s tests
 for test in tests/*.js; do node "$test" || exit 1; done
 bash -n setup.sh scripts/setup.sh update_clock.sh
 git diff --check

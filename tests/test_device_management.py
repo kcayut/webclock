@@ -79,6 +79,67 @@ class DeviceManagementTest(unittest.TestCase):
         return self.call(path, 'PATCH', headers=self.headers,
                          json=dict(display_overrides=overrides, revision=revision))
 
+    def test_device_content_api_keeps_peers_isolated_and_checks_stale_writes(self):
+        save_json(self.root / 'manual_notes.json', [dict(id=1, text='Shared', due_date=''),
+                                                   dict(id=2, text='Device only', due_date='')])
+        device = self.device('Bedroom')
+        service, device_id = self.service(), device['identity']['device_id']
+        service.update_group(self.owner, device['identity']['group_id'], {'content': {'manual_note_ids': [1]}})
+        attempt = service.prepare(self.owner, 'peer')
+        peer = service.join(self.owner, attempt['token'], attempt['attempt_id'], device['invite']['code'], 'peer')['identity']
+        path = '/api/v1/devices/' + device_id + '/content-settings'
+        initial = self.call(path)
+        self.assertEqual(initial.status_code, 200, initial.text)
+        before = self.device_call(device)
+        body = dict(content_overrides={'manual_note_ids': [2]}, revision=initial.json['revision'])
+        result = self.call(path, 'PATCH', json=body, headers=self.headers)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json['effective_content']['manual_note_ids'], [2])
+        self.assertEqual(result.json['sources']['manual_note_ids'], 'device')
+        after = self.device_call(device, headers={'If-None-Match': before.headers['ETag']})
+        self.assertEqual(after.status_code, 200)
+        self.assertEqual([row['text'] for row in after.json['events']], ['Device only'])
+        self.assertNotEqual(after.json['schedule_revision'], before.json['schedule_revision'])
+        self.assertEqual(service.get_group(self.owner, peer['group_id'], peer['device_id'])['content']['manual_note_ids'], [1])
+        self.assertEqual(self.call(path, 'PATCH', json=body, headers=self.headers).status_code, 409)
+        fresh = self.call(path).json
+        reset = self.call(path, 'PATCH', json=dict(content_overrides={}, revision=fresh['revision']), headers=self.headers)
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(reset.json['effective_content']['manual_note_ids'], [1])
+        self.assertEqual(self.rows()[device_id]['content_settings'], reset.json)
+
+    def test_device_content_api_requires_owner_csrf_and_rechecks_inflight_changes(self):
+        device, foreign = self.device('Own'), self.device('Foreign', owner='other')
+        path = '/api/v1/devices/' + device['identity']['device_id'] + '/content-settings'
+        initial = self.call(path).json
+        body = dict(content_overrides={'manual_note_ids': []}, revision=initial['revision'])
+        anonymous = clock.app.test_client()
+        for method in ('GET', 'PATCH'):
+            self.assertEqual(anonymous.open(path, method=method, base_url='https://localhost', json=body).status_code, 401)
+        for headers in ({}, dict(self.headers, Origin='https://foreign.invalid')):
+            self.assertEqual(self.call(path, 'PATCH', json=body, headers=headers).status_code, 403)
+        foreign_path = '/api/v1/devices/' + foreign['identity']['device_id'] + '/content-settings'
+        self.assertEqual(self.call(foreign_path).status_code, 404)
+        self.assertEqual(self.call(foreign_path, 'PATCH', json=body, headers=self.headers).status_code, 404)
+        original = self.service().path.read_bytes()
+        with patch('webclock.services.device_access_service.save_json', side_effect=OSError('disk full')):
+            self.assertEqual(self.call(path, 'PATCH', json=body, headers=self.headers).status_code, 500)
+        self.assertEqual(self.service().path.read_bytes(), original)
+        save_json(self.root / 'manual_notes.json', [dict(id=1, text='Private', due_date='')])
+        self.service().update_group(self.owner, device['identity']['group_id'], {'content': {'manual_note_ids': [1]}})
+        respond = clock.managed_response
+        def change_during_display(*args, **kwargs):
+            service = self.service()
+            settings = service.get_device_content(self.owner, device['identity']['device_id'])
+            service.update_device_content(self.owner, device['identity']['device_id'],
+                                          dict(content_overrides={'manual_note_ids': []}, revision=settings['revision']))
+            return respond(*args, **kwargs)
+        with patch.object(clock, 'managed_response', side_effect=change_during_display):
+            denied = self.device_call(device)
+        self.assertIn(denied.status_code, (403, 409))
+        self.assertNotIn('ETag', denied.headers)
+        self.assertNotIn('Private', denied.text)
+
     def test_device_display_inheritance_reset_move_and_peer_isolation(self):
         device = self.device('Bedroom')
         service, group_id = self.service(), device['identity']['group_id']

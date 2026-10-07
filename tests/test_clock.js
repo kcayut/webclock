@@ -640,6 +640,24 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         assert.equal(node('body').classList.contains('has-events'), false);
         assert.equal(node('list-container').children.length, 0);
         assert.equal(elements['next-event'], undefined);
+        const announcementCalls = [];
+        legacy.window.WebClockAnnouncements = {
+            set(items, stamp, elapsed) { announcementCalls.push({items, stamp, elapsed}); },
+            tick() {}, clear() { announcementCalls.push('clear'); }
+        };
+        const announcement = {id: 1, text: 'Private announcement', visible_until: now + 60000};
+        legacy.enterServerMode({events: [{text: 'Keep event carousel'}], announcements: [announcement],
+            server_timestamp: now, settings: {brightness: 0, mode: 'black'}}, false, 1200);
+        assert.equal(announcementCalls[0].items[0], announcement);
+        assert.equal(announcementCalls[0].elapsed, 1200);
+        assert.equal(node('announcement-container').style.opacity, 0, 'Announcement brightness follows the display settings');
+        assert.equal(node('body').classList.contains('force-black'), true);
+        assert.match(template, /\.force-black #announcement-container/);
+        assert.equal(node('list-container').children[0].children[0].children[0].textContent, 'Keep event carousel');
+        legacy.enterStandaloneMode(); assert.equal(announcementCalls.at(-1), 'clear');
+        legacy.window.WebClockAnnouncements.tick = () => { throw new Error('Optional announcement failure'); };
+        const priorTime = node('time').textContent; now += 60000; tick.callback();
+        assert.notEqual(node('time').textContent, priorTime, 'Optional announcement errors do not stop time/date updates');
     }
     vm.runInContext(fs.readFileSync(path.join(root, 'static/offline.js'), 'utf8'), legacy);
     assert.match(node('time').textContent, /^\d\d:\d\d$/);

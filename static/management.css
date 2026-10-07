@@ -238,6 +238,8 @@ details[open] > summary { margin-bottom: 12px; }
 .group-choice { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; cursor: pointer; }
 .group-choice input { flex: 0 0 auto; margin: 4px 0 0; }
 .group-choice span { overflow-wrap: anywhere; min-width: 0; }
+.announcement-target-list { max-height: 240px; overflow-y: auto; }
+.announcement-summary { overflow-wrap: anywhere; }
 .group-calendar-node { padding: 4px 0; }
 .group-calendar-node > summary { cursor: pointer; font-size: 15px; font-weight: 500; }
 .group-calendar-node > summary .group-choice { display: inline-flex; vertical-align: middle; max-width: calc(100% - 24px); margin: 0; }

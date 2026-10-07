@@ -193,7 +193,7 @@
             if (identityKey(data.identity) !== currentIdentity) { phase = 'unknown'; checked = false; clear('identity', true); checkIdentity(); return; }
             var lease = leaseValue(data, stamp);
             if (!lease) { failure({code: 'invalid_response'}); return; }
-            try { if (accept(data, true) === false) throw new Error('Invalid snapshot'); }
+            try { if (accept(data, true, Math.max(0, wall() - stamp.wall, mono() - stamp.mono)) === false) throw new Error('Invalid snapshot'); }
             catch (invalid) { failure({code: 'invalid_response'}); return; }
             lease.etag = header(xhr, 'ETag'); resources[kind] = lease;
             applied[kind] += 1;

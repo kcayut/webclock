@@ -183,7 +183,7 @@ class DeviceAccessService:
             digests = set()
             for device_id, row in data['devices'].items():
                 if (not isinstance(row, dict) or not device_fields <= set(row)
-                        or set(row) - (device_fields | {'display_overrides'}) or row['id'] != device_id
+                        or set(row) - (device_fields | {'display_overrides', 'content_overrides'}) or row['id'] != device_id
                         or not isinstance(device_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', device_id)
                         or row['group_id'] not in data['groups']
                         or row['owner_id'] != data['groups'][row['group_id']]['owner_id']
@@ -194,6 +194,8 @@ class DeviceAccessService:
                     raise ValueError('Invalid stored device identity')
                 if 'display_overrides' in row:
                     self._device_overrides(row['display_overrides'])
+                if 'content_overrides' in row:
+                    self._device_content_overrides(row['content_overrides'], stored=True)
                 digest = row['credential_digest']
                 if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest)
                                            or digest in digests):
@@ -306,6 +308,69 @@ class DeviceAccessService:
             raise ValueError('Override the complete night settings or inherit them')
         return self._settings(overrides)[0]
 
+    def _device_content_overrides(self, value, stored=False):
+        if (not isinstance(value, dict) or set(value) - (CONTENT_FIELDS | CALENDAR_FIELDS)
+                or (set(value) & CALENDAR_FIELDS and 'calendar_source_ids' not in value)):
+            raise ValueError('Override the complete calendar selection or inherit it')
+        if stored:
+            # Deleted references remain editable, but corrupt authorization data
+            # must never fall back to an unrestricted/default content selection.
+            for key in CONTENT_FIELDS & set(value):
+                _reference_ids(key, value[key])
+            for key in CALENDAR_FIELDS & set(value):
+                targets = value[key]
+                sources = {row.get('source_id') for row in targets
+                           if isinstance(row, dict) and isinstance(row.get('source_id'), str)} if isinstance(targets, list) else set()
+                for source in sources:
+                    _reference_ids('calendar_source_ids', [source])
+                _calendar_targets(targets, sources, [], canonical=False)
+            return value
+        validated = self._content(value)
+        fields = set(value) & CONTENT_FIELDS
+        if 'calendar_source_ids' in fields:
+            fields |= CALENDAR_FIELDS
+        return {key: deepcopy(validated.get(key, [])) for key in fields}
+
+    def _device_content(self, state, row):
+        group = state['groups'][row['group_id']]
+        inherited = {key: deepcopy(group['content'].get(key, [])) for key in CONTENT_FIELDS | CALENDAR_FIELDS}
+        overrides = deepcopy(row.get('content_overrides', {}))
+        if 'calendar_source_ids' in overrides:
+            for key in CALENDAR_FIELDS:
+                overrides.setdefault(key, [])
+        return dict(content_overrides=overrides, inherited_content=inherited,
+                    effective_content=dict(deepcopy(inherited), **deepcopy(overrides)),
+                    sources={key: 'device' if field in overrides else 'group' for key, field in (
+                        ('calendar', 'calendar_source_ids'), ('manual_note_ids', 'manual_note_ids'),
+                        ('schedule_ids', 'schedule_ids'))},
+                    revision=revision([row['assignment_revision'], row['group_id'], group['enabled'],
+                                       inherited, overrides]))
+
+    def get_device_content(self, owner_id, device_id):
+        with storage_lock:
+            state = self._load()
+            return self._device_content(state, self._owned_device(state, owner_id, device_id))
+
+    def update_device_content(self, owner_id, device_id, data):
+        if not isinstance(data, dict) or set(data) != {'content_overrides', 'revision'}:
+            raise ValueError('Expected content overrides and their revision')
+        with storage_lock:
+            state = self._load()
+            row = self._owned_device(state, owner_id, device_id)
+            if row['status'] == 'revoked' or row['rejoin_required'] or row['credential_digest'] is None:
+                raise AccessError('This device must join again', 409, 'device_rejoin_required')
+            if data['revision'] != self._device_content(state, row)['revision']:
+                raise AccessError('Content settings changed; reload before saving', 409, 'content_settings_changed')
+            overrides = self._device_content_overrides(data['content_overrides'])
+            if overrides != row.get('content_overrides', {}):
+                if overrides:
+                    row['content_overrides'] = overrides
+                else:
+                    row.pop('content_overrides', None)
+                row['assignment_revision'] += 1
+                save_json(self.path, state)
+            return self._device_content(state, row)
+
     def _device_display(self, state, row):
         group = state['groups'][row['group_id']]
         inherited = self._settings(group['display_overrides'])[1]
@@ -366,23 +431,38 @@ class DeviceAccessService:
         return dict(item)
 
     def _assignment_result(self, groups, item):
-        assigned, partial = [], []
+        assigned, partial, scope = [], [], []
         for group in groups:
             full, mixed = _assignment_membership(group['content'], item)
             if full:
                 assigned.append(group['id'])
             elif mixed:
                 partial.append(group['id'])
-        return dict(group_ids=assigned, partial_group_ids=partial)
+            if item['kind'] == 'calendar':
+                target, content = item['target'], group['content']
+                selections = [target['source_id'] in content['calendar_source_ids']]
+                for field in CALENDAR_FIELDS:
+                    selections.append([row for row in content.get(field, [])
+                                       if row['source_id'] == target['source_id'] and row['uid'] == target['uid']
+                                       and (target['scope'] == 'series' or row['scope'] == 'series'
+                                            or row['recurrence_id'] == target['recurrence_id'])])
+            else:
+                selections = full
+            scope.append([group['id'], selections])
+        return dict(group_ids=assigned, partial_group_ids=partial,
+                    revision=revision([item, sorted(scope, key=lambda row: row[0])]))
 
     def _assignment_groups(self, state, owner_id):
         self._owner(owner_id)
         return [row for row in state['groups'].values() if row['owner_id'] == owner_id]
 
-    def get_assignments(self, owner_id):
+    def get_assignments(self, owner_id, item=None):
         with storage_lock:
             groups = self._assignment_groups(self._load(), owner_id)
             catalog = self.content_catalog()
+            if item is not None:
+                return dict(groups=[{key: group[key] for key in ('id', 'name', 'enabled')} for group in groups],
+                            assignment=self._assignment_result(groups, self._assignment_item(item, catalog)))
             return dict(groups=[{key: group[key] for key in ('id', 'name', 'enabled')} for group in groups],
                         manual_notes={str(identifier): self._assignment_result(groups, dict(kind='manual_note', id=identifier))
                                       for identifier in catalog.get('manual_note_ids', [])},
@@ -401,10 +481,12 @@ class DeviceAccessService:
             state = self._load()
             groups = self._assignment_groups(state, owner_id)
             catalog = self.content_catalog()
-            if (not isinstance(data, dict) or set(data) - {'item', 'group_ids', 'all', 'keep_partial_group_ids'}
+            if (not isinstance(data, dict) or set(data) - {'item', 'group_ids', 'all', 'keep_partial_group_ids', 'revision'}
                     or ('group_ids' in data) == ('all' in data)):
                 raise ValueError('Expected a complete group assignment')
             item = self._assignment_item(data.get('item'), catalog)
+            if 'revision' in data and data['revision'] != self._assignment_result(groups, item)['revision']:
+                raise AccessError('Assignments changed; reload before saving', 409, 'assignment_changed')
             if 'all' in data:
                 if data['all'] is not True or 'keep_partial_group_ids' in data:
                     raise ValueError('Invalid all-groups assignment')
@@ -466,6 +548,7 @@ class DeviceAccessService:
     def _public_group(self, row):
         result = deepcopy(row)
         result['effective_settings'] = self._settings(row['display_overrides'])[1]
+        result['revision'] = revision(result)
         return result
 
     def _new_id(self, existing):
@@ -528,6 +611,7 @@ class DeviceAccessService:
             group = self._public_group(self._group(state, owner_id, group_id))
             if device_id is not None:
                 group['effective_settings'] = self._device_display(state, row)['effective_settings']
+                group['content'] = self._device_content(state, row)['effective_content']
             return group
 
     def create_group(self, owner_id, data):
@@ -539,8 +623,10 @@ class DeviceAccessService:
             state = self._load()
             row = self._group(state, owner_id, group_id)
             if (not isinstance(data, dict) or not data
-                    or set(data) - {'name', 'enabled', 'display_overrides', 'content'}):
+                    or set(data) - {'name', 'enabled', 'display_overrides', 'content', 'revision'}):
                 raise ValueError('Invalid group fields')
+            if 'revision' in data and data['revision'] != self._public_group(row)['revision']:
+                raise AccessError('Group settings changed; reload before saving', 409, 'group_settings_changed')
             updated = deepcopy(row)
             if 'name' in data:
                 updated['name'] = _name(data['name'])
@@ -829,7 +915,8 @@ class DeviceAccessService:
             observed = {row['id']: row for row in DeviceService(self.path.with_name('devices.json')).list()}
             result = [dict(observed.get(row['id'], dict(DeviceService._public({'id': row['id']}), online=None)),
                            **self._public_authorization(state, row), can_revoke=True, reported=row['id'] in observed,
-                           display_settings=self._device_display(state, row))
+                           display_settings=self._device_display(state, row),
+                           content_settings=self._device_content(state, row))
                       for row in state['devices'].values() if row['owner_id'] == owner_id]
             if include_legacy:
                 result.extend(dict(row, can_revoke=False, reported=True) for key, row in observed.items()

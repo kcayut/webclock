@@ -22,6 +22,8 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 
 群組 `display_overrides` 未提供的欄位繼承全域設定，含 `night` 內的逐欄繼承；`false` 與 `0` 是有效覆寫。`content` 包含 `calendar_source_ids`、`manual_note_ids`、`schedule_ids`，並可選填 `calendar_targets`；空陣列代表不選取，文字提醒 ID 保留正整數。群組的顯示語言與後台語言分開。全域顯示語言仍由 `/api/control` 的 `language` 更新。
 
+群組 GET／列表／保存回應附 `revision`，涵蓋群組內容與目前有效顯示設定。PATCH 可加 `revision`；版本不同回 409 `group_settings_changed`，不寫入。全體設定使用 `GET /api/control` 取得 `{settings, revision}`，POST 既有設定物件並帶 `If-Match: "<revision>"`；不符回 409 `settings_changed`，成功回最新 `settings`／`revision`。管理介面固定帶版本，同頁全體設定保存依序送出；未帶版本的舊維護 CLI／API 保留無條件更新相容行為。這些不透明雜湊是目前狀態的比較值，不是變更歷史。
+
 `calendar_targets` 是 `{source_id, uid, scope, recurrence_id}` 物件的陣列，可選 `title` 作顯示標籤；`scope` 為 `series` 或 `occurrence`。系列及非週期行程的 `recurrence_id` 為空字串；週期單次使用原始 `RECURRENCE-ID` 追蹤改期。整個來源仍以 `calendar_source_ids` 選取，沒有排除例外時，正規化會移除被來源或系列涵蓋的重複選取；有排除例外時保留必要的個別覆寫；來源／系列全選包括未來行程。舊資料缺少 `calendar_targets` 或值為 `[]` 均相容；PATCH 未傳的清單保持原值。已選目標不因超出目錄的 366 天範圍而清除。
 
 每群一組六碼，600 秒有效、預設 5 台（1–100），全站最多 100 台裝置。明文只在產碼 POST 回一次；GET、持久檔及成員列表不回明文。重產／關閉不改成員。過期、額滿、關閉或停用群組不能加入。加入相關限制為每來源 10 次／60 秒、全站 100 次／60 秒，429 附 `Retry-After`。
@@ -36,7 +38,7 @@ Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](home-assistan
 | `/api/v2/device/identity` | GET 確認 Cookie 往返；`pending` 嘗試不含 group，`active` 回 `{status: "active", identity, group: {id, name}}` |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`；原子扣額並加入，首次 201、同一已提交嘗試重試 200 |
 | `/api/v2/device/leave` | POST `{}`，僅限 Cookie 與同源 CSRF；移除自身授權與觀察記錄，200 回 `{status: "left"}` 並清除同路徑 Cookie |
-| `/api/v2/device/display` | GET 群組有效設定、已選事件與下一個事件 |
+| `/api/v2/device/display` | GET 單台／群組有效設定、已選事件、下一個事件與目標公告 |
 | `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
 | `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
 
@@ -58,7 +60,7 @@ Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](home-assistan
 
 display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision`、`schedule_revision`、`holiday_revision`、Unix 毫秒 `server_timestamp` 與最長 300 秒的 `lease`。身份含 owner／device／group、憑證世代、指派 revision 與 `identity_revision`。每次回應（含 304）前重新確認目前授權與內容範圍；I/O 期間範圍變更回 409 `display_scope_changed`，不送出舊內容。ETag 回應使用 `private, no-cache`、`Vary: Cookie, Authorization`，304 以 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` 續期；加入／身份回應為 `no-store`。
 
-私人快取依裝置身份隔離；401／403、身份改變或租期到期會清除私人事件與網頁鬧鐘。短暫網路錯誤只能沿用尚未過期的本次資料。鬧鐘依 `Asia/Taipei` 計算，顯示時區另依群組設定；聯動來源缺失會排除相應鬧鐘，不退回每天響鈴。此流程未提供 ESP 的七天離線觸發清單，也不代表舊 iPad、鎖屏音訊或硬體已驗收。
+私人快取依裝置身份隔離；401／403、身份改變或租期到期會清除私人事件、公告與網頁鬧鐘。短暫網路錯誤只能沿用尚未過期的本次資料。鬧鐘依 `Asia/Taipei` 計算，顯示時區另依群組設定；聯動來源缺失會排除相應鬧鐘，不退回每天響鈴。此流程未提供 ESP 的七天離線觸發清單，也不代表舊 iPad、鎖屏音訊或硬體已驗收。
 
 **繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../README.md)
 
@@ -68,11 +70,13 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 獨立硬體由裝置端執行。[`firmware/`](../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
-自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。新 schema 3 裝置依已認證身份取得所屬群組內容；一般成員帳號與多租戶仍未提供。
+自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。新 schema 3 裝置依已認證身份取得單台／群組的有效內容指派；一般成員帳號與多租戶仍未提供。
 
 ### 項目群組指派與顯示區間
 
 `GET /api/v1/groups/assignments` 提供目前管理者的群組與文字提醒／排程指派；行事曆項目的指派隨 `GET /api/calendar/display-items` 回傳。`PUT /api/v1/groups/assignments` 接受 `item`（`{kind:"manual_note",id}`、`{kind:"schedule",id}` 或 `{kind:"calendar",target}`）及 `group_ids`，以一次原子保存更新目前管理者的所有相關群組；空清單取消全部指派。`all:true` 指保存當下全部現有群組，不自動包含未來建立的群組。系列可用 `keep_partial_group_ids` 保留未操作的部分指派，不能與選中的群組重疊。未知／其他管理者的群組或無效項目會整批拒絕。
+
+每筆 assignment 包含 `revision`；PUT 可提交讀取時的 `revision`，不符回 409 `assignment_changed`。`GET /api/v1/groups/assignments?item=<URL編碼JSON>` 回 `{groups, assignment}`，供單項重新載入。版本涵蓋目前群組名單與該項有效指派；行事曆也涵蓋相關系列／單次授予與排除，避免部分選取仍顯示相同卻覆蓋了新例外。無關項目的修改不阻擋此項保存。群組整體編輯的版本同樣會受到逐項指派變更影響。未帶版本的舊呼叫仍相容；目前管理 UI 固定帶版本，409 後不自動重送。
 
 群組 `content.calendar_exclusions` 可選填，使用與 `calendar_targets` 相同的識別欄位；缺省等同空陣列。單次排除、單次選取、系列排除、系列選取、整份來源依序決定顯示授權。取消繼承而來的單次行程只建立該項例外，不會移除整份來源或未來行程；對整個系列設定全部／不選取會覆蓋該系列的單次例外。鬧鐘來源授權仍獨立。
 
@@ -80,6 +84,16 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 
 `GET /api/calendar/display-items` 回傳已選行程、安全來源名稱、實際時間、有效顯示區間、群組指派與缺席狀態，依完整時間排序；明確選取的系列集中為一張卡，單次例外另列。私人來源 URL 不下發；讀取失敗回 503，不能當作空選取。主機備份包含這些設定，管理頁 version 1 JSON 匯出仍只包含 settings 與 notes。
 
+
+### 指定對象的公告
+
+公告沿用 `manual_notes.json` 與既有表單路由：POST `/add` 新增、POST `/schedule/<id>` 編輯、POST `/toggle/<id>` 暫停／恢復、POST `/delete/<id>` 刪除。管理者認證與 CSRF 規則保持。表單以 `announcement=1` 指定公告，重複的 `announcement_group_ids`／`announcement_device_ids` 欄位列出對象；`expires_at` 為選填 `YYYY-MM-DDTHH:MM`，伺服器以管理顯示時區轉存含時區的 ISO 8601。一般文字提醒使用空的 `announcement` 值，不帶公告到期設定。
+
+儲存的 note 可加 `announcement_targets: {group_ids: [], device_ids: []}` 與 `expires_at`。兩個 ID 陣列各最多 100 筆，ID 為 1–128 字元的 ASCII `[A-Za-z0-9_-]`，保存時去重；`expires_at` 為含時區的 ISO 8601 字串，空字串表示沒有額外的絕對到期限制。指定群組或指定裝置任一命中即可，但仍須通過目前裝置／群組授權；空對象不投遞。日期、range／daily、星期、enabled 及絕對到期都使用管理時區判定，與鬧鐘的 `Asia/Taipei` 規則分開。
+
+`GET /api/v2/device/display` 增加 `announcements: [{id, text, visible_until}]`，`visible_until` 為 Unix 毫秒，取目前快照最長 300 秒、絕對到期及本次顯示時段結束的最早值；不縮短整份 display／鬧鐘租約。公告不混入 `events`、`next_event`、伺服器 local 行事曆來源或 browser-alarms，也不使用 `schedules.type=announcement`。舊 schema 1／2 維持原契約；匿名 self 狀態的公告為空，已加入的 self 裝置可使用 v2 取得符合目標的公告。瀏覽器不持久化公告，失權、身份／範圍變更、租約或個別期限到期均清除。
+
+表單允許先保存空對象，但不投遞；拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 保留公告欄位，匯入驗證結構及已存在對象的歸屬；已不存在的歷史 ID 可保留，但不授權或建立對象。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。管理頁使用方式見[公告指南](guide.md#指定群組或裝置的公告)。
 
 ## 啟動與目錄
 
@@ -186,13 +200,18 @@ API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API �
 | `/api/v1/devices` | GET 裝置列表、最後回報與待確認同步指令 |
 | `/api/v1/devices/<id>` | PATCH `{"name":"客廳時鐘"}` 修改管理名稱，回 200 與 `device`；DELETE 撤銷自身 owner 的獨立裝置授權，回 200 `{status: "revoked"}` |
 | `/api/v1/devices/<id>/authorization` | PATCH `{"group_id":"目標群組ID","enabled":false}`，可只傳其中一欄；移組或停用／恢復，200 回安全 `device` 授權資料 |
+| `/api/v1/devices/<id>/content-settings` | GET／PATCH 單台內容覆寫、繼承與生效預覽；PATCH 必帶 revision |
 | `/api/v1/devices/<id>/commands` | POST `{"action":"sync"}`，回 202 與 `command` |
 
 managed 的 `GET /api/v1/devices` 列出目前 owner 的授權裝置，尚未回報也會出現，`can_revoke: true`；`reported: false` 時管理頁停用改名及同步。self 保留舊觀察列表，legacy 裝置的 `can_revoke: false`；既存未標來源的觀察無法判定是否為歷史退出殘留，因此保留、不猜測刪除。DELETE 對不存在、其他 owner 或只有共用 token 的裝置回 404；不能用它逐台撤銷 legacy 共用 token。
 
-`GET /api/v1/devices/<id>/display-settings` 回 `{display_overrides, inherited_settings, effective_settings, sources, revision}`；`sources` 以 `brightness`、`night.enabled` 等路徑標示 `device|group|default`。GET 裝置列表每筆及移組／停用回應頂層亦附 `display_settings`。PATCH 同一路徑須提交 `{"revision":"讀取時的版本","display_overrides":{"brightness":10}}`，整份取代單台覆寫；省略欄位恢復繼承，`{}` 全部恢復。只接受既有顯示欄位，`night` 須完整五欄，`false`／`0` 保留；不接受內容、身份或私人來源。伺服器依單台 > 群組 > 全體計算，移組保留覆寫，不改 `assignment_revision`；有效設定變更會更新裝置 `config_revision`／ETag，鬧鐘仍依台灣時間排程。版本涵蓋單台與上層設定／所屬群組，過期回 409 `display_settings_changed` 且不寫入；不存在／其他 owner／legacy 為 404，需重加入為 409 `device_rejoin_required`，驗證、CSRF、儲存與破損資料沿用 400／403／500／503。
+`GET /api/v1/devices/<id>/display-settings` 回 `{display_overrides, inherited_settings, effective_settings, sources, revision}`；`sources` 以 `brightness`、`night.enabled` 等路徑標示 `device|group|default`。GET 裝置列表每筆及移組／停用回應頂層亦附 `display_settings`。PATCH 同一路徑須提交 `{"revision":"讀取時的版本","display_overrides":{"brightness":10}}`，整份取代單台覆寫；省略欄位恢復繼承，`{}` 全部恢復。只接受既有顯示欄位，`night` 須完整五欄，`false`／`0` 保留；不接受內容、身份或私人來源。伺服器依單台 > 群組 > 全體計算，移組保留覆寫；外觀設定編輯不改 `assignment_revision`；有效設定變更會更新裝置 `config_revision`／ETag，鬧鐘仍依台灣時間排程。版本涵蓋單台與上層設定／所屬群組，過期回 409 `display_settings_changed` 且不寫入；不存在／其他 owner／legacy 為 404，需重加入為 409 `device_rejoin_required`，驗證、CSRF、儲存與破損資料沿用 400／403／500／503。
 
-`PATCH /api/v1/devices/<id>/authorization` 只接受非空物件，欄位為 `enabled`（布林值）及／或 `group_id`（既存群組 ID）。移入的群組須屬於同一 owner 且已啟用；目前群組已停用仍可停用／恢復該裝置或移出，恢復裝置不會同時啟用群組。成功回 `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}, display_settings}`；這些欄位也附於 GET 裝置列表，不覆寫裝置 `name`。`authorization_status` 為 `active|disabled|revoked`；`rejoin_required: true` 表示需要重新加入，包含已撤銷或憑證已清除的歷史記錄。回應不含憑證或其摘要。
+`GET /api/v1/devices/<id>/content-settings` 回 `{content_overrides, inherited_content, effective_content, sources, revision}`。`sources` 的 `calendar`、`manual_note_ids`、`schedule_ids` 分別為 `device|group`；裝置列表與授權變更回應亦附 `content_settings`。PATCH 須提交 `{"revision":"讀取時的版本","content_overrides":{"manual_note_ids":[],"schedule_ids":["alarm-id"]}}`，整份取代覆寫集合：省略該類恢復群組繼承，`{}` 全部恢復；明確空清單不提供該類內容。自訂行事曆須含 `calendar_source_ids`，可同時提供 `calendar_targets`／`calendar_exclusions`，三者視為一組，未提供的後兩者為空。來源、提醒與鬧鐘按既有 ID 驗證與去重，不接受私人 URL，也不修改共用原始資料。
+
+內容變更原子保存，實際改動增加 `assignment_revision`，使舊身份快照／ETag 失效；不變重送不寫檔。移組保留明確的單台覆寫，未覆寫類別改用新群組。讀取仍須目前有效裝置授權；刪除來源／排程不會回退至全部內容。版本包含上層內容及裝置指派；過期回 409 `content_settings_changed`，404／409 重加入／400／403／500／503 邊界與單台外觀設定相同。完整主機備份及歷史還原保留 `content_overrides`，同時仍使舊憑證失效；管理頁 version 1 JSON 不含這份裝置授權資料。
+
+`PATCH /api/v1/devices/<id>/authorization` 只接受非空物件，欄位為 `enabled`（布林值）及／或 `group_id`（既存群組 ID）。移入的群組須屬於同一 owner 且已啟用；目前群組已停用仍可停用／恢復該裝置或移出，恢復裝置不會同時啟用群組。成功回 `{device: {id, group_id, group_name, group_enabled, enabled, authorization_status, assignment_revision, rejoin_required}, display_settings, content_settings}`；這些欄位也附於 GET 裝置列表，不覆寫裝置 `name`。`authorization_status` 為 `active|disabled|revoked`；`rejoin_required: true` 表示需要重新加入，包含已撤銷或憑證已清除的歷史記錄。回應不含憑證或其摘要。
 
 一次請求在單一授權檔原子保存，實際改動只增加一次 `assignment_revision`；相同值重送不寫檔。移組與停用／恢復保留同一憑證、裝置名稱、能力、回報與同步 ACK，不增減邀請已用額度。停用立即拒絕私人 API；恢復可用原 cookie 重新確認身份。移組後回新群組範圍與新 revision，舊 ETag 不會沿用，讀取途中移組或停用也不回舊資料／304。離線裝置仍受最長 300 秒私人內容租約限制。
 

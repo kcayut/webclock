@@ -1,4 +1,6 @@
 """Group management API; the application provides the authenticated owner."""
+import json
+
 from flask import Blueprint, jsonify, request
 
 from webclock.services.device_access_service import AccessError
@@ -36,7 +38,8 @@ def groups_api(service_provider, owner_id_provider, catalog_provider=None, membe
         service, owner = service_provider(), owner_id_provider()
         if request.method == 'PUT':
             return jsonify(service.set_assignments(owner, request.get_json()))
-        return jsonify(service.get_assignments(owner))
+        item = json.loads(request.args['item']) if 'item' in request.args else None
+        return jsonify(service.get_assignments(owner, item))
 
     @api.route('/api/v1/groups/initialize', methods=['POST'])
     def initialize():
