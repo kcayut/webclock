@@ -519,6 +519,55 @@ class HostBackupTest(unittest.TestCase):
             self.assertEqual(self.snapshot(roots), before)
             self.assertFalse(rollback.exists())
 
+    def test_restore_retains_events_and_receipts_but_never_revives_program_tokens(self):
+        from webclock.services.auth_service import AuthService
+        from webclock.services.control_access_service import ControlAccessService
+        from webclock.services.control_service import ControlService
+        for mode in ('self', 'managed'):
+            project, values, roots = self.installation('program-' + mode, external=True)
+            state = backup.updater.data_layout(project, values, True)[0]
+            if mode == 'managed':
+                self.protect(project, values)
+            auth = AuthService(state / 'auth.json')
+            owner = auth.ensure_initialized()['owner_id']
+            clients = ControlAccessService(state / 'control-clients.json', auth)
+            issued = clients.create(owner, mode, {'name': 'HA', 'scopes': ['events:write']})
+            client = clients.authenticate(issued['token'], owner, mode)
+            ControlService(state, client, None, (), (), ()).create('events', {
+                'request_id': 'calendar-one', 'event': {'title': 'Meeting',
+                    'start': '2030-01-01T09:00:00+08:00', 'end': '2030-01-01T10:00:00+08:00'}})
+            original = {name: (state / name).read_bytes()
+                        for name in ('control-clients.json', 'control-requests.json', 'events.json')}
+            directory, rollback = self.root / (mode + '-program-backup'), self.root / (mode + '-program-rollback')
+            backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+            clients.revoke(owner, issued['id'])
+            backup.restore_backup(directory, roots, rollback, project, values)
+            restarted = ControlAccessService(state / 'control-clients.json', AuthService(state / 'auth.json'))
+            self.assertIsNone(restarted.authenticate(issued['token'], owner, mode))
+            for name, contents in original.items():
+                self.assertEqual((state / name).read_bytes(), contents)
+                self.assertNotIn(issued['token'].encode(), contents)
+            fresh = restarted.create(owner, mode, {'name': 'Fresh HA', 'scopes': ['events:write']})
+            self.assertIsNotNone(restarted.authenticate(fresh['token'], owner, mode))
+
+    def test_restore_rejects_invalid_or_orphaned_program_state_without_replacing_data(self):
+        from webclock.services.auth_service import AuthService
+        cases = [('control-clients.json', {}), ('control-requests.json', {'bad': {}}),
+                 ('events.json', [{}]), ('events.json', [])]
+        for index, (name, value) in enumerate(cases):
+            project, values, roots = self.installation('invalid-program-' + str(index))
+            state = backup.updater.data_layout(project, values, True)[0]
+            if index != 3:
+                AuthService(state / 'auth.json').ensure_initialized()
+            (state / name).write_text(json.dumps(value))
+            directory, rollback = self.root / ('program-backup-' + str(index)), self.root / ('program-rollback-' + str(index))
+            backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+            before = self.snapshot(roots)
+            with self.subTest(name=name, orphan=index == 3), self.assertRaises(ValueError):
+                backup.restore_backup(directory, roots, rollback, project, values)
+            self.assertEqual(self.snapshot(roots), before)
+            self.assertFalse(rollback.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

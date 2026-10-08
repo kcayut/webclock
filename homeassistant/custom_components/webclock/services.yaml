@@ -1,0 +1,175 @@
+list_calendar_events:
+  name: List external calendar events
+  description: Lists events from explicitly authorized sources for calendar-linked alarms.
+  fields:
+    source_ids:
+      name: Authorized source IDs
+      required: true
+      selector:
+        object: {}
+list_alarms:
+  name: List alarms
+  description: Returns saved content and revisions allowed by the program credential.
+create_alarm:
+  name: Create alarm
+  description: Uses the separate program credential. Saving does not confirm device synchronization or playback.
+  fields:
+    request_id:
+      name: Stable request ID (reuse when retrying)
+      required: true
+      selector:
+        text: {}
+    schedule:
+      name: Alarm data
+      required: true
+      selector:
+        object: {}
+update_alarm:
+  name: Update alarm
+  description: Uses the separate program credential. Saving does not confirm device synchronization or playback.
+  fields:
+    id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    revision:
+      name: Revision from the last read
+      required: true
+      selector:
+        text: {}
+    schedule:
+      name: Alarm data
+      required: true
+      selector:
+        object: {}
+delete_alarm:
+  name: Delete alarm
+  description: Uses the separate program credential. Saving does not confirm device synchronization or playback.
+  fields:
+    id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    revision:
+      name: Revision from the last read
+      required: true
+      selector:
+        text: {}
+list_events:
+  name: List calendar events
+  description: Returns saved content and revisions allowed by the program credential.
+create_event:
+  name: Create calendar event
+  description: Uses the separate program credential. Saving does not confirm device synchronization or playback.
+  fields:
+    request_id:
+      name: Stable request ID (reuse when retrying)
+      required: true
+      selector:
+        text: {}
+    event:
+      name: Calendar event data
+      required: true
+      selector:
+        object: {}
+update_event:
+  name: Update calendar event
+  description: Uses the separate program credential. Saving does not confirm device synchronization or playback.
+  fields:
+    id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    revision:
+      name: Revision from the last read
+      required: true
+      selector:
+        text: {}
+    event:
+      name: Calendar event data
+      required: true
+      selector:
+        object: {}
+delete_event:
+  name: Delete calendar event
+  description: Uses the separate program credential. Saving does not confirm device synchronization or playback.
+  fields:
+    id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    revision:
+      name: Revision from the last read
+      required: true
+      selector:
+        text: {}
+get_target:
+  name: Get content assignment
+  description: Uses an independently authorized group or device assignment.
+  fields:
+    resource:
+      required: true
+      selector:
+        select:
+          options:
+            - schedules
+            - events
+    target_kind:
+      required: true
+      selector:
+        select:
+          options:
+            - group
+            - device
+    id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    target_id:
+      name: Target ID
+      required: true
+      selector:
+        text: {}
+assign_content:
+  name: Assign content
+  description: Uses an independently authorized group or device assignment.
+  fields:
+    resource:
+      required: true
+      selector:
+        select:
+          options:
+            - schedules
+            - events
+    target_kind:
+      required: true
+      selector:
+        select:
+          options:
+            - group
+            - device
+    id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    target_id:
+      name: Target ID
+      required: true
+      selector:
+        text: {}
+    assigned:
+      name: Assigned
+      required: true
+      selector:
+        boolean: {}
+    revision:
+      name: Assignment revision from get_target
+      required: true
+      selector:
+        text: {}

@@ -16,6 +16,7 @@ def register_access_control(app, service_getter):
     def authorize():
         g.owner_id = None
         g.device_bearer_authenticated = False
+        g.control_authenticated = False
         try:
             service = service_getter()
             g.deployment_mode = service.mode()
@@ -33,6 +34,12 @@ def register_access_control(app, service_getter):
         if request.endpoint is None:
             return None
         if request.endpoint in {'auth.login', 'csrf_token'}:
+            return None
+        if request.blueprint == 'control':
+            guard = app.extensions.get('webclock_control_authorize')
+            if guard is None:
+                return failure('control_not_ready', 503)
+            guard()
             return None
         if request.blueprint == 'managed_device':
             # The device guard validates its independent credential before CSRF;

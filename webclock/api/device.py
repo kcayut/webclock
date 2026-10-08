@@ -4,7 +4,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from webclock.services.device_service import DeviceService
-from webclock.services.schedule_service import read_schedules
+from webclock.services.schedule_service import read_legacy_schedules
 from webclock.services.storage import revision, storage_lock
 
 
@@ -26,7 +26,7 @@ def device_api(state_directory, holidays):
         # Schema 2 clients cannot evaluate calendar links; never send a rule they
         # could mistake for an unconditional daily alarm.
         return [{key: value for key, value in row.items() if key != 'calendar_link'}
-                for row in read_schedules(state_directory()) if not row.get('calendar_link')]
+                for row in read_legacy_schedules(state_directory()) if not row.get('calendar_link')]
 
     def devices():
         return DeviceService(Path(state_directory()) / 'devices.json')

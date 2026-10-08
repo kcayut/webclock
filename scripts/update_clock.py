@@ -234,6 +234,38 @@ def supports_authorization(project):
         return False
 
 
+def has_control_data(state):
+    return any((state / name).exists() or (state / name).is_symlink()
+               for name in ('control-clients.json', 'control-requests.json', 'events.json'))
+
+
+def verify_control_data(project, state):
+    """New program state is optional, but an older validator must not ignore it."""
+    if not has_control_data(state):
+        return
+    source = '''
+from pathlib import Path
+import sys
+from webclock.services.auth_service import AuthService
+from webclock.services.control_access_service import ControlAccessService
+from webclock.services.control_service import read_control_requests
+from webclock.services.event_service import read_events
+state = Path(sys.argv[1])
+if not (state / 'auth.json').is_file() or any((state / name).is_symlink()
+        for name in ('auth.json', 'control-clients.json', 'control-requests.json', 'events.json')):
+    raise RuntimeError('Program state requires regular owner authorization data')
+auth = AuthService(state / 'auth.json')
+auth.state()
+ControlAccessService(state / 'control-clients.json', auth)._load()
+read_control_requests(state)
+read_events(state)
+'''
+    try:
+        run([str(project / 'venv/bin/python3'), '-c', source, str(state)], cwd=project)
+    except subprocess.CalledProcessError:
+        raise RuntimeError('Installed code cannot read program state. Keep the service stopped and recover on the host.') from None
+
+
 def verify_protected_data(project, state):
     """Use the installed validators while stopped; never import the migrating app."""
     source = '''
@@ -253,6 +285,7 @@ DeviceAccessService(state / 'device-access.json', auth.invite_secret, validate_s
         run([str(project / 'venv/bin/python3'), '-c', source, str(state)], cwd=project)
     except subprocess.CalledProcessError:
         raise RuntimeError('Installed code cannot read protected state. Keep the service stopped and recover on the host.') from None
+    verify_control_data(project, state)
 
 
 def check_saved_data(current, target, snapshot):
@@ -379,6 +412,7 @@ def perform_update(project):
     auth = authorization_state(current[0])
     target_auth = authorization_state(target_layout[0])
     managed = bool(auth and auth['mode'] == 'managed')
+    control_data = has_control_data(current[0]) or has_control_data(target_layout[0])
     if target_auth and target_auth['mode'] == 'managed' and not managed:
         raise RuntimeError('Target data is protected but the running installation is not. Recover on the host.')
     for tracked in revisions:
@@ -422,6 +456,8 @@ def perform_update(project):
         run([str(venv / 'bin/python3'), '-m', 'pip', 'check'], cwd=project)
         if managed:
             verify_protected_data(project, target_layout[0])
+        else:
+            verify_control_data(project, target_layout[0])
         run(['systemctl', 'start', 'webclock'])
         print('Checking service health, reminders and management APIs...', flush=True)
         if managed:
@@ -438,20 +474,23 @@ def perform_update(project):
                 run(['systemctl', 'stop', 'webclock'])
                 latest_auth = authorization_state(target_layout[0], required=managed)
                 protected = managed or bool(latest_auth and latest_auth['mode'] == 'managed')
+                preserve_control = control_data or has_control_data(target_layout[0])
                 if changed:
                     if git_prefix:
                         run(git_prefix + ['reset', '--keep', old_head], cwd=project)
                     if packages_changed:
                         shutil.move(str(venv), str(backup / 'failed-venv'))
                         run(['cp', '-a', str(backup / 'venv'), str(venv)])
-                    # Immediate protected rollback preserves the latest authorization and
-                    # data, including revocations made before the health check failed.
-                    if not protected:
+                    # Program credentials in self mode need the same revocation floor.
+                    # Preserve latest data rather than reviving revoked tokens from backup.
+                    if not protected and not preserve_control:
                         restore_data(entries, backup)
                 if protected and not supports_authorization(project):
                     raise RuntimeError('Previous code cannot enforce authorization. Service remains stopped; recover on the host.')
                 if protected:
                     verify_protected_data(project, target_layout[0])
+                elif preserve_control:
+                    verify_control_data(project, target_layout[0])
                 run(['systemctl', 'start', 'webclock'])
                 # Older releases kept settings only in memory. Avoid rewriting saved files otherwise.
                 if protected:

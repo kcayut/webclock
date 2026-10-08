@@ -16,12 +16,16 @@ from threading import RLock
 from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
+from zoneinfo import ZoneInfo
 from webclock.services.storage import load_json, save_json, revision, storage_lock
 from webclock.services.holiday_service import HolidayService
-from webclock.services.schedule_service import TAIPEI, next_event, read_schedules, calendar_target_matches
+from webclock.services.schedule_service import TAIPEI, next_event, read_schedules, read_legacy_schedules, calendar_target_matches
 from webclock.services.display_service import browser_alarm_payload, parse_display_window
 from webclock.services.calendar_display_service import (
     validate_display_targets, display_rule, display_bounds, display_item_id,
+)
+from webclock.services.event_service import (
+    SOURCE_ID as NATIVE_CALENDAR_SOURCE, read_events, query_events, project_event, event_target,
 )
 from webclock.services.device_service import DeviceService
 from webclock.api.device import conditional
@@ -441,7 +445,8 @@ def load_calendar_settings():
         raise ValueError('Invalid local display flag')
     sources = validate_calendar_sources(data['sources'])
     result = dict(sources=sources, local_display_enabled=enabled)
-    targets = validate_display_targets(data.get('calendar_targets', []), {source['id'] for source in sources})
+    targets = validate_display_targets(data.get('calendar_targets', []),
+                                       {source['id'] for source in sources} | {NATIVE_CALENDAR_SOURCE})
     if targets:
         result['calendar_targets'] = targets
     return result
@@ -449,8 +454,21 @@ def load_calendar_settings():
 
 def get_calendar_sources():
     # Private server-side catalogue. Only /api/calendar may expose its URLs.
+    native = native_event_rows()
     with settings_lock:
-        return load_calendar_settings()['sources']
+        sources = load_calendar_settings()['sources']
+        if native and not any(source['id'] == NATIVE_CALENDAR_SOURCE for source in sources):
+            sources.append(dict(id=NATIVE_CALENDAR_SOURCE, name='WebClock', provider='native',
+                                url='', display_enabled=False))
+        return sources
+
+
+def native_event_rows(owner_id=None):
+    # Keep an older subscription with this ID authoritative until explicitly migrated.
+    if any(source['id'] == NATIVE_CALENDAR_SOURCE for source in load_calendar_settings()['sources']):
+        return []
+    owner = owner_id or auth_service().owner_id()
+    return [row for row in read_events(Path(SETTINGS_FILE).parent) if row['owner_id'] == owner]
 
 
 def get_calendar_url():
@@ -617,12 +635,20 @@ def fetch_calendar_source(url):
 
 
 def get_calendar_events(start=None, end=None, source_ids=None, strict=False):
+    # Snapshot native storage before the separate settings lock or network I/O.
+    try:
+        native = native_event_rows()
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        if strict:
+            raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready') from error
+        app.logger.warning('Could not read native calendar events')
+        native = []
     # Serialize source edits and fetches so an in-flight removed feed cannot reappear.
     with settings_lock:
-        return fetch_calendar_events(start, end, source_ids, strict=strict)
+        return fetch_calendar_events(start, end, source_ids, strict=strict, native_rows=native)
 
 
-def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False):
+def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False, native_rows=()):
     if start is None:
         start = get_local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     if not isinstance(start, datetime) or start.utcoffset() is None:
@@ -638,7 +664,7 @@ def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False):
                                   or any(not isinstance(value, str) for value in source_ids)):
         raise ValueError('Invalid calendar source selection')
     try:
-        sources = get_calendar_sources()
+        sources = load_calendar_settings()['sources']
     except (OSError, ValueError, KeyError) as error:
         if strict:
             raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready') from error
@@ -650,9 +676,11 @@ def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False):
             del calendar_feed_cache[key]
     selected = set(source_ids) if source_ids is not None else {
         source['id'] for source in sources if source['display_enabled']}
-    if strict and selected - {source['id'] for source in sources} - {'local'}:
+    if strict and selected - {source['id'] for source in sources} - {'local', NATIVE_CALENDAR_SOURCE}:
         raise AccessError('Calendar source is unavailable; retry later', 503, 'calendar_not_ready')
     events = local_calendar_events(start, end) if 'local' in selected else []
+    if NATIVE_CALENDAR_SOURCE in selected and not any(source['id'] == NATIVE_CALENDAR_SOURCE for source in sources):
+        events += query_events(native_rows, start, end)
     selected_urls = {source['url'] for source in sources if source['id'] in selected}
     pending = [url for url in selected_urls if time.time() - calendar_feed_cache.get(
         (str(Path(SETTINGS_FILE).parent), url), {}).get('fetched_at', 0) >= CACHE_DURATION]
@@ -808,7 +836,7 @@ def control():
 def calendar_settings():
     if request.headers.get('Origin', request.host_url.rstrip('/')) != request.host_url.rstrip('/'):
         abort(403)
-    with settings_lock:
+    with storage_lock, settings_lock:
         try:
             current = load_calendar_settings()
         except (OSError, ValueError, KeyError):
@@ -851,7 +879,7 @@ def calendar_settings():
                     raise ValueError('Invalid calendar settings')
                 updated = dict(sources=validate_calendar_sources(data['sources'], create_ids=True),
                                local_display_enabled=current['local_display_enabled'])
-            source_ids = {source['id'] for source in updated['sources']}
+            source_ids = {source['id'] for source in updated['sources']} | {NATIVE_CALENDAR_SOURCE}
             targets = data.get('calendar_targets', [target for target in current.get('calendar_targets', [])
                                                     if target['source_id'] in source_ids])
             targets = validate_display_targets(targets, source_ids)
@@ -865,6 +893,9 @@ def calendar_settings():
                 updated['local_display_enabled'] = data['local_display_enabled']
         except (ValueError, TypeError):
             return jsonify(error='invalid_url' if isinstance(data, dict) and set(data) == {'url'} else 'invalid_settings'), 400
+        if (any(source['id'] == NATIVE_CALENDAR_SOURCE for source in updated['sources'])
+                and read_events(Path(SETTINGS_FILE).parent)):
+            return jsonify(error='Calendar source ID conflicts with native events', code='calendar_source_conflict'), 409
         try:
             save_json(Path(SETTINGS_FILE).parent / 'calendar.json', updated)
         except OSError:
@@ -979,6 +1010,10 @@ def delete(id):
 
 def calendar_selected_occurrence(target, settings, zone, strict=False):
     """Locate an exact saved occurrence beyond the catalog horizon, then use the normal expander."""
+    if (target['source_id'] == NATIVE_CALENDAR_SOURCE
+            and not any(row['id'] == NATIVE_CALENDAR_SOURCE for row in settings['sources'])):
+        return [project_event(row, get_local_now().astimezone(zone)) for row in native_event_rows()
+                if row['enabled'] and row['id'] == target['uid'] and not target.get('recurrence_id')]
     source = next((row for row in settings['sources'] if row['id'] == target['source_id']), None)
     if source is None:
         return []
@@ -1019,13 +1054,14 @@ def calendar_selected_occurrence(target, settings, zone, strict=False):
             anchor = datetime.combine(anchor, datetime.min.time())
         anchor = anchor.replace(tzinfo=zone) if anchor.tzinfo is None else anchor.astimezone(zone)
         start = anchor.replace(hour=0, minute=0, second=0, microsecond=0)
-        return [event for event in get_calendar_events(start=start, end=start + timedelta(days=1),
-                source_ids=[target['source_id']], strict=strict) if calendar_target_matches(event, target)]
+    return [event for event in get_calendar_events(start=start, end=start + timedelta(days=1),
+            source_ids=[target['source_id']], strict=strict) if calendar_target_matches(event, target)]
 
 
 def calendar_display_events(now, settings, whole_sources=None, targets=None, exclusions=None):
     """Apply selection and display windows after fetching raw alarm-compatible events."""
     rules = settings.get('calendar_targets', [])
+    native_source = not any(row['id'] == NATIVE_CALENDAR_SOURCE for row in settings['sources'])
     if whole_sources is None and not rules:
         return get_calendar_events()  # Preserve legacy whole-source and multi-day display.
     whole = set(whole_sources if whole_sources is not None else
@@ -1037,6 +1073,9 @@ def calendar_display_events(now, settings, whole_sources=None, targets=None, exc
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
     events = get_calendar_events(start=start, end=end, source_ids=sources)
+    native = {row['id']: row for row in native_event_rows() if row['enabled']} if NATIVE_CALENDAR_SOURCE in sources else {}
+    # Native windows can begin long before (or after) the event itself.
+    events += [project_event(row, now) for row in native.values()]
     base_keys = {(event.get('source_id'), event.get('uid'), event.get('recurrence_id', '')) for event in events}
     relevant = [rule for rule in rules if rule['source_id'] in sources]
     management_now = get_local_now()
@@ -1064,8 +1103,14 @@ def calendar_display_events(now, settings, whole_sources=None, targets=None, exc
         unique[key] = event
     for event in unique.values():
         rule = display_rule(event, relevant)
+        rule_zone = management_now.tzinfo
+        if rule is None and event['source_id'] == NATIVE_CALENDAR_SOURCE and native_source:
+            row = native.get(event['uid'])
+            if row is None:
+                continue
+            rule, rule_zone = event_target(row), ZoneInfo(row['timezone'])
         if rule:
-            first, last = display_bounds(event, rule, management_now.tzinfo)
+            first, last = display_bounds(event, rule, rule_zone)
             if not first <= int(now.timestamp() * 1000) < last:
                 continue
         elif (event.get('source_id'), event.get('uid'), event.get('recurrence_id', '')) not in base_keys:
@@ -1082,6 +1127,7 @@ def calendar_display_items():
     """Management projection includes future selections, never subscription URLs."""
     try:
         settings = load_calendar_settings()
+        native_source = not any(row['id'] == NATIVE_CALENDAR_SOURCE for row in settings['sources'])
         now = get_local_now()
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=366)
@@ -1089,14 +1135,26 @@ def calendar_display_items():
         whole = {source['id'] for source in settings['sources'] if source['display_enabled']}
         sources = sorted(whole | {target['source_id'] for target in rules})
         events = get_calendar_events(start=start, end=end, source_ids=sources, strict=True) if sources else []
+        native = {row['id']: row for row in native_event_rows() if row['enabled']}
+        native_ids = {event['uid'] for event in events if event['source_id'] == NATIVE_CALENDAR_SOURCE}
+        events += [project_event(row, now) for row in native.values()
+                   if row['id'] not in native_ids]
         # Saved single occurrences remain editable outside the rolling year catalog.
         for rule in rules:
             if rule['scope'] == 'occurrence' and not any(calendar_target_matches(event, rule) for event in events):
                 events += calendar_selected_occurrence(rule, settings, now.tzinfo, strict=True)
         names = {source['id']: source['name'] for source in settings['sources']}
+        if native_source:
+            names[NATIVE_CALENDAR_SOURCE] = 'WebClock'
         items, found = [], set()
         for event in events:
             rule = display_rule(event, rules)
+            rule_zone = now.tzinfo
+            if rule is None and event['source_id'] == NATIVE_CALENDAR_SOURCE and native_source:
+                row = native.get(event['uid'])
+                if row is None:
+                    continue
+                rule, rule_zone = event_target(row), ZoneInfo(row['timezone'])
             if event['source_id'] not in whole and rule is None:
                 continue
             for index, candidate in enumerate(rules):
@@ -1109,7 +1167,7 @@ def calendar_display_items():
             series_target = (dict(source_id=event['source_id'], uid=event['uid'], scope='series', recurrence_id='',
                                   title=event['text'][:500], display_window=dict(series['display_window']) if series else {'mode': 'day'})
                              if event.get('recurring') else None)
-            first, last = display_bounds(event, target, now.tzinfo)
+            first, last = display_bounds(event, target, rule_zone)
             if rule is None:
                 # Whole-source legacy events remain visible on every overlapping day.
                 first_day = datetime.fromtimestamp(event['starts_at'] / 1000, now.tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1214,7 +1272,7 @@ def status():
         show_local = True
         calendar_settings = {'sources': [], 'local_display_enabled': True}
     payload = display_snapshot(now, load_notes() if show_local else [],
-                               read_schedules(Path(SETTINGS_FILE).parent), calendar_display_events(now, calendar_settings), get_calendar_events)
+                               read_legacy_schedules(Path(SETTINGS_FILE).parent), calendar_display_events(now, calendar_settings), get_calendar_events)
     # Calendar I/O may take time; send a fresh timestamp after projection.
     return jsonify(dict(payload, settings=display_settings, announcements=[], server_timestamp=int(get_local_now().timestamp() * 1000)))
 
@@ -1260,13 +1318,13 @@ def group_content_catalog():
     notes = [note for note in load_notes() if 'announcement_targets' not in note]
     schedules = read_schedules(Path(SETTINGS_FILE).parent)
     return {
-        'calendar_source_ids': [source['id'] for source in calendar['sources']],
+        'calendar_source_ids': [source['id'] for source in get_calendar_sources()],
         'manual_note_ids': [note['id'] for note in notes],
         'schedules': schedules,
         'default_content': {
             'calendar_source_ids': [source['id'] for source in calendar['sources'] if source['display_enabled']],
             'manual_note_ids': [note['id'] for note in notes] if calendar['local_display_enabled'] else [],
-            'schedule_ids': [row['id'] for row in schedules],
+            'schedule_ids': [row['id'] for row in read_legacy_schedules(Path(SETTINGS_FILE).parent)],
             **({'calendar_targets': [{key: value for key, value in target.items() if key != 'display_window'}
                                      for target in calendar['calendar_targets']]} if calendar.get('calendar_targets') else {}),
         },
@@ -1306,7 +1364,7 @@ def managed_content(identity):
             elif row['id'] in content['manual_note_ids']:
                 notes.append(row)
         calendar_settings = load_calendar_settings()
-        source_rows = calendar_settings['sources']
+        source_rows = get_calendar_sources()
         sources = {row['id'] for row in source_rows}
         schedules = [row for row in read_schedules(Path(SETTINGS_FILE).parent)
                      if row['id'] in content['schedule_ids']
@@ -1317,6 +1375,8 @@ def managed_content(identity):
         # This server-only digest detects deletion/replacement during calendar I/O.
         dependencies = [[row for row in source_rows if row['id'] in needed],
                         [note for note in all_notes if 'announcement_targets' not in note] if 'local' in needed else []]
+        if NATIVE_CALENDAR_SOURCE in needed:
+            dependencies.append(native_event_rows(identity['owner_id']))
         if any('announcement_targets' in note for note in notes):
             dependencies.append(display_settings.get('timezone_offset', 8))
         rules = [target for target in calendar_settings.get('calendar_targets', []) if target['source_id'] in needed]
@@ -1385,6 +1445,10 @@ register_api(app, lambda: Path(SETTINGS_FILE).parent, holiday_service, template_
              calendar_sources=lambda: get_calendar_sources(), device_access=group_service, owner_id=group_owner)
 app.register_blueprint(groups_api(group_service, group_owner, group_ui_catalog, lambda: device_service().list()))
 app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms))
+
+from webclock.api.control import register_control
+register_control(app, lambda: Path(SETTINGS_FILE).parent, auth_service, group_service, group_owner,
+                 template_context, get_calendar_sources, lambda **query: get_calendar_events(**query), holiday_service)
 
 
 def main():

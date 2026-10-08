@@ -1,5 +1,7 @@
 # WebClock Server：集中管理と端末 API
 
+プログラムからの書き込み：管理画面「プログラムアクセス」(`/integrations`) で個別の認証情報を発行し、`/api/v1/control/*` からアラーム、ローカル予定、表示期間、グループ／端末への割り当てを編集できます。self でもプログラム認証が必要です。managed では管理者による発行と HTTPS が必要で、表示用の参加コードに書き込み権限はありません。[契約と使用例（繁體中文）](control-api.md)を参照してください。音声ファイルのアップロードは含みません。
+
 Home Assistant のネイティブ参加: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](home-assistant.md).
 
 ## B0–B4 管理・グループ・受管端末（2026-10-06）

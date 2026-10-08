@@ -54,10 +54,12 @@ class AccessControlTest(unittest.TestCase):
         public = {'index', 'status', 'public_time', 'health', 'static', 'service_worker',
                   'csrf_token', 'auth.login', 'managed_device.prepare', 'managed_device.join'}
         seen = set()
-        for rule in clock.app.url_map.iter_rules():
+        rules = [(rule, str(rule).replace('<any(schedules,events):kind>', kind))
+                 for rule in clock.app.url_map.iter_rules()
+                 for kind in (('schedules', 'events') if '<any(schedules,events):kind>' in str(rule) else ('',))]
+        for rule, route in rules:
             if rule.endpoint in public:
                 continue
-            route = str(rule)
             import re
             route = re.sub(r'<int:[^>]+>', '1', route)
             route = re.sub(r'<[^>]+>', 'missing', route)

@@ -13,9 +13,11 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from .api import ApiError, WebClockClient
 from .const import CONF_TOKEN, CONF_URL, DOMAIN, VERSION
 from .coordinator import WebClockCoordinator
+from .services import register_services
 
 
 async def async_setup(hass, config):
+    register_services(hass)
     await hass.http.async_register_static_paths([
         StaticPathConfig("/webclock/webclock-cards.js", str(Path(__file__).parent / "www/webclock-cards.js"), False)
     ])

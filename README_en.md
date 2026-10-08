@@ -4,16 +4,17 @@
 
 [繁體中文](README.md) · **English** · [日本語](README_jp.md)
 
-**[Open WebClock](https://kcayut.github.io/webclock/)**
+**[Open the GitHub-hosted clock](https://kcayut.github.io/webclock/)** · [Download and offline use](doc/installation.md#no-server) (Traditional Chinese)
 
 Turn an iPad, tablet, or spare screen into a large clock. Use the public clock directly, or self-host it for calendars, reminders, browser alarms, night mode, and backups.
 
 > [!IMPORTANT]
 > Browser alarms require the page to remain visible with the screen on. Audio and timers are not guaranteed after iOS locks the screen or switches apps.
 
-## Two ways to use WebClock
+## Three ways to use WebClock
 
 - **Use it online:** open the [public clock](https://kcayut.github.io/webclock/). No account or server is required. Time and timezone follow the device.
+- **Download an offline clock:** on a computer, [download and extract the ZIP](doc/installation.md#offline-download), then open its top-level `index.html` in a browser. No server installation is needed. For tablets, see [offline caching and iOS 9 limitations](doc/installation.md#offline-cache) (Traditional Chinese).
 - **Self-host it:** run the full version on a computer, NAS, or Raspberry Pi. `/admin` manages the display, calendars, and text reminders; `/schedules` manages alarms and device status.
 
 The self-hosted UI supports Traditional Chinese, English, and Japanese. It can subscribe to Google, Apple iCloud, and other ICS calendars. Calendar URLs stay on your server and are excluded from the public clock, status responses, and admin-page JSON exports; complete host backups still contain private data.

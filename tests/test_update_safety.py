@@ -227,6 +227,20 @@ class ProtectedDataValidationTest(unittest.TestCase):
             check()
             self.assertEqual({path.name: path.read_bytes() for path in state.iterdir()}, before)
             self.assertFalse((project / 'webclock_state').exists())
+            from webclock.services.control_access_service import ControlAccessService
+            clients = ControlAccessService(state / 'control-clients.json', service)
+            clients.create(service.owner_id(), 'managed', {'name': 'HA', 'scopes': ['events:write']})
+            program_files = {'control-clients.json': (state / 'control-clients.json').read_text(),
+                             'control-requests.json': '{}', 'events.json': '[]'}
+            for name, contents in program_files.items():
+                (state / name).write_text(contents)
+            check()
+            for name, contents in program_files.items():
+                (state / name).write_text('{"private-secret": "invalid schema"}')
+                with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'cannot read program state') as error:
+                    check()
+                self.assertNotIn('private-secret', str(error.exception))
+                (state / name).write_text(contents)
             (state / 'device-access.json').write_text('{"private-secret": "invalid schema"}')
             with self.assertRaisesRegex(RuntimeError, 'cannot read protected state') as error:
                 check()
@@ -600,6 +614,33 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(json.loads((state / 'device-access.json').read_text())['devices']['latest']['status'], 'revoked')
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
         self.assertEqual(self.state, 'active')
+
+    def test_self_rollback_keeps_program_revocations_and_event_edits(self):
+        from webclock.services.auth_service import AuthService
+        from webclock.services.control_access_service import ControlAccessService
+        from webclock.services.event_service import read_events, save_events, validate_event
+        state, auth = self.managed_installation(external=True)
+        auth.update(mode='self', username=None, password_hash=None)
+        (state / 'auth-required').unlink()
+        (state / 'auth.json').write_text(json.dumps(auth))
+        clients = ControlAccessService(state / 'control-clients.json', AuthService(state / 'auth.json'))
+        issued = clients.create('owner', 'self', {'name': 'HA', 'scopes': ['events:write']})
+        save_events(state, [])
+        latest = validate_event(dict(id='latest-event', title='Latest event', owner_id='owner',
+            creator_client_id=issued['id'], start='2030-01-01T09:00:00+08:00', end='2030-01-01T10:00:00+08:00'))
+        def fail_after_change(*args):
+            clients.revoke('owner', issued['id'])
+            save_events(state, [latest])
+            raise RuntimeError('failed new health')
+        with patch.object(updater, 'wait_healthy'), patch.object(updater, 'verify_server', side_effect=fail_after_change):
+            with self.assertRaisesRegex(RuntimeError, 'failed new health'):
+                updater.update(self.project)
+        self.assertIsNone(clients.authenticate(issued['token'], 'owner', 'self'))
+        self.assertEqual(read_events(state), [latest])
+        self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
+        checks = [command for command in self.calls if len(command) > 2 and command[1] == '-c'
+                  and 'ControlAccessService' in command[2]]
+        self.assertEqual(len(checks), 2, 'Validate program data before both starts, including rollback.')
 
     def test_managed_rollback_to_unsupported_code_remains_stopped(self):
         state, auth = self.managed_installation(previous_support=False)

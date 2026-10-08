@@ -4,16 +4,17 @@
 
 **繁體中文** · [English](README_en.md) · [日本語](README_jp.md)
 
-**[開啟線上時鐘](https://kcayut.github.io/webclock/)**
+**[開啟 GitHub 線上時鐘](https://kcayut.github.io/webclock/)** · [下載與離線使用](doc/installation.md#no-server)
 
 把 iPad、平板或閒置螢幕變成大時鐘。公開版開啟網頁即可使用；自行架設版另外提供行事曆、文字提醒、網頁鬧鐘、夜間模式與備份還原。
 
 > [!IMPORTANT]
 > 網頁鬧鐘必須保持瀏覽器在前景且螢幕開啟；iOS 鎖定畫面或切換 App 後，不保證聲音與計時持續。
 
-## 兩種使用方式
+## 三種使用方式
 
 - **直接使用：**開啟[線上時鐘](https://kcayut.github.io/webclock/)，不需帳號或伺服器。時間與時區跟隨裝置，適合舊 iPad、平板與閒置螢幕。
+- **下載離線時鐘：**電腦[下載 ZIP 並解壓縮](doc/installation.md#offline-download)，用瀏覽器開啟最外層的 `index.html`，不必安裝 Server。平板請看[離線快取與 iOS 9 限制](doc/installation.md#offline-cache)。
 - **自行架設：**在電腦、NAS 或 Raspberry Pi 執行完整版。`/admin` 管理顯示、行事曆與文字提醒；`/schedules` 管理鬧鐘與裝置狀態。
 
 自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址保存在主機，不會出現在公開時鐘、狀態或管理頁 JSON 匯出中；主機端完整備份仍包含私人資料。

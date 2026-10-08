@@ -1,5 +1,7 @@
 # WebClock Server: Central Management and Device API
 
+Program writes: issue individual credentials at `/integrations` (Program access), then use `/api/v1/control/*` to edit alarms and native events, display windows and group/device assignments. Self mode keeps LAN management but still requires a program credential; managed mode requires administrator issuance and HTTPS. Display pairing never grants write access. See the [write API contract and examples (Traditional Chinese)](control-api.md). Audio uploads are not included.
+
 Home Assistant native enrollment: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](home-assistant.md).
 
 ## B0–B4 administration, groups and managed devices (2026-10-06)

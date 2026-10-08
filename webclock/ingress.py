@@ -7,7 +7,7 @@ from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 
 _PATH = re.compile(r'^/[A-Za-z0-9._~/-]+$')
 _DISPLAY_PATHS = frozenset(('/', '/sw.js', '/api/health', '/api/time', '/api/csrf'))
-_DISPLAY_PREFIXES = ('/static/', '/api/v1/device/', '/api/v2/device/')
+_DISPLAY_PREFIXES = ('/static/', '/api/v1/device/', '/api/v2/device/', '/api/v1/control/')
 
 
 def _display_path_allowed(path):

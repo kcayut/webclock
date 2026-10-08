@@ -25,6 +25,9 @@ else:
 # These modules only validate/read state; importing the app would migrate data.
 from webclock.services.device_access_service import DeviceAccessService
 from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings
+from webclock.services.control_access_service import ControlAccessService
+from webclock.services.control_service import read_control_requests
+from webclock.services.event_service import read_events
 
 
 FORMAT = 'webclock-host-backup'
@@ -239,6 +242,15 @@ def write_private_json(path, value):
 
 def invalidate_restored_authorization(state, target_auth):
     auth = updater.authorization_state(state, required=bool(target_auth and target_auth['mode'] == 'managed'))
+    if updater.has_control_data(state):
+        if auth is None:
+            raise ValueError('Program state is missing its owner authorization data.')
+        try:
+            ControlAccessService(state / 'control-clients.json', None)._load()
+            read_control_requests(state)
+            read_events(state)
+        except (ValueError, TypeError, KeyError, OSError, RuntimeError):
+            raise ValueError('Invalid program credentials, requests or calendar events. Keep the service stopped.') from None
     if auth is None:
         # Legacy backups have no authorization contract; reject orphaned access data.
         if (state / 'device-access.json').exists():

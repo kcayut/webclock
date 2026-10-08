@@ -8,17 +8,17 @@ import sys
 import tempfile
 from threading import Thread
 from time import monotonic, time
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 from aiohttp import ClientSession, DummyCookieJar, TCPConnector
 from flask import jsonify
 from werkzeug.serving import make_server, WSGIRequestHandler
 
-from homeassistant.config_entries import ConfigEntries, ConfigEntry
+from homeassistant.config_entries import ConfigEntries, ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +27,8 @@ sys.path.insert(0, str(ROOT / 'homeassistant'))
 sys.path.insert(0, str(ROOT / 'tests'))
 import test_device_enrollment as enrollment
 from custom_components.webclock.api import ApiError, WebClockClient, normalize_url
-from custom_components.webclock.config_flow import WebClockConfigFlow
+from custom_components.webclock.config_flow import WebClockConfigFlow, WebClockOptionsFlow
+from custom_components.webclock.services import register_services
 from custom_components.webclock.coordinator import WebClockCoordinator
 from custom_components.webclock.sensor import WebClockSensor
 from custom_components.webclock import async_setup_entry, async_unload_entry, websocket_time
@@ -215,8 +216,133 @@ class WebClockHATest(unittest.IsolatedAsyncioTestCase):
             await self.entry._async_process_on_unload(self.hass)
             self.assertTrue(self.coordinator._closed)
 
+    async def test_control_actions_keep_credential_and_revision_boundaries(self):
+        register_services(self.hass)
+        control_entry = SimpleNamespace(state=ConfigEntryState.LOADED, runtime_data=self.coordinator,
+                                        options={'write_token': 'program-secret'})
+        saved = {'schedule': {'id': 'alarm', 'name': 'Wake'}, 'revision': 'a' * 64}
+        self.client.control.return_value = saved
+        with patch.object(self.hass.config_entries, 'async_entries', return_value=[control_entry]):
+            response = await self.hass.services.async_call('webclock', 'create_alarm', {
+                'request_id': 'repeat-safely', 'schedule': {'name': 'Wake', 'time': '07:00'}
+            }, blocking=True, return_response=True)
+            self.assertEqual(response, saved)
+            self.client.control.assert_awaited_once_with('POST', 'schedules', {
+                'request_id': 'repeat-safely', 'schedule': {'name': 'Wake', 'time': '07:00'}
+            }, None, None, None, token='program-secret')
+            with self.assertRaises(__import__('voluptuous').Invalid):
+                await self.hass.services.async_call('webclock', 'update_alarm', {
+                    'id': 'alarm', 'schedule': {'time': '08:00'}
+                }, blocking=True)
+            self.client.control.side_effect = ApiError('revision_conflict', 409)
+            with self.assertRaisesRegex(ServiceValidationError, 'revision_conflict'):
+                await self.hass.services.async_call('webclock', 'update_alarm', {
+                    'id': 'alarm', 'revision': 'b' * 64, 'schedule': {'time': '08:00'}
+                }, blocking=True)
+            control_entry.options = {}
+            with self.assertRaisesRegex(ServiceValidationError, 'write token'):
+                await self.hass.services.async_call('webclock', 'list_events', {}, blocking=True)
+            self.assertEqual(self.client.control.await_count, 2)
+
+    async def test_options_preserve_and_clear_secret_without_rendering_it(self):
+        flow = WebClockOptionsFlow()
+        flow.hass = self.hass
+        configured = entry(options={'write_token': 'stored-secret', 'emit_alarm_events': True})
+        with patch.object(WebClockOptionsFlow, 'config_entry', new_callable=PropertyMock, return_value=configured):
+            form = await flow.async_step_init()
+            self.assertNotIn('stored-secret', str(form))
+            result = await flow.async_step_init({'emit_alarm_events': False, 'write_token': ''})
+            self.assertEqual(result['data'], {'write_token': 'stored-secret', 'emit_alarm_events': False})
+            result = await flow.async_step_init({'clear_write_token': True})
+            self.assertNotIn('write_token', result['data'])
+            result = await flow.async_step_init({'write_token': 'new-secret'})
+            self.assertEqual(result['data']['write_token'], 'new-secret')
+            result = await flow.async_step_init({'write_token': 'invalid\nsecret'})
+            self.assertEqual(result['errors'], {'base': 'invalid_write_token'})
+
 
 class NativeEndToEndTest(unittest.IsolatedAsyncioTestCase):
+    async def test_control_client_and_cli_against_real_webclock(self):
+        import os
+        import subprocess
+        from test_control_api import ControlApiTest, clock
+        fixture = ControlApiTest()
+        fixture.setUp()
+        fixture.issue()
+        with clock.app.test_request_context('/'):
+            owner = clock.auth_service().owner_id()
+            group = clock.group_service().create_group(owner, {'name': 'Client tests'})
+        token = fixture.issue(group_ids=[group['id']])['token']
+        server = make_server('127.0.0.1', 0, clock.app, request_handler=QuietHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f'http://127.0.0.1:{server.server_port}'
+            async with ClientSession(cookie_jar=DummyCookieJar()) as session:
+                client = WebClockClient(session, url, 'not-a-write-token')
+                body = {'request_id': 'real-client-event', 'event': {'title': 'Meeting',
+                    'start': '2030-10-09T14:00:00+08:00', 'end': '2030-10-09T15:00:00+08:00',
+                    'display_window': {'mode': 'relative', 'before_minutes': 60, 'end': 'event_end'}}}
+                event = await client.control('POST', 'events', body, token=token)
+                repeat = await client.control('POST', 'events', body, token=token)
+                self.assertEqual(event['event']['id'], repeat['event']['id'])
+                self.assertTrue(repeat['replayed'])
+                item_id = event['event']['id']
+                current = await client.control('GET', 'events', item_id=item_id,
+                    target_kind='group', target_id=group['id'], token=token)
+                assigned = await client.control('PUT', 'events', {'assigned': True, 'revision': current['revision']},
+                    item_id, 'group', group['id'], token=token)
+                self.assertTrue(assigned['assigned'])
+                updated = await client.control('PATCH', 'events', {'revision': event['revision'], 'event': {'title': 'Updated'}},
+                    item_id, token=token)
+                self.assertEqual(updated['event']['title'], 'Updated')
+                with self.assertRaises(ApiError) as conflict:
+                    await client.control('PATCH', 'events', {'revision': event['revision'], 'event': {'title': 'Stale'}},
+                        item_id, token=token)
+                self.assertEqual(conflict.exception.code, 'revision_conflict')
+            process = await asyncio.to_thread(subprocess.run,
+                [sys.executable, str(ROOT / 'scripts/control_clock.py'), 'events', 'list'],
+                env=dict(os.environ, WEBCLOCK_SERVER_URL=url, WEBCLOCK_WRITE_TOKEN=token),
+                text=True, capture_output=True, timeout=20)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertEqual(json.loads(process.stdout)['events'][0]['event']['title'], 'Updated')
+            self.assertNotIn(token, process.stdout + process.stderr)
+        finally:
+            await asyncio.to_thread(server.shutdown)
+            server.server_close()
+            fixture.doCleanups()
+
+    async def test_control_transport_separates_token_and_rejects_redirects(self):
+        from flask import Flask, redirect, request
+        app = Flask(__name__)
+        seen = []
+        @app.route('/api/v1/control/schedules', methods=['GET', 'POST'])
+        def schedules():
+            seen.append(dict(request.headers))
+            return jsonify(schedule={'id': 'saved'}, revision='a' * 64), 201
+        @app.route('/api/v1/control/events')
+        def events():
+            return redirect('/api/v1/control/schedules', 307)
+        server = make_server('127.0.0.1', 0, app, request_handler=QuietHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            async with ClientSession(cookie_jar=DummyCookieJar()) as session:
+                client = WebClockClient(session, f'http://127.0.0.1:{server.server_port}', 'display-secret')
+                result = await client.control('POST', 'schedules', {'request_id': 'one', 'schedule': {}}, token='program-secret')
+                self.assertEqual(result['schedule']['id'], 'saved')
+                self.assertEqual(seen[0]['Authorization'], 'Bearer program-secret')
+                self.assertNotIn('Cookie', seen[0])
+                for resource, item in [('https://elsewhere', None), ('schedules', '../events')]:
+                    with self.assertRaises(ApiError):
+                        await client.control('GET', resource, item_id=item, token='program-secret')
+                with self.assertRaises(ApiError):
+                    await client.control('GET', 'events', token='program-secret')
+                self.assertEqual(len(seen), 1)
+        finally:
+            await asyncio.to_thread(server.shutdown)
+            server.server_close()
+
     async def test_real_https_client_join_retry_read_status_revoke(self):
         fixture = enrollment.EnrollmentTransportTest()
         fixture.setUp()

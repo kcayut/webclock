@@ -50,6 +50,9 @@ def register_csrf(app):
         if (request.method in ('GET', 'HEAD', 'OPTIONS') or request.endpoint is None
                 or request.blueprint == 'server_api.device'):
             return None
+        if (request.blueprint == 'control' and same_origin()
+                and getattr(g, 'control_authenticated', False)):
+            return None
         if (request.endpoint == 'managed_device.status' and same_origin()
                 and getattr(g, 'device_bearer_authenticated', False)):
             return None

@@ -41,7 +41,7 @@ Open the [WebClock public clock](https://kcayut.github.io/webclock/) directly. N
 
 WebClock was originally designed for the first-generation iPad mini and keeps the clock page simple for old tablets. Adjust Auto-Lock and screen brightness in the device settings when using it as a persistent display.
 
-In browsers with offline-cache support, connect once and wait until the connection panel reports that offline use is ready. Old Safari can still load the clock online and keep an already loaded page ticking after disconnection, even when it cannot reopen offline. Clearing site data or browser cache requires another online setup.
+For a server-free offline copy on a computer, [download and extract the ZIP, then open its top-level `index.html`](installation.md#offline-download), keeping the adjacent `static` folder. On tablets, wait for “已可離線開啟” at the bottom of the public clock, then test reopening the same URL or home-screen icon without a connection. Cache removal requires online setup again. iPad mini 1/iOS 9 can keep an already loaded foreground page ticking, but cannot use this cache to reopen offline. See [download and offline instructions](installation.md#no-server) for the full steps and device limits (Traditional Chinese).
 
 ## Self-hosting
 

@@ -7,7 +7,7 @@ from flask import Blueprint, abort, g, jsonify, render_template, request
 
 from webclock.services.device_service import DeviceService
 from webclock.services.display_service import browser_alarm_payload
-from webclock.services.schedule_service import TAIPEI, read_schedules, save_schedules, validate_schedule, next_occurrence, prefetch_calendar_sources
+from webclock.services.schedule_service import TAIPEI, read_schedules, read_legacy_schedules, save_schedules, validate_schedule, next_occurrence, prefetch_calendar_sources
 from webclock.services.storage import storage_lock
 from webclock.translations.schedules import SCHEDULE_TRANSLATIONS
 
@@ -161,7 +161,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
 
     @api.route('/api/v1/browser-alarms')
     def browser_alarms():
-        payload = browser_alarm_payload(schedules(), holidays, taipei_now(), calendar_events)
+        payload = browser_alarm_payload(read_legacy_schedules(state_directory()), holidays, taipei_now(), calendar_events)
         return jsonify(dict(payload, server_timestamp=int(taipei_now().timestamp() * 1000)))
 
     @api.route('/api/v1/schedules/<schedule_id>/skip-next', methods=['POST'])

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta id="csrf-token" name="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ control_text.title }} · WebClock</title>
+    {% include 'brand_head.html' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
+    <style>
+        #control-clients, #control-create .check span { min-width: 0; overflow-wrap: anywhere; }
+    </style>
+    <script id="control-i18n" type="application/json">{{ control_languages|tojson }}</script>
+    <script defer src="{{ url_for('static', filename='control-access.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='management.js') }}"></script>
+</head>
+<body class="management" data-management-page="integrations" data-initial-panel="integrations">
+    {% include 'management_nav.html' %}
+    <main id="management-main" class="management-content" tabindex="-1">
+        <section data-management-panel="integrations" class="is-current">
+            <h1 data-control-text="title">{{ control_text.title }}</h1>
+            <p data-control-text="hint">{{ control_text.hint }}</p>
+            <p data-control-text="{{ mode }}">{{ control_text[mode] }}</p>
+            <p id="control-status" role="status" aria-live="polite"></p>
+            <section id="control-secret" class="panel" hidden>
+                <label for="control-token" data-control-text="token">{{ control_text.token }}</label>
+                <input id="control-token" type="password" readonly autocomplete="off" spellcheck="false">
+                <button id="control-reveal" type="button" aria-controls="control-token" aria-pressed="false"
+                        data-control-text="show">{{ control_text.show }}</button>
+                <p data-control-text="token_hint">{{ control_text.token_hint }}</p>
+            </section>
+            <form id="control-create" class="panel" action="{{ url_for('control_management.clients') }}">
+                <div class="field"><label for="control-name" data-control-text="name">{{ control_text.name }}</label>
+                    <input id="control-name" name="name" maxlength="128" required autocomplete="off"></div>
+                <div class="field"><label for="control-days" data-control-text="days">{{ control_text.days }}</label>
+                    <input id="control-days" name="days" type="number" min="1" max="365" value="30" required></div>
+                <fieldset><legend data-control-text="permissions">{{ control_text.permissions }}</legend>
+                    {% for scope in scopes %}<label class="check"><input type="checkbox" name="scopes" value="{{ scope }}">
+                        <span data-control-text="{{ scope }}">{{ control_text[scope] }}</span></label>{% endfor %}
+                </fieldset>
+                <p class="help" data-control-text="own">{{ control_text.own }}</p>
+                <details><summary data-control-text="advanced">{{ control_text.advanced }}</summary>
+                    {% for field, collection in [('group_ids','groups'), ('device_ids','devices'), ('calendar_source_ids','sources'), ('schedule_ids','schedules'), ('event_ids','events')] %}
+                    <fieldset><legend data-control-text="{{ collection }}">{{ control_text[collection] }}</legend>
+                        {% for row in catalog[collection] %}<label class="check"><input type="checkbox" name="{{ field }}" value="{{ row.id }}">
+                            {% if field == 'calendar_source_ids' and row.id == 'local' %}
+                            <span data-control-text="local_reminders">{{ control_text.local_reminders }}</span>
+                            {% else %}<span>{{ row.name or row.title or row.id }}</span>{% endif %}</label>
+                        {% else %}<p class="help" data-control-text="empty">{{ control_text.empty }}</p>{% endfor %}
+                    </fieldset>{% endfor %}
+                </details>
+                <button type="submit" class="primary" data-control-text="create">{{ control_text.create }}</button>
+            </form>
+            <section class="panel"><h2 data-control-text="clients">{{ control_text.clients }}</h2>
+                <div id="control-clients" data-url="{{ url_for('control_management.clients') }}"></div>
+            </section>
+        </section>
+    </main>
+</body>
+</html>

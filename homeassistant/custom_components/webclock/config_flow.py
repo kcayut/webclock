@@ -10,7 +10,8 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
 from .api import ApiError, WebClockClient, normalize_url
-from .const import CONF_CODE, CONF_EMIT, CONF_TOKEN, CONF_URL, DOMAIN
+from .const import (CONF_CLEAR_WRITE_TOKEN, CONF_CODE, CONF_EMIT, CONF_TOKEN,
+                    CONF_URL, CONF_WRITE_TOKEN, DOMAIN)
 
 
 class WebClockConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -68,8 +69,21 @@ class WebClockConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class WebClockOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input=None):
+        errors = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({
+            token = user_input.get(CONF_WRITE_TOKEN, "").strip()
+            if token and not re.fullmatch(r"[\x21-\x7e]{1,512}", token):
+                errors["base"] = "invalid_write_token"
+            else:
+                options = dict(self.config_entry.options)
+                options[CONF_EMIT] = user_input.get(CONF_EMIT, False)
+                if user_input.get(CONF_CLEAR_WRITE_TOKEN):
+                    options.pop(CONF_WRITE_TOKEN, None)
+                elif token:
+                    options[CONF_WRITE_TOKEN] = token
+                return self.async_create_entry(data=options)
+        return self.async_show_form(step_id="init", errors=errors, data_schema=vol.Schema({
             vol.Optional(CONF_EMIT, default=self.config_entry.options.get(CONF_EMIT, False)): bool,
+            vol.Optional(CONF_WRITE_TOKEN): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+            vol.Optional(CONF_CLEAR_WRITE_TOKEN, default=False): bool,
         }))

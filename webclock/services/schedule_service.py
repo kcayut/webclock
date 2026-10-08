@@ -133,6 +133,17 @@ def read_schedules(directory):
         return validated
 
 
+def read_legacy_schedules(directory):
+    """Anonymous and schema-2 clients receive only legacy, globally shared alarms."""
+    from .control_service import read_control_requests
+    with storage_lock:
+        private_ids = {row['item_id'] for row in read_control_requests(directory).values()
+                       if row['kind'] == 'schedules'}
+        # Keep program IDs private even if their receipt file is removed.
+        return [row for row in read_schedules(directory) if row['id'] not in private_ids
+                and not re.fullmatch(r'ctl_[0-9a-f]{48}', row['id'])]
+
+
 def save_schedules(directory, rows):
     """Keep existing device settings inert; editing server data must not erase them."""
     with storage_lock:

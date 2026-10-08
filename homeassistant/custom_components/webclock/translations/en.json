@@ -37,9 +37,15 @@
       "init": {
         "title": "Options",
         "data": {
-          "emit_alarm_events": "Emit webclock_alarm events (configure HA automations separately)"
-        }
+          "emit_alarm_events": "Emit webclock_alarm events (configure HA automations separately)",
+          "write_token": "Program write token (blank keeps the current token)",
+          "clear_write_token": "Remove the stored write token"
+        },
+        "description": "Create a separate program credential in WebClock management. This does not replace the display credential. Clear removes access for future actions."
       }
+    },
+    "error": {
+      "invalid_write_token": "Invalid token; paste the program credential without spaces."
     }
   },
   "entity": {
@@ -53,6 +59,52 @@
       "alarms": {
         "name": "Alarms"
       }
+    }
+  },
+  "services": {
+    "list_alarms": {
+      "name": "List alarm",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "create_alarm": {
+      "name": "Create alarm",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "update_alarm": {
+      "name": "Update alarm",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "delete_alarm": {
+      "name": "Delete alarm",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "list_events": {
+      "name": "List calendar event",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "create_event": {
+      "name": "Create calendar event",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "update_event": {
+      "name": "Update calendar event",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "delete_event": {
+      "name": "Delete calendar event",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "get_target": {
+      "name": "Get content assignment",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "assign_content": {
+      "name": "Assign content",
+      "description": "Uses the separate program credential. Saved data is not proof of device synchronization or playback."
+    },
+    "list_calendar_events": {
+      "name": "List external calendar events",
+      "description": "Lists explicitly authorized events for calendar-linked alarms."
     }
   }
 }

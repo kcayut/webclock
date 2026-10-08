@@ -37,9 +37,15 @@
       "init": {
         "title": "選項",
         "data": {
-          "emit_alarm_events": "發出 webclock_alarm 事件（另行設定 HA 自動化）"
-        }
+          "emit_alarm_events": "發出 webclock_alarm 事件（另行設定 HA 自動化）",
+          "write_token": "程式寫入憑證（留空保留現有憑證）",
+          "clear_write_token": "移除已儲存的寫入憑證"
+        },
+        "description": "請在 WebClock 管理頁建立獨立的程式憑證；此憑證不取代顯示裝置憑證。勾選移除後，後續操作將停用。"
       }
+    },
+    "error": {
+      "invalid_write_token": "憑證格式無效，請貼上不含空白的程式憑證。"
     }
   },
   "entity": {
@@ -53,6 +59,52 @@
       "alarms": {
         "name": "鬧鐘"
       }
+    }
+  },
+  "services": {
+    "list_alarms": {
+      "name": "列出 鬧鐘",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "create_alarm": {
+      "name": "建立 鬧鐘",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "update_alarm": {
+      "name": "修改 鬧鐘",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "delete_alarm": {
+      "name": "刪除 鬧鐘",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "list_events": {
+      "name": "列出 行事曆事件",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "create_event": {
+      "name": "建立 行事曆事件",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "update_event": {
+      "name": "修改 行事曆事件",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "delete_event": {
+      "name": "刪除 行事曆事件",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "get_target": {
+      "name": "取得內容指派",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "assign_content": {
+      "name": "指派內容",
+      "description": "使用獨立程式憑證；伺服器已保存不代表裝置已同步或播放。"
+    },
+    "list_calendar_events": {
+      "name": "列出外部行事曆事件",
+      "description": "只列出明確授權來源的行程，供鬧鐘聯動使用。"
     }
   }
 }

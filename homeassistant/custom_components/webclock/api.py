@@ -6,7 +6,7 @@ import json
 import math
 import re
 from time import monotonic
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from aiohttp import ClientError
 
@@ -50,13 +50,48 @@ class WebClockClient:
         self.attempt_id = None
 
     async def request(self, path, body=None):
+        return await self._request("GET" if body is None else "POST",
+                                   "/api/v2/device/" + path, body, self.token)
+
+    async def control(self, method, resource, body=None, item_id=None, target_kind=None, target_id=None, *, token):
+        """Use only fixed API paths; display credentials never authorize writes."""
+        if resource not in ("schedules", "events") or method not in ("GET", "POST", "PATCH", "DELETE", "PUT"):
+            raise ApiError("invalid_request")
+        path = "/api/v1/control/" + resource
+        if item_id is not None:
+            if not isinstance(item_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item_id):
+                raise ApiError("invalid_request")
+            path += "/" + item_id
+        if target_kind is not None or target_id is not None:
+            if (item_id is None or target_kind not in ("group", "device")
+                    or not isinstance(target_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", target_id)
+                    or method not in ("GET", "PUT")):
+                raise ApiError("invalid_request")
+            path += "/targets/" + target_kind + "/" + target_id
+        elif method not in (("GET", "POST") if item_id is None else ("GET", "PATCH", "DELETE")):
+            raise ApiError("invalid_request")
+        if not isinstance(token, str) or not re.fullmatch(r"[\x21-\x7e]{1,512}", token):
+            raise ApiError("authentication_required")
+        return await self._request(method, path, body, token)
+
+    async def calendar_catalog(self, source_ids, *, token):
+        if (not isinstance(source_ids, list) or not 1 <= len(source_ids) <= 50
+                or any(not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", value)
+                       for value in source_ids)):
+            raise ApiError("invalid_request")
+        if not isinstance(token, str) or not re.fullmatch(r"[\x21-\x7e]{1,512}", token):
+            raise ApiError("authentication_required")
+        return await self._request("GET", "/api/v1/control/calendar-events?" +
+            urlencode([("source_id", value) for value in source_ids]), None, token)
+
+    async def _request(self, method, path, body, token):
         headers = {"X-WebClock-Client": "native-v1", "Accept": "application/json"}
-        if self.token:
-            headers["Authorization"] = "Bearer " + self.token
+        if token:
+            headers["Authorization"] = "Bearer " + token
         try:
             async with asyncio.timeout(15):
                 async with self.session.request(
-                    "GET" if body is None else "POST", self.url + "/api/v2/device/" + path,
+                    method, self.url + path,
                     json=body, headers=headers, allow_redirects=False,
                 ) as response:
                     raw = bytearray()
@@ -73,8 +108,12 @@ class WebClockClient:
                         code = result.get("code")
                         allowed = {"invalid_invitation", "rate_limited", "https_required",
                                    "join_attempt_conflict", "device_authentication_required",
-                                   "device_authorization_revoked", "display_scope_changed"}
-                        raise ApiError(code if code in allowed else "cannot_connect", response.status)
+                                   "device_authorization_revoked", "display_scope_changed",
+                                   "authentication_required", "permission_denied", "not_found",
+                                   "revision_conflict", "idempotency_conflict", "request_incomplete",
+                                   "invalid_request", "storage_failure", "control_not_ready", "tls_required",
+                                   "capacity_reached", "source_id_conflict", "calendar_not_ready"}
+                        raise ApiError(code if isinstance(code, str) and code in allowed else "cannot_connect", response.status)
                     return result
         except (ClientError, TimeoutError):
             raise ApiError() from None
