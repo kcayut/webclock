@@ -7,7 +7,7 @@ from webclock.csrf import same_origin
 from webclock.services.auth_service import AuthStateError
 from webclock.services.device_access_service import AccessError
 from webclock.services.device_service import REPORT_FIELDS, _capabilities, _identifier, _text
-from webclock.services.storage import storage_lock
+from webclock.services.storage import storage_lock, revision
 
 
 DEVICE_COOKIE = 'webclock_device'
@@ -51,7 +51,29 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         return response
 
     def owner():
-        return auth_provider().owner_id()
+        auth = auth_provider()
+        access = access_provider()
+        token = getattr(g, 'device_token', None)
+        digest = access._credential_digest(token)
+        state = access._load()
+        row = access._device_for_digest(state, digest)
+        if row is None and digest:
+            row = next((value for value in state['attempts'].values()
+                        if value['credential_digest'] == digest), None)
+            if row and row['device_id'] is None and access._predates_scope(row):
+                row = None
+        selected = row['owner_id'] if row else auth.owner_id()
+        if not auth.owner_active(selected):
+            raise AccessError('Data owner is dormant', 403, 'device_authorization_revoked')
+        g.owner_id = selected
+        return selected
+
+    def identity_scope(identity):
+        value = dict(identity)
+        state = auth_provider().state()
+        if state.get('scope_changed_at'):
+            value['identity_revision'] = revision([value['identity_revision'], state['generation']])
+        return value
 
     def cookie_path():
         return request.script_root.rstrip('/') + '/api/v2/device'
@@ -86,6 +108,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
                     or not authorization.startswith('Bearer ')):
                 raise AccessError('A device credential is required', 401, 'device_authentication_required')
             token = authorization[7:]
+            g.device_token = token
             g.device_identity = access_provider().authenticate(token, owner())
             g.device_bearer_authenticated = True
         g.device_token = token
@@ -120,7 +143,8 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
     def token_join():
         value = body(('attempt_id', 'code'), ('attempt_id', 'code'))
         result = access_provider().join(owner(), g.device_token, value['attempt_id'], value['code'],
-                                        request.remote_addr)
+                                        request.remote_addr, owner_allowed=auth_provider().owner_active)
+        result['identity'] = identity_scope(result['identity'])
         return jsonify(schema_version=3, identity=result['identity'], server_timestamp=int(time.time() * 1000)), \
             201 if result['created'] else 200
 
@@ -144,13 +168,17 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
 
     @api.route('/identity')
     def identity():
-        return jsonify(access_provider().identity(g.device_token, owner()))
+        result = access_provider().identity(g.device_token, owner())
+        if 'identity' in result:
+            result['identity'] = identity_scope(result['identity'])
+        return jsonify(result)
 
     @api.route('/join', methods=['POST'])
     def join():
         value = body(('attempt_id', 'code'), ('attempt_id', 'code'))
         result = access_provider().join(owner(), g.device_token, value['attempt_id'], value['code'],
-                                        request.remote_addr)
+                                        request.remote_addr, owner_allowed=auth_provider().owner_active)
+        result['identity'] = identity_scope(result['identity'])
         return jsonify(schema_version=3, identity=result['identity'], server_timestamp=int(time.time() * 1000)), \
             201 if result['created'] else 200
 
@@ -164,11 +192,11 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         return response
 
     def scoped_response(provider):
-        identity = access_provider().authenticate(g.device_token, owner())
+        identity = identity_scope(access_provider().authenticate(g.device_token, owner()))
         result = provider(identity)
         # A slow calendar request must not return a formerly authorized body/304.
         with storage_lock:
-            current = access_provider().authenticate(g.device_token, owner())
+            current = identity_scope(access_provider().authenticate(g.device_token, owner()))
             if current['identity_revision'] != identity['identity_revision']:
                 raise AccessError('Device assignment changed', 403, 'device_authorization_revoked')
             return result
@@ -199,7 +227,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         for command_id in acknowledgements:
             _identifier(command_id)
         with storage_lock:
-            identity = access_provider().authenticate(g.device_token, owner())
+            identity = identity_scope(access_provider().authenticate(g.device_token, owner()))
             devices = device_provider()
             device_id = identity['device_id']
             existing = next((row for row in devices.list() if row['id'] == device_id), None)

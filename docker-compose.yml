@@ -10,6 +10,8 @@ services:
       # Persist the whole private state directory, including auth.json,
       # auth-required and device-access.json. Match this mount if STATE_DIR changes.
       - ./webclock_state:/app/webclock_state
+      # Keep pre-switch backups when the container is rebuilt or replaced.
+      - ./.webclock-mode-backups-webclock_state:/app/.webclock-mode-backups-webclock_state
       - ./tls:/app/tls:ro
     environment:
       - PORT=5000

@@ -190,7 +190,9 @@ def authorization_state(state, required=False):
             return None
         fields = {'version', 'mode', 'owner_id', 'username', 'password_hash', 'session_secret',
                   'invite_secret', 'generation', 'sessions'}
-        if (not isinstance(auth, dict) or set(auth) != fields
+        optional = {'accounts', 'administrator_id', 'data_owner_id', 'explicit_self_generation',
+                    'scope_changed_at', 'setup_code'}
+        if (not isinstance(auth, dict) or not fields <= set(auth) or set(auth) - fields - optional
                 or type(auth.get('version')) is not int or auth['version'] != 1
                 or auth.get('mode') not in ('self', 'managed')
                 or not isinstance(auth.get('owner_id'), str) or not 1 <= len(auth['owner_id']) <= 128
@@ -198,10 +200,45 @@ def authorization_state(state, required=False):
                 or not isinstance(auth.get('sessions'), dict) or len(auth['sessions']) > 100
                 or any(not isinstance(auth.get(key), str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', auth[key])
                        for key in ('session_secret', 'invite_secret'))
-                or auth['session_secret'] == auth['invite_secret']
-                or (required and auth['mode'] != 'managed')):
+                or auth['session_secret'] == auth['invite_secret']):
             raise ValueError()
-        if auth['mode'] == 'managed':
+        accounts = auth.get('accounts', {})
+        if not isinstance(accounts, dict) or len(accounts) > 100:
+            raise ValueError()
+        for identity, account in accounts.items():
+            if (not isinstance(identity, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', identity)
+                    or not isinstance(account, dict) or account.get('owner_id') != identity
+                    or account.get('role') not in ('admin', 'member') or type(account.get('enabled')) is not bool
+                    or not isinstance(account.get('username'), str) or not 1 <= len(account['username'].strip()) <= 128
+                    or account['username'] != account['username'].strip() or any(ord(c) < 32 for c in account['username'])
+                    or not isinstance(account.get('password_hash'), str)
+                    or not re.fullmatch(r'scrypt:32768:8:1\$[A-Za-z0-9]{16}\$[0-9a-f]{128}', account['password_hash'])
+                    or type(account.get('created_at')) not in (int, float) or not math.isfinite(account['created_at'])
+                    or account['created_at'] < 0
+                    or ('deleted_at' in account and (type(account['deleted_at']) not in (int, float)
+                        or not math.isfinite(account['deleted_at']) or account['deleted_at'] < 0 or account['enabled']))):
+                raise ValueError()
+        if accounts:
+            admin = accounts.get(auth.get('administrator_id'), {})
+            primary = accounts.get(auth['owner_id'], {})
+            if (admin.get('role') != 'admin' or not admin.get('enabled') or not primary.get('enabled')
+                    or auth.get('data_owner_id') not in accounts
+                    or admin.get('username') != auth['username'] or admin.get('password_hash') != auth['password_hash']
+                    or len({account['username'] for account in accounts.values()}) != len(accounts)
+                    or (auth['mode'] == 'self' and (auth.get('explicit_self_generation') != auth['generation'] or auth['sessions']))):
+                raise ValueError()
+        if 'accounts' in auth and not accounts and (auth['mode'] == 'managed' or auth.get('administrator_id') is not None):
+            raise ValueError()
+        if 'scope_changed_at' in auth and (type(auth['scope_changed_at']) is not int or auth['scope_changed_at'] < 0):
+            raise ValueError()
+        setup = auth.get('setup_code')
+        if setup is not None and (accounts or not isinstance(setup, dict)
+                or not isinstance(setup.get('digest'), str) or not re.fullmatch(r'[0-9a-f]{64}', setup['digest'])
+                or type(setup.get('expires_at')) not in (int, float) or not math.isfinite(setup['expires_at'])):
+            raise ValueError()
+        if required and not is_protected(auth):
+            raise ValueError()
+        if auth['mode'] == 'managed' or accounts:
             if (not isinstance(auth.get('username'), str) or not 1 <= len(auth['username']) <= 128
                     or not isinstance(auth.get('password_hash'), str)
                     or not re.fullmatch(r'scrypt:32768:8:1\$[A-Za-z0-9]{16}\$[0-9a-f]{128}', auth['password_hash'])):
@@ -210,7 +247,8 @@ def authorization_state(state, required=False):
             raise ValueError()
         for digest, session in auth['sessions'].items():
             if (not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
-                    or not isinstance(session, dict) or session.get('owner_id') != auth['owner_id']
+                    or not isinstance(session, dict)
+                    or session.get('owner_id') not in (accounts or {auth['owner_id']: True})
                     or type(session.get('generation')) is not int or session['generation'] != auth['generation']
                     or type(session.get('expires_at')) not in (int, float)
                     or not math.isfinite(session['expires_at'])):
@@ -220,13 +258,18 @@ def authorization_state(state, required=False):
         raise RuntimeError('Invalid or missing authorization state. Keep the service stopped and recover on the host.') from None
 
 
-def supports_authorization(project):
+def is_protected(auth):
+    return bool(auth and (auth['mode'] == 'managed' or auth.get('accounts')))
+
+
+def supports_authorization(project, auth=None):
     """Old code must never be restarted against protected installation data."""
     path = project / 'webclock/services/auth_service.py'
     try:
         tree = ast.parse(path.read_text(encoding='utf-8'))
+        name = 'AUTH_MULTI_OWNER_VERSION' if auth and auth.get('accounts') else 'AUTH_SCHEMA_VERSION'
         return any(isinstance(node, ast.Assign)
-                   and any(isinstance(target, ast.Name) and target.id == 'AUTH_SCHEMA_VERSION'
+                   and any(isinstance(target, ast.Name) and target.id == name
                            for target in node.targets)
                    and isinstance(node.value, ast.Constant) and type(node.value.value) is int
                    and node.value.value == 1 for node in tree.body)
@@ -235,8 +278,32 @@ def supports_authorization(project):
 
 
 def has_control_data(state):
-    return any((state / name).exists() or (state / name).is_symlink()
+    return any((scope / name).exists() or (scope / name).is_symlink()
+               for scope in [state, *(state / 'owners').glob('*')]
                for name in ('control-clients.json', 'control-requests.json', 'events.json'))
+
+
+def owner_state_directories(state, auth):
+    """Account directories are private namespaces, never aliases or orphan data."""
+    root = state / 'owners'
+    if root.is_symlink() or (root.exists() and not root.is_dir()):
+        raise ValueError('Invalid account data directory.')
+    directories = [state]
+    for path in root.iterdir() if root.exists() else ():
+        if (path.is_symlink() or not path.is_dir() or path.name not in (auth or {}).get('accounts', {})
+                or path.name == auth.get('data_owner_id')):
+            raise ValueError('Invalid or orphaned account data directory.')
+        directories.append(path)
+    return directories
+
+
+def active_data_layout(layout):
+    state, notes = layout
+    auth = authorization_state(state)
+    if auth and auth.get('accounts') and auth['owner_id'] != auth.get('data_owner_id'):
+        state = state / 'owners' / auth['owner_id']
+        notes = state / 'manual_notes.json'
+    return state, notes
 
 
 def verify_control_data(project, state):
@@ -255,10 +322,16 @@ if not (state / 'auth.json').is_file() or any((state / name).is_symlink()
         for name in ('auth.json', 'control-clients.json', 'control-requests.json', 'events.json')):
     raise RuntimeError('Program state requires regular owner authorization data')
 auth = AuthService(state / 'auth.json')
-auth.state()
+data = auth.state()
 ControlAccessService(state / 'control-clients.json', auth)._load()
-read_control_requests(state)
-read_events(state)
+for scope in [state, *(state / 'owners').glob('*')]:
+    if scope != state and (scope.is_symlink() or not scope.is_dir()
+            or scope.name not in data.get('accounts', {}) or scope.name == data.get('data_owner_id')):
+        raise RuntimeError('Invalid account data directory')
+    if any((scope / name).is_symlink() for name in ('control-requests.json', 'events.json')):
+        raise RuntimeError('Program files must not be symlinks')
+    read_control_requests(scope)
+    read_events(scope)
 '''
     try:
         run([str(project / 'venv/bin/python3'), '-c', source, str(state)], cwd=project)
@@ -276,8 +349,15 @@ from webclock.services.device_access_service import DeviceAccessService
 from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings
 state = Path(sys.argv[1])
 auth = AuthService(state / 'auth.json')
-if auth.mode() != 'managed':
+data = auth.state()
+if data['mode'] != 'managed' and not data.get('accounts'):
     raise RuntimeError('Protected state is required')
+owners = state / 'owners'
+if owners.is_symlink() or (owners.exists() and not owners.is_dir()):
+    raise RuntimeError('Invalid account data directory')
+for scope in owners.iterdir() if owners.exists() else ():
+    if scope.is_symlink() or not scope.is_dir() or scope.name not in data.get('accounts', {}) or scope.name == data.get('data_owner_id'):
+        raise RuntimeError('Invalid account data directory')
 DeviceAccessService(state / 'device-access.json', auth.invite_secret, validate_settings,
     lambda: {'night': dict(DEFAULT_NIGHT)}, lambda: {})._load()
 '''
@@ -289,6 +369,7 @@ DeviceAccessService(state / 'device-access.json', auth.invite_secret, validate_s
 
 
 def check_saved_data(current, target, snapshot):
+    current, target = active_data_layout(current), active_data_layout(target)
     required = {'mode', 'brightness', 'timezone_offset', 'language'}
     if (not isinstance(snapshot, dict) or not required <= set(snapshot)
             or set(snapshot) - (required | {'night', 'time_format'})
@@ -336,7 +417,7 @@ def restore_data(entries, backup):
 
 
 def prepare_data(layout, snapshot, notes, uid, gid):
-    state, notes_file = layout
+    state, notes_file = active_data_layout(layout)
     for directory in {state, notes_file.parent}:
         if not directory.exists():
             directory.mkdir(parents=True, mode=0o700)
@@ -352,11 +433,11 @@ def prepare_data(layout, snapshot, notes, uid, gid):
 
 
 def verify_server(project, url, layout, expected_notes, configuration):
-    if read_json(layout[1], []) != expected_notes:
+    if read_json(active_data_layout(layout)[1], []) != expected_notes:
         raise RuntimeError('Reminder migration did not preserve the original data.')
     auth = authorization_state(layout[0])
-    if auth and auth['mode'] == 'managed':
-        check_public_health(url)
+    if is_protected(auth):
+        check_public_health(url, deployment_mode=auth['mode'])
         return
     if (project / 'webclock/api/device.py').is_file():
         device_schema = 2  # Releases predating public health only support schema 2.
@@ -411,9 +492,10 @@ def perform_update(project):
     paths = protected_paths(project, current, target_layout)
     auth = authorization_state(current[0])
     target_auth = authorization_state(target_layout[0])
-    managed = bool(auth and auth['mode'] == 'managed')
+    protected = is_protected(auth)
+    mode = (auth or {}).get('mode', 'self')
     control_data = has_control_data(current[0]) or has_control_data(target_layout[0])
-    if target_auth and target_auth['mode'] == 'managed' and not managed:
+    if is_protected(target_auth) and not protected:
         raise RuntimeError('Target data is protected but the running installation is not. Recover on the host.')
     for tracked in revisions:
         for name in tracked:
@@ -421,9 +503,9 @@ def perform_update(project):
             if (name.startswith(('.webclock-update', 'venv/')) or name == 'venv'
                     or any(path == data or data in path.parents or path in data.parents for data in paths)):
                 raise RuntimeError('Git version tracks installation data; refusing to overwrite it.')
-    if managed:
-        check_public_health(url)
-    snapshot = (read_json(current[0] / 'settings.json', None) if managed
+    if protected:
+        check_public_health(url, deployment_mode=mode)
+    snapshot = (read_json(active_data_layout(current)[0] / 'settings.json', None) if protected
                 else http_json(url + '/api/status')['settings'])
     check_saved_data(current, target_layout, snapshot)
     backup = Path(tempfile.mkdtemp(prefix='.webclock-update-', dir=project))
@@ -432,38 +514,39 @@ def perform_update(project):
     entries = []
     try:
         run(['cp', '-a', str(venv), str(backup / 'venv')])
-        if not managed:
+        if not protected:
             snapshot = http_json(url + '/api/status')['settings']
         print('Stopping service and preserving installation data...', flush=True)
         stopped = True
         run(['systemctl', 'stop', 'webclock'])
-        stopped_auth = authorization_state(current[0], required=managed)
-        managed = managed or bool(stopped_auth and stopped_auth['mode'] == 'managed')
-        authorization_state(target_layout[0], required=managed)
+        stopped_auth = authorization_state(current[0], required=protected)
+        protected = protected or is_protected(stopped_auth)
+        mode = (stopped_auth or {}).get('mode', 'self')
+        authorization_state(target_layout[0], required=protected)
         # Read the final persisted settings after stop, so a last-minute edit is retained.
-        snapshot = read_json(current[0] / 'settings.json', snapshot)
+        snapshot = read_json(active_data_layout(current)[0] / 'settings.json', snapshot)
         notes = check_saved_data(current, target_layout, snapshot)
         entries = snapshot_data(paths, backup, old_head)
         changed = True
         if git_prefix:
             run(git_prefix + ['merge', '--ff-only', target], cwd=project)
-        if managed and not supports_authorization(project):
+        if protected and not supports_authorization(project, stopped_auth):
             raise RuntimeError('Updated code does not support protected authorization state.')
         prepare_data(target_layout, snapshot, notes, uid, gid)
         print('Installing and checking Python packages...', flush=True)
         packages_changed = True
         run([str(venv / 'bin/python3'), '-m', 'pip', 'install', '-r', 'requirements.txt'], cwd=project)
         run([str(venv / 'bin/python3'), '-m', 'pip', 'check'], cwd=project)
-        if managed:
+        if protected:
             verify_protected_data(project, target_layout[0])
         else:
             verify_control_data(project, target_layout[0])
         run(['systemctl', 'start', 'webclock'])
         print('Checking service health, reminders and management APIs...', flush=True)
-        if managed:
+        if protected:
             authorization_state(target_layout[0], required=True)
             check_saved_data(target_layout, target_layout, snapshot)
-            wait_healthy(url, snapshot, deployment_mode='managed')
+            wait_healthy(url, snapshot, deployment_mode=mode)
         else:
             wait_healthy(url, snapshot)
         verify_server(project, url, target_layout, notes, configuration)
@@ -472,8 +555,9 @@ def perform_update(project):
             print('Update failed; restoring the previous source, environment and data.', flush=True)
             try:
                 run(['systemctl', 'stop', 'webclock'])
-                latest_auth = authorization_state(target_layout[0], required=managed)
-                protected = managed or bool(latest_auth and latest_auth['mode'] == 'managed')
+                latest_auth = authorization_state(target_layout[0], required=protected)
+                protected = protected or is_protected(latest_auth)
+                mode = (latest_auth or {}).get('mode', 'self')
                 preserve_control = control_data or has_control_data(target_layout[0])
                 if changed:
                     if git_prefix:
@@ -485,7 +569,7 @@ def perform_update(project):
                     # Preserve latest data rather than reviving revoked tokens from backup.
                     if not protected and not preserve_control:
                         restore_data(entries, backup)
-                if protected and not supports_authorization(project):
+                if protected and not supports_authorization(project, latest_auth):
                     raise RuntimeError('Previous code cannot enforce authorization. Service remains stopped; recover on the host.')
                 if protected:
                     verify_protected_data(project, target_layout[0])
@@ -494,7 +578,7 @@ def perform_update(project):
                 run(['systemctl', 'start', 'webclock'])
                 # Older releases kept settings only in memory. Avoid rewriting saved files otherwise.
                 if protected:
-                    wait_healthy(url, snapshot, deployment_mode='managed')
+                    wait_healthy(url, snapshot, deployment_mode=mode)
                 else:
                     for attempt in range(15):
                         try:

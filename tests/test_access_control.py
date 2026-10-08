@@ -52,7 +52,7 @@ class AccessControlTest(unittest.TestCase):
     def test_all_registered_management_routes_require_identity_before_data_or_mutation(self):
         before = self.snapshot()
         public = {'index', 'status', 'public_time', 'health', 'static', 'service_worker',
-                  'csrf_token', 'auth.login', 'managed_device.prepare', 'managed_device.join'}
+                  'csrf_token', 'auth.login', 'auth.setup', 'managed_device.prepare', 'managed_device.join'}
         seen = set()
         rules = [(rule, str(rule).replace('<any(schedules,events):kind>', kind))
                  for rule in clock.app.url_map.iter_rules()
@@ -77,6 +77,20 @@ class AccessControlTest(unittest.TestCase):
                     self.assertNotIn('Access-Control-Allow-Origin', response.headers)
                     self.assertEqual(response.headers['Cache-Control'], 'no-store')
         self.assertGreater(len(seen), 25)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_first_setup_route_cannot_replace_an_existing_administrator(self):
+        before = self.snapshot()
+        response = self.request('/setup')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json['code'], 'already_initialized')
+        token = self.request('/api/csrf').json['csrf_token']
+        response = self.request('/setup', 'POST', json={
+            'code': 'guessed-host-code', 'username': 'replacement', 'password': 'replacement administrator'},
+            headers={'X-CSRF-Token': token})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json['code'], 'already_initialized')
+        self.assertEqual(response.headers['Cache-Control'], 'no-store')
         self.assertEqual(self.snapshot(), before)
 
     def test_public_shell_and_time_are_independent_of_admin_cookie(self):
@@ -116,7 +130,9 @@ class AccessControlTest(unittest.TestCase):
         token = self.login()
         self.assertEqual(self.request('/admin').status_code, 200)
         self.assertIn('action="/logout"', self.request('/admin').text)
-        self.assertEqual(self.request('/api/backup').json.keys(), {'version', 'settings', 'notes'})
+        backup = self.request('/api/backup').json
+        self.assertEqual(backup.keys(), {'version', 'settings', 'notes', 'owner_id'})
+        self.assertEqual(backup['owner_id'], self.service.owner_id())
         for headers in ({}, {'X-CSRF-Token': 'wrong'}, {'X-CSRF-Token': token, 'Origin': 'https://evil.invalid'}):
             self.assertEqual(self.request('/api/control', 'POST', json={'brightness': 42}, headers=headers).status_code, 403)
         self.assertEqual(self.request('/api/control', 'POST', json={'brightness': 42},

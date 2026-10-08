@@ -11,7 +11,7 @@ from webclock.services.device_access_service import AccessError
 
 
 def register_api(app, state_directory, holidays, template_context, calendar_events=None, calendar_sources=None,
-                 device_access=None, owner_id=None):
+                 device_access=None, owner_id=None, scope_started=None):
     api = Blueprint('server_api', __name__)
     app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
 
@@ -56,6 +56,7 @@ def register_api(app, state_directory, holidays, template_context, calendar_even
         return jsonify(error=error.description), error.code
 
     api.register_blueprint(management_api(state_directory, holidays, template_context, calendar_events, calendar_sources,
-                                         device_access, owner_id))
-    api.register_blueprint(device_api(state_directory, holidays))
+                                         device_access, owner_id, scope_started))
+    api.register_blueprint(device_api(state_directory, holidays,
+                                      (lambda: device_access().path.parent) if device_access else None))
     app.register_blueprint(api)

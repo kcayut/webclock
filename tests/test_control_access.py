@@ -78,7 +78,14 @@ class ControlAccessTest(unittest.TestCase):
         save_json(self.auth.path, dict(auth_state, invite_secret=secrets.token_urlsafe(32)))
         self.assertIsNone(self.authenticate(managed['token']))
         save_json(self.auth.path, dict(auth_state, owner_id='another-owner'))
-        self.assertIsNone(self.service.authenticate(managed['token'], 'another-owner', 'managed'))
+        with self.assertRaises(AuthStateError):
+            self.service.authenticate(managed['token'], 'another-owner', 'managed')
+        save_json(self.auth.path, auth_state)
+        other = self.auth.create_account('other', 'another account password')['owner_id']
+        self.assertIsNone(self.service.authenticate(managed['token'], other, 'managed'))
+        self.auth.switch_mode('self', other, admin_owner_id=self.owner,
+                             password='long-enough-administrator-password',
+                             expected_generation=self.auth.state()['generation'], confirm_shared=True)
         for operation in (lambda: self.service.list(self.owner),
                           lambda: self.service.revoke(self.owner, managed['id']),
                           lambda: self.create()):

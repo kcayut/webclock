@@ -16,12 +16,13 @@ from webclock.services.schedule_service import TAIPEI, read_schedules
 from webclock.services.storage import storage_lock
 
 
-def register_control(app, directory, auth, groups, owner, context, calendar_sources, calendar_events, holidays):
+def register_control(app, directory, auth, groups, owner, context, calendar_sources, calendar_events, holidays,
+                     credential_directory=None):
     management = Blueprint('control_management', __name__)
     api = Blueprint('control', __name__, url_prefix='/api/v1/control')
 
     def credentials():
-        return ControlAccessService(Path(directory()) / 'control-clients.json', auth)
+        return ControlAccessService(Path((credential_directory or directory)()) / 'control-clients.json', auth)
 
     def authenticate():
         if not same_origin():
@@ -31,10 +32,18 @@ def register_control(app, directory, auth, groups, owner, context, calendar_sour
             raise ControlError('tls_required', 403)
         header = request.headers.get('Authorization', '')
         token = header[7:] if header.startswith('Bearer ') else None
-        client = credentials().authenticate(token, auth().owner_id(), mode)
+        clients = credentials()
+        client = None
+        owners = {row['owner_id'] for row in clients._load()['clients'].values()}
+        for candidate in owners:
+            if auth().owner_active(candidate):
+                client = clients.authenticate(token, candidate, mode)
+                if client:
+                    break
         if not client:
             raise ControlError('authentication_required', 401)
         g.control_authenticated = True
+        g.owner_id = client['owner_id']
         return client
 
     app.extensions['webclock_control_authorize'] = authenticate

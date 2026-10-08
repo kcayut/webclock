@@ -4,6 +4,7 @@ from werkzeug.exceptions import HTTPException
 
 from webclock.csrf import same_origin
 from webclock.services.auth_service import AuthStateError
+from webclock.services.storage import storage_lock
 
 
 def register_access_control(app, service_getter):
@@ -13,13 +14,29 @@ def register_access_control(app, service_getter):
         return jsonify(error=code, code=code), status
 
     @app.before_request
+    def pin_data_scope():
+        # ponytail: serialize private requests through mode commits; use a database
+        # transaction before introducing multiple workers or long-running streams.
+        if request.endpoint not in {'static', 'public_time', 'health', 'service_worker'}:
+            storage_lock.acquire()
+            request.environ['webclock.scope_lock_held'] = True
+
+    @app.teardown_request
+    def release_data_scope(error):
+        if request.environ.pop('webclock.scope_lock_held', False):
+            storage_lock.release()
+
+    @app.before_request
     def authorize():
         g.owner_id = None
         g.device_bearer_authenticated = False
         g.control_authenticated = False
+        if request.endpoint in {'static', 'public_time', 'service_worker'}:
+            return None
         try:
             service = service_getter()
             g.deployment_mode = service.mode()
+            g.auth_generation = service.state()['generation']
         except (AuthStateError, OSError, ValueError):
             g.deployment_mode = 'recovery'
             if request.endpoint in public:
@@ -33,7 +50,7 @@ def register_access_control(app, service_getter):
         # they never invoke a data-bearing view.
         if request.endpoint is None:
             return None
-        if request.endpoint in {'auth.login', 'csrf_token'}:
+        if request.endpoint in {'auth.login', 'auth.setup', 'csrf_token'}:
             return None
         if request.blueprint == 'control':
             guard = app.extensions.get('webclock_control_authorize')
@@ -77,4 +94,7 @@ def register_access_control(app, service_getter):
 
     @app.context_processor
     def auth_context():
-        return {'management_authenticated': bool(getattr(g, 'owner_id', None))}
+        owner = getattr(g, 'owner_id', None)
+        mode = getattr(g, 'deployment_mode', 'recovery')
+        return {'management_authenticated': mode == 'managed' and bool(owner),
+                'mode_management_available': mode == 'self' or (mode == 'managed' and service_getter().is_admin(owner))}

@@ -57,7 +57,7 @@ if $DOCKER; then
         echo "manual_notes.json must be a file. See doc/installation.md." >&2
         exit 1
     fi
-    (umask 077; mkdir -p webclock_state tls)
+    (umask 077; mkdir -p webclock_state tls .webclock-mode-backups-webclock_state)
     if $MANAGED; then
         state_entries="$(ls -A webclock_state)"
         if [ -n "$state_entries" ]; then

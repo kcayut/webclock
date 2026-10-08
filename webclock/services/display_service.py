@@ -22,7 +22,7 @@ def parse_display_window(values):
     return start, end
 
 
-def browser_alarm_payload(schedules, holidays, now, calendar_events=None):
+def browser_alarm_payload(schedules, holidays, now, calendar_events=None, not_before=0):
     now = now.astimezone(TAIPEI)
     minute = now.replace(second=0, microsecond=0)
     rows = [row for row in schedules if row['enabled'] and row['type'] == 'alarm']
@@ -43,7 +43,8 @@ def browser_alarm_payload(schedules, holidays, now, calendar_events=None):
             if not event:
                 break
             stamp = datetime.fromisoformat(event['datetime'])
-            alarms.append(dict(occurrence_id=event['occurrence_id'], id=event['id'],
+            if int(stamp.timestamp() * 1000) > not_before:
+                alarms.append(dict(occurrence_id=event['occurrence_id'], id=event['id'],
                                name=event['name'], sound=event['browser_sound'],
                                volume=event['browser_volume'], starts_at=int(stamp.timestamp() * 1000)))
             if not row.get('calendar_link') or stamp > now:

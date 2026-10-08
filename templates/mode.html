@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta id="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ mode_text.title }} · WebClock</title>
+    {% include 'brand_head.html' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
+    <style>#mode-preview article { padding: 12px 0; border-bottom: 1px solid #8894a644; } #mode-preview p { overflow-wrap: anywhere; } #accounts-list button { margin: 4px; } .mode-actions { display: flex; gap: 12px; flex-wrap: wrap; } #mode-form label { display: block; margin-top: 16px; }</style>
+    <script id="mode-i18n" type="application/json">{{ mode_languages|tojson }}</script>
+    <script id="mode-accounts" type="application/json">{{ accounts|tojson }}</script>
+    <script defer src="{{ url_for('static', filename='mode.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='management.js') }}"></script>
+</head>
+<body class="management" data-management-page="mode" data-initial-panel="mode">
+{% include 'management_nav.html' %}
+<main id="management-main" class="management-content" tabindex="-1">
+<section data-management-panel="mode" class="is-current">
+    <h1 data-mode-text="title">{{ mode_text.title }}</h1>
+    <p data-mode-text="{{ mode }}">{{ mode_text[mode] }}</p>
+    <p data-mode-text="hint">{{ mode_text.hint }}</p>
+    <p id="mode-status" role="status" aria-live="polite"></p>
+    <form id="mode-form" class="panel" data-mode="{{ mode }}">
+        <label for="mode-target" data-mode-text="target">{{ mode_text.target }}</label>
+        <select id="mode-target">
+            <option value="managed" data-mode-text="managed_option" {% if mode == 'self' %}selected{% endif %}>{{ mode_text.managed_option }}</option>
+            <option value="self" data-mode-text="self_option" {% if mode == 'managed' %}selected{% endif %}>{{ mode_text.self_option }}</option>
+        </select>
+        {% if mode == 'managed' %}
+        <label for="mode-primary" data-mode-text="primary">{{ mode_text.primary }}</label>
+        <select id="mode-primary" required><option value="" data-mode-text="choose">{{ mode_text.choose }}</option>
+            {% for row in accounts if row.enabled %}<option value="{{ row.owner_id }}">{{ row.username }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input id="mode-primary" type="hidden" value="{{ primary_owner_id }}">
+        <label for="mode-username" data-mode-text="username">{{ mode_text.username }}</label>
+        <input id="mode-username" autocomplete="username" required maxlength="128">
+        {% endif %}
+        <label for="mode-password" data-mode-text="password">{{ mode_text.password }}</label>
+        <input id="mode-password" type="password" autocomplete="current-password" required maxlength="1024">
+        <p><label class="check"><input id="mode-confirm" type="checkbox"><span data-mode-text="confirm">{{ mode_text.confirm }}</span></label></p>
+        <div class="mode-actions"><button type="submit" data-mode-text="preview">{{ mode_text.preview }}</button>
+            <button id="mode-apply" type="button" class="primary" disabled data-mode-text="apply">{{ mode_text.apply }}</button></div>
+        <div id="mode-preview" aria-live="polite"></div>
+    </form>
+    {% if mode == 'managed' %}
+    <section class="panel"><h2 data-mode-text="accounts">{{ mode_text.accounts }}</h2>
+        <div id="accounts-list"></div>
+        <form id="account-create">
+            <div class="field"><label for="account-name" data-mode-text="new_username">{{ mode_text.new_username }}</label>
+                <input id="account-name" required maxlength="128" autocomplete="off"></div>
+            <div class="field"><label for="account-password" data-mode-text="new_password">{{ mode_text.new_password }}</label>
+                <input id="account-password" type="password" required minlength="12" maxlength="1024" autocomplete="new-password"></div>
+            <button type="submit" data-mode-text="create">{{ mode_text.create }}</button>
+        </form>
+    </section>
+    {% else %}
+    <p data-mode-text="setup_hint">{{ mode_text.setup_hint }}</p><a href="{{ url_for('auth.setup') }}" data-mode-text="setup">{{ mode_text.setup }}</a>
+    {% endif %}
+</section>
+</main>
+</body>
+</html>

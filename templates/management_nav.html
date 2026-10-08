@@ -28,6 +28,7 @@
         <a href="{{ path }}" data-management-link="{{ panel }}">{{ nav_icon(panel) }}<span data-i18n="{{ key }}">{{ m[key] }}</span></a>
         {% endfor %}
         <a href="{{ url_for('control_management.integrations') }}" data-management-link="integrations">{{ nav_icon('devices') }}<span data-i18n="management_integrations">{{ m.management_integrations }}</span></a>
+        {% if mode_management_available %}<a href="{{ url_for('mode.page') }}" data-management-link="mode">{{ nav_icon('devices') }}<span data-i18n="management_mode">{{ m.management_mode }}</span></a>{% endif %}
     </nav>
     <div class="management-sidebar-tools">
         <span id="management-theme-label" class="management-tool-label" data-i18n="management_theme">{{ m.management_theme }}</span>

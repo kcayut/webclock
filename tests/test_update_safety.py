@@ -99,7 +99,12 @@ class SettingsTest(unittest.TestCase):
         saved = dict(mode='black', brightness=0, night=dict(clock.DEFAULT_NIGHT, enabled=True, black=True))
         self.path.write_text(json.dumps(saved))
         self.assertEqual(clock.load_display_settings(), dict(clock.DEFAULT_SETTINGS, **saved))
-        with patch('builtins.open', side_effect=PermissionError('unreadable')):
+        original_open = open
+        def unreadable_settings(path, *args, **kwargs):
+            if Path(path) == self.path:
+                raise PermissionError('unreadable')
+            return original_open(path, *args, **kwargs)
+        with patch('builtins.open', side_effect=unreadable_settings):
             with self.assertRaises(PermissionError):
                 clock.load_display_settings()
 
@@ -241,6 +246,16 @@ class ProtectedDataValidationTest(unittest.TestCase):
                     check()
                 self.assertNotIn('private-secret', str(error.exception))
                 (state / name).write_text(contents)
+            member = service.create_account('member', 'test-only-password-long')['owner_id']
+            member_state = state / 'owners' / member
+            member_state.mkdir(parents=True)
+            (member_state / 'events.json').write_text('[]')
+            check()
+            (member_state / 'events.json').write_text('[{"title":"private-secret"}]')
+            with self.assertRaisesRegex(RuntimeError, 'cannot read program state') as error:
+                check()
+            self.assertNotIn('private-secret', str(error.exception))
+            (member_state / 'events.json').write_text('[]')
             (state / 'device-access.json').write_text('{"private-secret": "invalid schema"}')
             with self.assertRaisesRegex(RuntimeError, 'cannot read protected state') as error:
                 check()
@@ -663,6 +678,51 @@ class UpdaterTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'authorization state'):
             updater.update(self.project)
         self.assertFalse(any(command[0] == 'systemctl' for command in self.calls))
+
+    def test_protected_self_update_uses_primary_data_and_preserves_dormant_owner(self):
+        from webclock.services.auth_service import AuthService
+        state, _ = self.managed_installation(external=True)
+        auth = AuthService(state / 'auth.json')
+        password = 'test-only-password-long'
+        auth.reset_password(password)
+        member = auth.create_account('member', password)['owner_id']
+        auth.switch_mode('self', member, admin_owner_id='owner', password=password,
+                         expected_generation=auth.state()['generation'], confirm_shared=True)
+        current = state / 'owners' / member
+        current.mkdir(parents=True)
+        settings = dict(self.settings, brightness=0, time_format='12h')
+        (current / 'settings.json').write_text(json.dumps(settings))
+        (current / 'manual_notes.json').write_text('[{"id":2,"text":"primary"}]')
+        previous = {path.relative_to(state): path.read_bytes() for path in state.rglob('*') if path.is_file()}
+        module = self.remote / 'webclock/services/auth_service.py'
+        module.write_text('AUTH_SCHEMA_VERSION = 1\nAUTH_MULTI_OWNER_VERSION = 1\n')
+        self.commit('multi-owner support')
+        with patch.object(updater, 'check_public_health'), patch.object(updater, 'wait_healthy') as health:
+            updater.update(self.project)
+        health.assert_called_once_with('http://127.0.0.1:80', settings, deployment_mode='self')
+        self.assertEqual({path.relative_to(state): path.read_bytes() for path in state.rglob('*') if path.is_file()}, previous)
+        self.assertEqual(updater.active_data_layout((state, Path(self.configuration['NOTES_FILE']))),
+                         (current, current / 'manual_notes.json'))
+
+    def test_protected_self_rollback_to_single_owner_code_stays_stopped(self):
+        from webclock.services.auth_service import AuthService
+        state, _ = self.managed_installation(external=True)
+        auth = AuthService(state / 'auth.json')
+        password = 'test-only-password-long'
+        auth.reset_password(password)
+        auth.switch_mode('self', 'owner', admin_owner_id='owner', password=password,
+                         expected_generation=auth.state()['generation'], confirm_shared=True)
+        module = self.remote / 'webclock/services/auth_service.py'
+        module.write_text('AUTH_SCHEMA_VERSION = 1\nAUTH_MULTI_OWNER_VERSION = 1\n')
+        self.commit('multi-owner support')
+        before = (state / 'auth.json').read_bytes()
+        self.fail_pip = True
+        with patch.object(updater, 'check_public_health'), patch.object(updater, 'wait_healthy'):
+            with self.assertRaises(subprocess.CalledProcessError):
+                updater.update(self.project)
+        self.assertEqual(self.state, 'inactive')
+        self.assertEqual((state / 'auth.json').read_bytes(), before)
+        self.assertFalse(any(command[:2] == ['systemctl', 'start'] for command in self.calls))
 
     def test_mode_changed_during_stop_cannot_start_unsupported_source(self):
         from webclock.services.auth_service import AuthService

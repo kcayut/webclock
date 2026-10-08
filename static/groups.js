@@ -235,6 +235,7 @@
         $('group-initialize').hidden = rows.some(row => row.is_default);
         $('group-initialize').disabled = initializing || !catalog;
         $('group-add').disabled = !catalog;
+        if (window.WebClockDeviceTargets) window.WebClockDeviceTargets.refresh();
     }
     function renderActions() {
         const draft = current(), existing = selected && selected !== NEW;
@@ -312,6 +313,7 @@
     }
     function choose(id) {
         selected = id; visibleCode = null; range.clear(); calendarChooser.clearAnchors(); ++panelVersion;
+        if (window.WebClockDeviceTargets) window.WebClockDeviceTargets.groupSelected(id);
         if (id && !drafts.has(id)) {
             const row = rows.find(item => item.id === id);
             if (row) drafts.set(id, createDraft(dataOf(row)));
@@ -451,7 +453,7 @@
         renderAccess();
         loadAccess();
     }
-    window.WebClockGroups = {applyLanguage, refresh, memberRemoved};
+    window.WebClockGroups = {applyLanguage, refresh, memberRemoved, choose};
     buildFields(); applyLanguage(); refresh();
     setInterval(refresh, 15000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

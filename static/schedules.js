@@ -14,6 +14,7 @@
     const deviceRevoking = new Set();
     const deviceGroupDrafts = new Map(), deviceAuthorizationSaving = new Set(), deviceAuthorizationMessages = new Map();
     let deviceDataStale = false;
+    let deviceTarget = '', operatingDevice = null;
     const deviceSettings = window.WebClockDeviceSettings ? window.WebClockDeviceSettings.create({
         t, onBusy: () => renderDevices(),
         async request(id, method, data) {
@@ -754,25 +755,83 @@
     });
     async function loadDevices() {
         const request = ++deviceRequest;
+        const identity = loadOperatingDevice();
         let data;
         try { data = await api("/devices"); }
         catch (error) {
             if (request === deviceRequest) {
                 deviceDataStale = true;
                 renderDeviceRefreshStatus();
+                renderDeviceTargets();
             }
             throw error;
         }
         if (request !== deviceRequest) return;
         devices = data.devices;
         deviceDataStale = false;
+        operatingDevice = null;
         renderDevices();
+        identity.then(result => {
+            if (request !== deviceRequest) return;
+            operatingDevice = result;
+            renderDeviceTargets();
+        });
         if (deviceContent && devices.some(device => device.content_settings)) deviceContent.refreshCatalog();
     }
     function renderDeviceRefreshStatus() {
         $("device-refresh-status").textContent = deviceDataStale ? t("device_data_stale") : "";
         $("device-refresh-status").className = deviceDataStale ? "error" : "help";
     }
+    async function loadOperatingDevice() {
+        try {
+            const route = '/api/v2/device/identity';
+            const response = await fetch(window.webclockUrl ? window.webclockUrl(route) : route,
+                {cache: 'no-store', credentials: 'same-origin'});
+            if (!response.ok) return null;
+            const result = await response.json();
+            return result.status === 'active' && result.identity &&
+                ['device_id', 'group_id'].every(key => typeof result.identity[key] === 'string' && result.identity[key]) ? result.identity : null;
+        } catch (error) { return null; }
+    }
+    function renderDeviceTargets() {
+        const select = $('device-target-select'), groupTarget = deviceTarget.startsWith('group:');
+        const deviceId = deviceTarget.startsWith('device:') ? deviceTarget.slice(7) : null;
+        const options = [['', t('device_target_overview')], ['all', t('device_target_defaults')]];
+        Array.from($('group-select').children).filter(option => option.value).forEach(option => {
+            options.push(['group:' + option.value, t('device_group') + ' · ' + option.textContent]);
+        });
+        devices.forEach(device => options.push(['device:' + device.id, t('device_target_device') + ' · ' + (device.name || device.id)]));
+        const missing = !options.some(([value]) => value === deviceTarget);
+        if (missing) options.push([deviceTarget, t('device_target_unavailable')]);
+        select.replaceChildren();
+        options.forEach(([value, label]) => { const option = node('option', label); option.value = value; select.append(option); });
+        select.value = deviceTarget;
+        $('device-default-target').hidden = deviceTarget !== 'all';
+        $('group-manager').hidden = !!deviceTarget && !groupTarget;
+        $('group-select').hidden = $('group-select-label').hidden = groupTarget;
+        $('device-list').hidden = !!deviceTarget && !deviceId;
+        $('device-list').classList.toggle('device-target-single', !!deviceId);
+        $('other-schedules-section').hidden = !!deviceTarget;
+        const known = operatingDevice && !deviceDataStale;
+        const current = known && devices.find(device => device.id === operatingDevice.device_id);
+        let relation = missing ? 'device_target_unavailable' : '';
+        if (!relation && deviceTarget && known) {
+            if (deviceId) relation = operatingDevice.device_id === deviceId ? 'device_target_same' : 'device_target_other';
+            else if (groupTarget) relation = operatingDevice.group_id === deviceTarget.slice(6) ? 'device_target_in_group' : 'device_target_other_group';
+        }
+        $('device-target-status').textContent = format('device_target_operating', {
+            name: known ? current && (current.name || current.id) || operatingDevice.device_id : t('device_target_unknown')
+        }) + (relation ? ' · ' + t(relation) : '');
+    }
+    $('device-target-select').addEventListener('change', () => {
+        deviceTarget = $('device-target-select').value;
+        if (deviceTarget.startsWith('group:') && window.WebClockGroups) window.WebClockGroups.choose(deviceTarget.slice(6));
+        renderDevices();
+    });
+    window.WebClockDeviceTargets = {
+        refresh: renderDeviceTargets,
+        groupSelected(id) { if (deviceTarget.startsWith('group:')) deviceTarget = id ? 'group:' + id : ''; }
+    };
     function capabilityText(capabilities) {
         if (!capabilities) return t("unknown");
         return capabilityFields.map(key => t("capability_" + key) + ": " +
@@ -845,6 +904,7 @@
     }
     function renderDevices() {
         renderDeviceRefreshStatus();
+        renderDeviceTargets();
         const list = $("device-list"), legacyList = $("legacy-device-list");
         const active = document.activeElement;
         const activeDevice = active && active.getAttribute ? active.getAttribute("data-device-name") : null;
@@ -860,6 +920,7 @@
         list.replaceChildren(); legacyList.replaceChildren();
         devices.forEach(device => {
             const card = node("li", undefined, "panel card"), heading = node("div", undefined, "card-heading");
+            card.hidden = !!deviceTarget && deviceTarget !== 'device:' + device.id;
             const status = device.status || device;
             const connection = typeof device.online === "boolean" ? (device.online ? "online" : "offline") : "unknown";
             heading.append(node("h3", device.name || device.id), node("span", t(connection), "badge" + (device.online ? "" : " offline")));
@@ -981,7 +1042,9 @@
             if (device.can_revoke === false) { legacyList.append(card); legacyCount++; }
             else list.append(card);
         });
-        $("legacy-devices").hidden = legacyCount === 0;
+        const selectedLegacy = devices.some(device => device.can_revoke === false && deviceTarget === 'device:' + device.id);
+        $("legacy-devices").hidden = legacyCount === 0 || !!deviceTarget && !selectedLegacy;
+        if (selectedLegacy) $('legacy-devices').open = true;
         $("legacy-devices-summary").textContent = format("legacy_devices_title", {count: legacyCount});
         if (devices.length === legacyCount) list.append(node("li", t(legacyCount ? "no_authorized_devices" : "no_devices"), "empty"));
         if (refocus) {

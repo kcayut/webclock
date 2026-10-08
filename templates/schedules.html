@@ -115,10 +115,21 @@
         </section>
         <section id="devices-panel" data-management-panel="devices" hidden aria-labelledby="devices-title">
             <div class="page-heading"><div><h1 id="devices-title" data-schedule-i18n="devices">{{ t.devices }}</h1><p class="page-description" data-schedule-i18n="device_hint">{{ t.device_hint }}</p></div></div>
+            <section class="panel device-target-picker" aria-labelledby="device-target-title">
+                <label id="device-target-title" for="device-target-select" data-schedule-i18n="device_target_title">{{ t.device_target_title }}</label>
+                <select id="device-target-select" aria-describedby="device-target-status device-target-hint"></select>
+                <p id="device-target-status" class="help" role="status" aria-live="polite"></p>
+                <p id="device-target-hint" class="help" data-schedule-i18n="device_target_hint">{{ t.device_target_hint }}</p>
+            </section>
+            <section id="device-default-target" class="panel" hidden>
+                <h2 data-schedule-i18n="device_target_defaults">{{ t.device_target_defaults }}</h2>
+                <p class="help" data-schedule-i18n="device_target_defaults_hint">{{ t.device_target_defaults_hint }}</p>
+                <a href="{{ url_for('admin', _anchor='display') }}" target="_blank" rel="noopener" data-schedule-i18n="device_target_open_defaults">{{ t.device_target_open_defaults }}</a>
+            </section>
             <section id="group-manager" class="panel group-manager" aria-labelledby="groups-title">
                 <div class="section-heading"><h2 id="groups-title" data-group-i18n="group_title">{{ t.group_title }}</h2><button id="group-refresh" type="button" data-group-i18n="group_refresh">{{ t.group_refresh }}</button></div>
                 <p class="help" data-group-i18n="group_hint">{{ t.group_hint }}</p>
-                <div class="group-picker"><label for="group-select" data-group-i18n="group_choose">{{ t.group_choose }}</label><select id="group-select"></select><button id="group-add" type="button" data-group-i18n="group_new">{{ t.group_new }}</button><button id="group-initialize" type="button" data-group-i18n="group_initialize">{{ t.group_initialize }}</button></div>
+                <div class="group-picker"><label id="group-select-label" for="group-select" data-group-i18n="group_choose">{{ t.group_choose }}</label><select id="group-select"></select><button id="group-add" type="button" data-group-i18n="group_new">{{ t.group_new }}</button><button id="group-initialize" type="button" data-group-i18n="group_initialize">{{ t.group_initialize }}</button></div>
                 <p id="group-refresh-status" class="error" role="status" aria-live="polite"></p>
                 <form id="group-form" hidden>
                     <div class="group-identity"><div class="field"><label for="group-name" data-group-i18n="group_name">{{ t.group_name }}</label><input id="group-name" maxlength="100" required autocomplete="off"></div><label class="check"><input id="group-enabled" type="checkbox"><span data-group-i18n="group_enabled">{{ t.group_enabled }}</span></label></div>
@@ -136,7 +147,7 @@
             </section>
             <p id="device-refresh-status" class="help" role="status" aria-live="polite"></p>
             <ul id="device-list" class="device-list"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
-            <section class="other-schedules" aria-labelledby="other-schedules-title">
+            <section id="other-schedules-section" class="other-schedules" aria-labelledby="other-schedules-title">
                 <div class="section-heading"><h2 id="other-schedules-title" data-schedule-i18n="other_schedules">{{ t.other_schedules }}</h2><button id="add-other-schedule" type="button" data-schedule-i18n="add_other">{{ t.add_other }}</button></div>
                 <p class="help"><span data-schedule-i18n="other_hint">{{ t.other_hint }}</span> <a href="{{ url_for('admin', _anchor='calendar-title') }}" data-schedule-i18n="calendar_settings">{{ t.calendar_settings }}</a></p>
                 <ul id="other-schedule-list" class="schedule-list" data-schedule-aria-label="other_schedules" aria-label="{{ t.other_schedules }}"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>

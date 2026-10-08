@@ -66,9 +66,9 @@ class ControlAccessService:
     def _binding(self, owner_id, mode=None):
         auth = self.auth_service() if callable(self.auth_service) else self.auth_service
         state = auth.state()
-        if owner_id != state['owner_id'] or (mode is not None and mode != state['mode']):
+        if not auth.owner_active(owner_id) or (mode is not None and mode != state['mode']):
             raise ControlAccessError('invalid_owner', 'Program identity does not match this installation.', 403)
-        return state
+        return dict(state, owner_id=owner_id)
 
     def _load(self):
         try:

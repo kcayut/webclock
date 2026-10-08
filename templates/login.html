@@ -20,12 +20,16 @@
     <h1>{{ login_text.title }}</h1>
     <p>{{ login_text.hint }}</p>
     {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-    <form method="post" action="{{ url_for('auth.login', lang=language) }}">
+    <form method="post" action="{{ url_for('auth.setup' if setup else 'auth.login', lang=language) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if setup %}
+      <label for="code">{{ login_text.code }}</label>
+      <input id="code" name="code" type="password" autocomplete="off" required>
+      {% endif %}
       <label for="username">{{ login_text.username }}</label>
       <input id="username" name="username" maxlength="128" autocomplete="username" required autofocus>
       <label for="password">{{ login_text.password }}</label>
-      <input id="password" name="password" type="password" maxlength="1024" autocomplete="current-password" required>
+      <input id="password" name="password" type="password" maxlength="1024" {% if setup %}minlength="12"{% endif %} autocomplete="{{ 'new-password' if setup else 'current-password' }}" required>
       <button type="submit">{{ login_text.submit }}</button>
     </form>
     <a href="{{ back_url }}">{{ login_text.back }}</a>

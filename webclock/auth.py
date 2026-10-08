@@ -22,6 +22,15 @@ LOGIN_TEXT = {
            'hint': 'アカウントはホスト上で作成します。表示グループの参加コードではログインできません。'},
 }
 
+SETUP_TEXT = {
+    'zh-TW': {'title': '建立第一位管理員', 'code': '主機一次性設定碼',
+              'hint': '先在主機執行 manage_auth.py setup-code 取得限時設定碼。已有管理員時只能使用原帳號復原。'},
+    'en': {'title': 'Set up the first administrator', 'code': 'Host setup code',
+           'hint': 'Run manage_auth.py setup-code on the host for a temporary code. Existing administrators must use account recovery.'},
+    'ja': {'title': '最初の管理者を設定', 'code': 'ホストの設定コード',
+           'hint': 'ホストで manage_auth.py setup-code を実行し、一時コードを取得してください。管理者が存在する場合は復旧を使用します。'},
+}
+
 
 def current_owner(service):
     if service.mode() == 'self':
@@ -56,6 +65,34 @@ def register_auth(app, service_getter):
         return render_template('login.html', language=lang, login_text=LOGIN_TEXT[lang], error=error,
                                back_url=request.script_root.rstrip('/') + '/')
 
+    @auth.route('/setup', methods=['GET', 'POST'])
+    def setup():
+        service = service_getter()
+        if service.state().get('accounts'):
+            return jsonify(code='already_initialized'), 409
+        lang = language()
+        labels = dict(LOGIN_TEXT[lang], **SETUP_TEXT[lang])
+        error = None
+        status = 200
+        if request.method == 'POST':
+            if not request.is_secure:
+                return jsonify(code='https_required'), 403
+            data = request.get_json(silent=True) if request.is_json else request.form
+            data = data if hasattr(data, 'get') else {}
+            try:
+                result = service.complete_setup(data.get('code'), data.get('username'), data.get('password'),
+                                                request.remote_addr)
+                session.clear()
+                if request.is_json:
+                    return jsonify(result), 201
+                return redirect(request.script_root.rstrip('/') + '/login')
+            except AuthError as exc:
+                if request.is_json:
+                    return jsonify(code=exc.code), exc.status
+                error, status = labels.get(exc.code, labels['error']), exc.status
+        return render_template('login.html', language=lang, login_text=labels, error=error,
+                               setup=True, back_url=request.script_root.rstrip('/') + '/'), status
+
     @auth.route('/login', methods=['GET', 'POST'])
     def login():
         service = service_getter()
@@ -84,6 +121,7 @@ def register_auth(app, service_getter):
         session.clear()
         session['admin_token'] = identity['token']
         session['csrf_token'] = secrets.token_urlsafe(32)
+        session['auth_generation'] = service.state()['generation']
         if request.is_json:
             return jsonify(owner_id=identity['owner_id'], expires_at=identity['expires_at'],
                            csrf_token=session['csrf_token'])

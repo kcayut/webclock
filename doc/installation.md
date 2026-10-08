@@ -23,7 +23,7 @@
 | **managed（受管）** | 全新 Linux／Docker 安裝加 `--managed`，並[設定 HTTPS](#https) | 管理員登入後管理；每台顯示端用六碼加入群組，取得自己的授權 |
 | **Home Assistant App** | 安裝後從 HA 開啟 | WebClock 保持 self，由 HA 登入與 Ingress 保護管理入口；區網顯示仍須六碼加入，與 WebClock managed 模式不同 |
 
-模式保存在私人資料目錄的 `auth.json`，**不是 `.env` 中的開關**。一般安裝與更新不會把既有 managed 改回 self，也不要刪除 `auth.json`／`auth-required` 來切換模式。self 的管理頁不適合直接開放至 Internet。
+模式保存在私人資料目錄的 `auth.json`，**不是 `.env` 中的開關**。已有管理員的安裝可在 [`/mode` 雙向切換](#mode-switch)，第一次建立管理員也可使用[主機一次性設定碼](#web-setup)。一般安裝與更新保留原模式；不要刪除 `auth.json`／`auth-required`。self 的管理頁不適合直接開放至 Internet。
 
 <a id="no-server"></a>
 
@@ -128,7 +128,7 @@ WEBCLOCK_HTTP_PORT=8080 bash setup.sh --docker
 
 要讓後續重建也使用相同連接埠，請在 `.env` 儲存 `WEBCLOCK_HTTP_PORT=8080`。不要改容器內的 `PORT`；容器固定監聽 `5000`。
 
-資料保存在主機的 `./webclock_state`，容器中是 `/app/webclock_state`；整個目錄都要保留／備份。`./manual_notes.json` 僅供舊提醒遷移，腳本不會覆寫既有內容。這些快速指令使用預設掛載；若自行改 `WEBCLOCK_STATE_DIR`／`NOTES_FILE`，也必須修改 Compose 掛載及初始化指令，不能只改 `.env`。
+資料保存在主機的 `./webclock_state`，容器中是 `/app/webclock_state`；整個目錄都要保留／備份。模式切換前的完整副本另存主機 `./.webclock-mode-backups-webclock_state`，Compose 已將它獨立掛載，重建容器仍保留。`./manual_notes.json` 僅供舊提醒遷移，腳本不會覆寫既有內容。這些快速指令使用預設掛載；若自行改 `WEBCLOCK_STATE_DIR`／`NOTES_FILE` 或模式備份路徑，也必須修改 Compose 掛載及初始化指令，不能只改 `.env`。
 
 若以前直接啟動 Compose，造成 `manual_notes.json` 被建立成空目錄，先停止容器，確認裡面沒有資料，再以 `rmdir manual_notes.json` 移除空目錄；保留任何非空內容，勿直接刪除。
 
@@ -217,6 +217,80 @@ docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state
 ```
 
 初始化失敗時保持停止，先排除問題。首次登入 `/admin` 後，前往「裝置」建立群組、指派內容、產生六位加入碼；在每台時鐘首頁選「加入顯示群組」。完整操作見[群組設定與裝置加入](guide.md#群組設定與裝置加入)。
+
+<a id="web-setup"></a>
+## 用一次性設定碼建立第一位管理員
+
+要在網頁輸入第一位管理員的帳密，可先在主機發出設定碼。已有管理員時不能再發碼或重新綁定；改用[密碼復原](#account-recovery)。先完成 HTTPS、停止寫入並建立完整備份，再選擇下列指令。
+
+**Bare metal，於安裝目錄執行：**
+
+```bash
+sudo systemctl stop webclock
+service_user="$(systemctl show webclock --property=User --value)"
+sudo -u "${service_user:-root}" ./venv/bin/python scripts/manage_auth.py --state-dir "$PWD/webclock_state" setup-code
+sudo systemctl start webclock
+```
+
+**Docker，使用現有掛載：**
+
+```bash
+docker compose stop
+docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state setup-code
+docker compose up -d
+```
+
+開啟 `https://你的主機名稱/setup`，貼上終端機顯示的設定碼，輸入帳號與至少 12 字元的密碼。成功後進入 managed，再到 `/login` 登入。設定碼預設 10 分鐘到期、只可使用一次；主機可加 `--expires-in 300` 改為 5 分鐘，有效範圍為 1 至 3600 秒。重新發碼會使前一個碼失效；碼不由匿名 API 發放，請勿貼到公開訊息或日誌。
+
+<a id="mode-switch"></a>
+## 雙向切換與主要使用者
+
+已有管理員後，以 HTTPS 開啟 `/mode`。managed 下須以 admin 登入；self 下日常管理仍免登入，但切換時必須輸入既有 admin 的帳密。
+
+1. **managed → self：**明確選擇主要使用者，重新輸入 admin 密碼，確認所選空間可由可連線的網段使用者管理。主要使用者可為 member，角色不會改成 admin。
+2. 按「預覽」，核對各帳號將啟用或休眠的狀態，以及設定、來源、私人網址數量、提醒、排程、事件、群組與裝置。預覽不顯示私人網址內容；目前沒有另行公開的跨帳號內容。
+3. 確認後套用。伺服器在同一個寫入鎖內核對預覽、建立完整備份，再一次保存模式與主要使用者。預覽後資料改變、備份失敗或密碼錯誤時不切換，保留草稿後重新預覽。
+4. **self → managed：**在 `/mode` 輸入既有 admin 帳密，預覽並套用；原帳號與角色恢復使用，self 期間對主要使用者的修改保留，不複製或合併其他帳號。
+
+切換會清除登入 session、程式 token 與資料範圍快取的舊授權。仍合法的顯示裝置依原 owner／群組繼續核對，不把其他帳號的裝置改派至主要使用者。休眠帳號無法讀寫、輪詢私人來源或取得待響排程；恢復後不補響休眠期間錯過的鬧鐘。瀏覽器自行建立的 localStorage 提醒保持本機資料。
+
+managed 的 `/mode` 也提供成員建立、停用／啟用及刪除；self 不提供帳號管理。主要使用者、原資料擁有者與復原管理員受保護，不能刪除或停用必要帳號。刪除其他帳號會封存其身分與資料並撤銷存取，不會立即清除私人檔案。此流程尚未提供公開註冊、郵件或忘記密碼連結。
+
+<a id="owner-data"></a>
+## 多帳號資料與完整還原
+
+舊資料保持原位置；`auth.json` 的 `data_owner_id` 固定指出原資料擁有者，`owner_id` 指出 self 目前選定的主要使用者。新增帳號的設定、提醒、來源、排程、事件及程式請求收據存在 `webclock_state/owners/<owner_id>/`。群組／裝置授權與程式憑證仍在狀態根目錄，依 owner 檢查權限。更改模式只切換使用的空間；完整備份包含主要、休眠及封存帳號，網頁的 version 1 部分匯出／匯入僅處理目前空間的設定和提醒，不能換帳號或切模式。新匯出會附 `owner_id`，匯入不同帳號的檔案會被拒絕；舊版沒有歸屬欄位的 version 1 檔案仍只寫入目前授權空間。
+
+預設模式備份位於狀態目錄**旁邊**的 `.webclock-mode-backups-<狀態目錄名稱>/<備份ID>/`。例如預設安裝是專案內的 `.webclock-mode-backups-webclock_state/`；目錄權限為 `700`，manifest 為 `600`。備份未加密，內含私人網址與帳號資料，請限制存取並定期另存至安全位置。
+
+可用 `WEBCLOCK_MODE_BACKUP_DIR=/獨立/私人/備份目錄` 指定模式備份父目錄；服務帳號必須能建立與寫入該處；已存在的父目錄須為 `700`，伺服器不會改動其他既有目錄權限。它不能在任何資料根目錄內，也不能包含資料根目錄。Docker 必須把該路徑另行掛載至持久儲存，容器內的路徑與主機路徑要分別核對。Home Assistant App 仍使用 HA 登入與 `/data` 冷備份，不提供 WebClock managed 切換；勿直接改 App 的模式或將備份放進 `/data` 裡造成遞迴。
+
+需要回復模式切換前的完整狀態時，在安裝目錄先停止全部寫入者，再還原選定副本。以下為預設 bare metal 路徑，`<備份ID>` 換成實際目錄名稱，還原前副本必須是全新路徑：
+
+```bash
+sudo systemctl stop webclock
+mkdir -p -m 700 "$HOME/private-webclock-backups"
+sudo ./venv/bin/python scripts/backup_clock.py verify "$PWD/.webclock-mode-backups-webclock_state/<備份ID>"
+sudo ./venv/bin/python scripts/backup_clock.py restore "$PWD/.webclock-mode-backups-webclock_state/<備份ID>" --project "$PWD" --stopped --yes --rollback-dir "$HOME/private-webclock-backups/before-mode-restore-001"
+```
+
+自訂資料位置須另外傳 `--state-dir`／`--notes-file`，保持原包含關係；Docker 先停容器，使用已安裝相依套件的主機 Python 與主機掛載路徑執行。完整步驟見[主機備份與還原](guide.md#主機端完整資料備份與還原)。
+
+還原保留帳密、角色與內容，但會使歷史登入 session、程式 token、裝置憑證、加入碼及首次設定碼失效；顯示裝置須重新授權。已有帳號的 self 仍是受保護安裝，不能被沒有帳號的舊備份覆蓋；不支援多帳號的舊程式也不能啟動這份資料。成功後檢查路徑、擁有者與資料，再手動啟動服務。失敗或中斷時保持停止，保留還原前副本與 `.webclock-restore-*`；實際斷電恢復仍須在部署環境驗收。
+
+<a id="account-recovery"></a>
+## 管理員密碼復原
+
+停止全部寫入者後，用服務帳號執行主機復原；預設復原原管理員，可加 `--username 帳號` 選擇另一位現有 admin：
+
+```bash
+sudo systemctl stop webclock
+service_user="$(systemctl show webclock --property=User --value)"
+sudo -u "${service_user:-root}" ./venv/bin/python scripts/manage_auth.py --state-dir "$PWD/webclock_state" reset-password
+sudo systemctl start webclock
+```
+
+Docker 改以停止後的 `docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state reset-password` 執行，再 `docker compose up -d`。密碼互動輸入，不放在命令列。復原保留帳號身分、目前模式與主要使用者，並使舊登入 session 失效；獨立程式憑證須在「程式存取」另外撤銷，不會重建替代帳號。
 
 ## 其他設定與手動執行
 

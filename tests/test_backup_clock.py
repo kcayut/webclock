@@ -284,7 +284,7 @@ class HostBackupTest(unittest.TestCase):
         from webclock.services.device_access_service import DeviceAccessService
         module = project / 'webclock/services/auth_service.py'
         module.parent.mkdir(exist_ok=True)
-        module.write_text('AUTH_SCHEMA_VERSION = 1\n')
+        module.write_text('AUTH_SCHEMA_VERSION = 1\nAUTH_MULTI_OWNER_VERSION = 1\n')
         state = backup.updater.data_layout(project, values, True)[0]
         auth = dict(version=1, mode='managed', owner_id='owner', username='admin', password_hash='scrypt:32768:8:1$' + 's' * 16 + '$' + 'a' * 128,
                     session_secret='s' * 43, invite_secret='i' * 43, generation=5,
@@ -412,7 +412,7 @@ class HostBackupTest(unittest.TestCase):
         project, values, roots = self.installation('real-session')
         module = project / 'webclock/services/auth_service.py'
         module.parent.mkdir(exist_ok=True)
-        module.write_text('AUTH_SCHEMA_VERSION = 1\n')
+        module.write_text('AUTH_SCHEMA_VERSION = 1\nAUTH_MULTI_OWNER_VERSION = 1\n')
         state = backup.updater.data_layout(project, values, True)[0]
         service = AuthService(state / 'auth.json')
         service.setup('admin', 'test-only-password-long', enable_managed_test=True)
@@ -567,6 +567,118 @@ class HostBackupTest(unittest.TestCase):
                 backup.restore_backup(directory, roots, rollback, project, values)
             self.assertEqual(self.snapshot(roots), before)
             self.assertFalse(rollback.exists())
+
+    def test_multi_account_restore_preserves_primary_and_dormant_data_and_invalidates_credentials(self):
+        from webclock.services.auth_service import AuthService
+        from webclock.services.control_access_service import ControlAccessService
+        from webclock.services.control_service import ControlService
+        password = 'test-only-password-long'
+        for mode in ('managed', 'self'):
+            with self.subTest(mode=mode):
+                project, values, roots = self.installation('accounts-' + mode, external=True)
+                state, _, _ = self.protect(project, values)
+                auth = AuthService(state / 'auth.json')
+                auth.reset_password(password)
+                member = auth.create_account('member', password)['owner_id']
+                deleted = auth.create_account('removed member', password)['owner_id']
+                deleted_state = state / 'owners' / deleted
+                deleted_state.mkdir(parents=True)
+                (deleted_state / 'manual_notes.json').write_text('[{"id":1,"text":"retained deleted content"}]')
+                auth.delete_account(deleted)
+                member_state = state / 'owners' / member
+                member_state.mkdir(parents=True)
+                for name in ('settings.json', 'calendar.json', 'schedules.json'):
+                    (member_state / name).write_bytes((state / name).read_bytes())
+                (member_state / 'manual_notes.json').write_text('[{"id":1,"text":"member-only"}]')
+                sessions = [auth.login(name, password, source=name)['token'] for name in ('admin', 'member')]
+                if mode == 'self':
+                    auth.switch_mode('self', member, admin_owner_id='owner', password=password,
+                                     expected_generation=auth.state()['generation'], confirm_shared=True)
+                clients = ControlAccessService(state / 'control-clients.json', auth)
+                issued = clients.create(member, mode, {'name': 'member program', 'scopes': ['events:write']})
+                client = clients.authenticate(issued['token'], member, mode)
+                ControlService(member_state, client, None, (), (), ()).create('events', {
+                    'request_id': 'member-event', 'event': {'title': 'Private meeting',
+                        'start': '2030-01-01T09:00:00+08:00', 'end': '2030-01-01T10:00:00+08:00'}})
+                original_auth = auth.state()
+                original = {path.relative_to(state): path.read_bytes() for path in member_state.iterdir()}
+                directory, rollback = self.root / (mode + '-accounts-backup'), self.root / (mode + '-accounts-rollback')
+                backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+                clients.revoke(member, issued['id'])
+                (member_state / 'manual_notes.json').write_text('[]')
+                backup.restore_backup(directory, roots, rollback, project, values)
+                restored = AuthService(state / 'auth.json')
+                current = restored.state()
+                self.assertEqual(current['mode'], mode)
+                self.assertEqual(current['owner_id'], original_auth['owner_id'])
+                self.assertEqual(current['data_owner_id'], 'owner')
+                self.assertEqual(current['accounts'], original_auth['accounts'])
+                self.assertFalse(current['accounts'][deleted]['enabled'])
+                self.assertEqual((deleted_state / 'manual_notes.json').read_bytes(),
+                    (directory / 'data/state/owners' / deleted / 'manual_notes.json').read_bytes())
+                self.assertGreater(current['generation'], original_auth['generation'])
+                self.assertEqual(current['sessions'], {})
+                for token in sessions:
+                    self.assertIsNone(restored.authenticate(token))
+                self.assertIsNone(ControlAccessService(state / 'control-clients.json', restored).authenticate(
+                    issued['token'], member, mode))
+                for name, contents in original.items():
+                    self.assertEqual((state / name).read_bytes(), contents)
+                self.assertEqual((state / 'calendar.json').read_bytes(),
+                                 (directory / 'data/state/calendar.json').read_bytes())
+                self.assertEqual((state / 'auth-required').stat().st_mode & 0o777, 0o600)
+                if mode == 'self':
+                    self.assertEqual(current['explicit_self_generation'], current['generation'])
+                    self.assertFalse(restored.owner_active('owner'))
+                    self.assertTrue(restored.owner_active(member))
+
+    def test_protected_self_rejects_pre_account_backup_before_staging(self):
+        from webclock.services.auth_service import AuthService
+        project, values, roots = self.installation('before-accounts')
+        directory, rollback = self.root / 'before-accounts-backup', self.root / 'before-accounts-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        state, _, _ = self.protect(project, values)
+        auth = AuthService(state / 'auth.json')
+        auth.reset_password('test-only-password-long')
+        auth.switch_mode('self', 'owner', admin_owner_id='owner', password='test-only-password-long',
+                         expected_generation=auth.state()['generation'], confirm_shared=True)
+        before = self.snapshot(roots)
+        with patch.object(backup, 'copy_data') as copy, self.assertRaisesRegex(RuntimeError, 'authorization state'):
+            backup.restore_backup(directory, roots, rollback, project, values)
+        copy.assert_not_called()
+        self.assertEqual(self.snapshot(roots), before)
+        self.assertFalse(rollback.exists())
+
+    def test_historical_restore_cannot_revive_first_setup_code(self):
+        from webclock.services.auth_service import AuthError, AuthService
+        project, values, roots = self.installation('setup-code')
+        state = backup.updater.data_layout(project, values, True)[0]
+        auth = AuthService(state / 'auth.json')
+        issued = auth.issue_setup_code()
+        directory, rollback = self.root / 'setup-code-backup', self.root / 'setup-code-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        backup.restore_backup(directory, roots, rollback, project, values)
+        restored = AuthService(state / 'auth.json')
+        self.assertIsNone(restored.state().get('setup_code'))
+        with self.assertRaises(AuthError):
+            restored.complete_setup(issued['code'], 'admin', 'test-only-password-long')
+
+    def test_restore_rejects_invalid_program_data_in_dormant_owner_directory(self):
+        from webclock.services.auth_service import AuthService
+        project, values, roots = self.installation('invalid-member')
+        state, _, _ = self.protect(project, values)
+        auth = AuthService(state / 'auth.json')
+        member = auth.create_account('member', 'test-only-password-long')['owner_id']
+        member_state = state / 'owners' / member
+        member_state.mkdir(parents=True)
+        (member_state / 'events.json').write_text('[{}]')
+        directory, rollback = self.root / 'invalid-member-backup', self.root / 'invalid-member-rollback'
+        backup.create_backup(directory, roots, backup.updater.data_layout(project, values, True))
+        before = self.snapshot(roots)
+        with self.assertRaisesRegex(ValueError, 'program credentials'):
+            backup.restore_backup(directory, roots, rollback, project, values)
+        self.assertEqual(self.snapshot(roots), before)
+        self.assertFalse(rollback.exists())
 
 
 if __name__ == '__main__':

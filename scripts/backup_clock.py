@@ -241,14 +241,16 @@ def write_private_json(path, value):
 
 
 def invalidate_restored_authorization(state, target_auth):
-    auth = updater.authorization_state(state, required=bool(target_auth and target_auth['mode'] == 'managed'))
+    auth = updater.authorization_state(state, required=updater.is_protected(target_auth))
+    scopes = updater.owner_state_directories(state, auth)
     if updater.has_control_data(state):
         if auth is None:
             raise ValueError('Program state is missing its owner authorization data.')
         try:
             ControlAccessService(state / 'control-clients.json', None)._load()
-            read_control_requests(state)
-            read_events(state)
+            for scope in scopes:
+                read_control_requests(scope)
+                read_events(scope)
         except (ValueError, TypeError, KeyError, OSError, RuntimeError):
             raise ValueError('Invalid program credentials, requests or calendar events. Keep the service stopped.') from None
     if auth is None:
@@ -260,8 +262,15 @@ def invalidate_restored_authorization(state, target_auth):
     auth['invite_secret'] = secrets.token_urlsafe(32)
     auth['generation'] = max(auth['generation'], (target_auth or {}).get('generation', 0)) + 1
     auth['sessions'] = {}
+    if 'setup_code' in auth:
+        auth['setup_code'] = None
+    if auth['mode'] == 'self' and auth.get('accounts'):
+        auth['explicit_self_generation'] = auth['generation']
+    # Historical events must not fire when a restored account resumes.
+    if 'scope_changed_at' in auth:
+        auth['scope_changed_at'] = int(datetime.now(timezone.utc).timestamp() * 1000)
     revoke_restored_access(state)
-    if auth['mode'] == 'managed':
+    if updater.is_protected(auth):
         marker = state / 'auth-required'
         write_private_json(marker, {'version': 1, 'mode': 'managed'})
         if os.geteuid() == 0:
@@ -284,8 +293,8 @@ def restore_backup(directory, roots, rollback_directory, project, values):
     for role, relative in locations:
         target_auth = updater.authorization_state(roots[role] / relative)
         source_auth = updater.authorization_state(directory / 'data' / role / relative,
-            required=bool(target_auth and target_auth['mode'] == 'managed'))
-        if source_auth and source_auth['mode'] == 'managed' and not updater.supports_authorization(project):
+            required=updater.is_protected(target_auth))
+        if updater.is_protected(source_auth) and not updater.supports_authorization(project, source_auth):
             raise ValueError('Target code cannot enforce restored authorization. Keep the service stopped.')
         floors[role, relative] = target_auth
     rollback_directory = separate(rollback_directory, [*roots.values(), directory])

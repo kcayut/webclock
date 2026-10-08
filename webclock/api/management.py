@@ -17,7 +17,7 @@ def taipei_now():
 
 
 def management_api(state_directory, holidays, template_context, calendar_events=None, calendar_sources=None,
-                   device_access=None, owner_id=None):
+                   device_access=None, owner_id=None, scope_started=None):
     api = Blueprint('management', __name__)
 
     def schedules():
@@ -27,7 +27,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         save_schedules(state_directory(), rows)
 
     def devices():
-        return DeviceService(Path(state_directory()) / 'devices.json')
+        directory = device_access().path.parent if device_access else Path(state_directory())
+        return DeviceService(directory / 'devices.json')
 
     def check_device(device_id):
         if device_access:
@@ -161,7 +162,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
 
     @api.route('/api/v1/browser-alarms')
     def browser_alarms():
-        payload = browser_alarm_payload(read_legacy_schedules(state_directory()), holidays, taipei_now(), calendar_events)
+        payload = browser_alarm_payload(read_legacy_schedules(state_directory()), holidays, taipei_now(), calendar_events,
+                                        not_before=scope_started() if scope_started else 0)
         return jsonify(dict(payload, server_timestamp=int(taipei_now().timestamp() * 1000)))
 
     @api.route('/api/v1/schedules/<schedule_id>/skip-next', methods=['POST'])

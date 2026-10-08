@@ -19,7 +19,7 @@ def conditional(payload, digest=None):
     return response
 
 
-def device_api(state_directory, holidays):
+def device_api(state_directory, holidays, device_directory=None):
     api = Blueprint('device', __name__, url_prefix='/api/v1/device')
 
     def device_schedules():
@@ -29,7 +29,7 @@ def device_api(state_directory, holidays):
                 for row in read_legacy_schedules(state_directory()) if not row.get('calendar_link')]
 
     def devices():
-        return DeviceService(Path(state_directory()) / 'devices.json')
+        return DeviceService(Path((device_directory or state_directory)()) / 'devices.json')
 
     @api.route('/config')
     def config():

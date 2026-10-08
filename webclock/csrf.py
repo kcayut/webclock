@@ -30,8 +30,11 @@ def register_csrf(app):
                       SESSION_COOKIE_SAMESITE='Lax')
 
     def token():
-        if 'csrf_token' not in session:
+        generation = getattr(g, 'auth_generation', None)
+        if 'csrf_token' not in session or (generation is not None and session.get('auth_generation') != generation):
+            session.clear()
             session['csrf_token'] = secrets.token_urlsafe(32)
+            session['auth_generation'] = generation
         return session['csrf_token']
 
     app.jinja_env.globals['csrf_token'] = token
@@ -63,6 +66,8 @@ def register_csrf(app):
         expected = session.get('csrf_token')
         supplied = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token', '')
         if (not same_origin() or not isinstance(expected, str) or not expected
+                or (getattr(g, 'auth_generation', None) is not None
+                    and session.get('auth_generation') != g.auth_generation)
                 or not hmac.compare_digest(expected.encode('utf-8'), supplied.encode('utf-8'))):
             return rejected()
         return None

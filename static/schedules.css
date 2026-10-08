@@ -232,3 +232,8 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .device-content-options { min-width: 0; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
 .device-content-preview { margin: 8px 0; padding-left: 20px; font-size: 13px; overflow-wrap: anywhere; }
 .device-content-settings .actions { flex-wrap: wrap; gap: 10px; }
+
+.device-target-picker > label { display: block; margin-bottom: 10px; font-weight: 600; }
+.device-target-picker > select { width: 100%; min-width: 0; }
+.device-target-picker .help { overflow-wrap: anywhere; }
+.device-list.device-target-single { grid-template-columns: minmax(0, 1fr); }

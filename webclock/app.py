@@ -112,9 +112,47 @@ DEFAULT_SETTINGS = {
 settings_lock = RLock()
 
 
-def load_display_settings():
+def content_owner():
+    return (getattr(g, 'owner_id', None) if has_request_context() else None) or auth_service().owner_id()
+
+
+def content_directory(owner=None):
+    state = auth_service().state()
+    owner = owner or content_owner()
+    root = Path(SETTINGS_FILE).parent
+    if owner == state.get('data_owner_id', state['owner_id']):
+        return root
+    if owner not in state.get('accounts', {}):
+        raise AccessError('Unknown data owner', 403, 'invalid_owner')
+    return root / 'owners' / owner
+
+
+def settings_path():
+    return content_directory() / 'settings.json'
+
+
+def notes_path():
+    directory = content_directory()
+    return Path(NOTES_FILE) if directory == Path(SETTINGS_FILE).parent else directory / 'manual_notes.json'
+
+
+def active_settings():
+    if has_request_context() and getattr(g, 'deployment_mode', '') == 'recovery':
+        return dict(DEFAULT_SETTINGS)
+    directory = content_directory()
+    if directory == Path(SETTINGS_FILE).parent:
+        return display_settings
+    if not has_request_context():
+        return load_display_settings()
+    cached = getattr(g, 'owner_display_settings', None)
+    if cached is None or cached[0] != directory:
+        g.owner_display_settings = (directory, load_display_settings())
+    return g.owner_display_settings[1]
+
+
+def load_display_settings(path=None):
     try:
-        with open(SETTINGS_FILE, encoding='utf-8') as f:
+        with open(path or settings_path(), encoding='utf-8') as f:
             saved = validate_settings(json.load(f))
     except FileNotFoundError:
         saved = {}
@@ -129,7 +167,7 @@ def load_display_settings():
 def save_display_settings(settings):
     settings = validate_settings(settings)
     try:
-        original = Path(SETTINGS_FILE).read_bytes()
+        original = settings_path().read_bytes()
     except FileNotFoundError:
         original = None
     if original is not None:
@@ -137,7 +175,7 @@ def save_display_settings(settings):
             validate_settings(json.loads(original.decode('utf-8')))
         except ValueError:
             # Callers hold settings_lock. Preserve the exact bytes before repair.
-            with tempfile.NamedTemporaryFile(dir=Path(SETTINGS_FILE).parent,
+            with tempfile.NamedTemporaryFile(dir=content_directory(),
                                              prefix='settings.corrupt-', suffix='.json',
                                              delete=False) as backup:
                 try:
@@ -148,7 +186,7 @@ def save_display_settings(settings):
                     os.unlink(backup.name)
                     raise
             app.logger.warning('Damaged display settings preserved at %s before repair', backup.name)
-    save_json(SETTINGS_FILE, settings)
+    save_json(settings_path(), settings)
 
 
 def migrate_notes(legacy_path):
@@ -165,11 +203,11 @@ def migrate_notes(legacy_path):
 
 migrate_notes(str(ROOT / 'manual_notes.json'))
 
-display_settings = load_display_settings()
+display_settings = load_display_settings(Path(SETTINGS_FILE))
 
 
 def get_local_now():
-    offset = display_settings.get('timezone_offset', 8)
+    offset = active_settings().get('timezone_offset', 8)
     tz = timezone(timedelta(hours=offset))
     return datetime.now(tz)
 
@@ -177,7 +215,7 @@ def get_local_now():
 def load_notes():
     with settings_lock:
         try:
-            with open(NOTES_FILE, encoding='utf-8') as f:
+            with open(notes_path(), encoding='utf-8') as f:
                 content = f.read()
                 data = json.loads(content) if content.strip() else []
         except FileNotFoundError:
@@ -197,13 +235,13 @@ def save_note(text, due_date, display_start='', display_end='', display_mode='ra
                       'display_mode': display_mode, 'weekdays': weekdays or [], 'enabled': True})
         if announcement_targets is not None:
             notes[-1].update(announcement_targets=announcement_targets, expires_at=expires_at)
-        save_json(NOTES_FILE, notes)
+        save_json(notes_path(), notes)
 
 
 def delete_note(note_id):
     with settings_lock:
         notes = [n for n in load_notes() if n['id'] != int(note_id)]
-        save_json(NOTES_FILE, notes)
+        save_json(notes_path(), notes)
 
 
 def validate_note(note):
@@ -430,7 +468,7 @@ def validate_calendar_sources(sources, create_ids=False):
 
 def load_calendar_settings():
     # Missing state keeps the old .env subscription; a saved empty list disables it.
-    data = load_json(Path(SETTINGS_FILE).parent / 'calendar.json', {'url': ICAL_URL})
+    data = load_json(content_directory() / 'calendar.json', {'url': ICAL_URL if content_directory() == Path(SETTINGS_FILE).parent else ''})
     if not isinstance(data, dict):
         raise ValueError('Invalid calendar settings')
     if 'sources' not in data:
@@ -467,8 +505,8 @@ def native_event_rows(owner_id=None):
     # Keep an older subscription with this ID authoritative until explicitly migrated.
     if any(source['id'] == NATIVE_CALENDAR_SOURCE for source in load_calendar_settings()['sources']):
         return []
-    owner = owner_id or auth_service().owner_id()
-    return [row for row in read_events(Path(SETTINGS_FILE).parent) if row['owner_id'] == owner]
+    owner = owner_id or content_owner()
+    return [row for row in read_events(content_directory()) if row['owner_id'] == owner]
 
 
 def get_calendar_url():
@@ -480,7 +518,7 @@ def calendar_settings_response(settings):
     # Keep the old single-URL management client compatible during upgrades.
     errors = []
     for source in settings['sources']:
-        cached = calendar_feed_cache.get((str(Path(SETTINGS_FILE).parent), source['url']), {})
+        cached = calendar_feed_cache.get((str(content_directory()), source['url']), {})
         if cached.get('error'):
             errors.append(dict(id=source['id'], error=cached['error']))
     return dict(settings, url=settings['sources'][0]['url'] if settings['sources'] else '', errors=errors)
@@ -599,8 +637,8 @@ def check_calendar_expansion(cal, start, end):
             raise OverflowError('Calendar occurrence limit exceeded')
 
 
-def fetch_calendar_source(url):
-    key = (str(Path(SETTINGS_FILE).parent), url)
+def fetch_calendar_source(url, namespace=None):
+    key = (namespace or str(content_directory()), url)
     cached = calendar_feed_cache.get(key)
     current_time = time.time()
     if cached is not None and current_time - cached['fetched_at'] < CACHE_DURATION:
@@ -670,9 +708,10 @@ def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False, n
             raise AccessError('Calendar catalog is unavailable; retry later', 503, 'calendar_not_ready') from error
         app.logger.warning('Could not read calendar settings')
         sources = []
-    active_keys = {(str(Path(SETTINGS_FILE).parent), source['url']) for source in sources}
+    namespace = str(content_directory())
+    active_keys = {(namespace, source['url']) for source in sources}
     for key in list(calendar_feed_cache):
-        if key not in active_keys:
+        if key[0] == namespace and key not in active_keys:
             del calendar_feed_cache[key]
     selected = set(source_ids) if source_ids is not None else {
         source['id'] for source in sources if source['display_enabled']}
@@ -683,11 +722,12 @@ def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False, n
         events += query_events(native_rows, start, end)
     selected_urls = {source['url'] for source in sources if source['id'] in selected}
     pending = [url for url in selected_urls if time.time() - calendar_feed_cache.get(
-        (str(Path(SETTINGS_FILE).parent), url), {}).get('fetched_at', 0) >= CACHE_DURATION]
+        (str(content_directory()), url), {}).get('fetched_at', 0) >= CACHE_DURATION]
     if len(pending) > 1:
         # One slow provider should not serialize every other calendar download.
         with ThreadPoolExecutor(max_workers=min(MAX_CALENDAR_SOURCES, len(pending))) as pool:
-            list(pool.map(fetch_calendar_source, pending))
+            namespace = str(content_directory())
+            list(pool.map(lambda url: fetch_calendar_source(url, namespace), pending))
     for source in sources:
         if source['id'] not in selected:
             continue
@@ -747,7 +787,7 @@ def fetch_calendar_events(start=None, end=None, source_ids=None, strict=False, n
 
 
 def template_context():
-    language = display_settings.get('language', DEFAULT_SETTINGS['language'])
+    language = active_settings().get('language', DEFAULT_SETTINGS['language'])
     if has_request_context():
         language = session.get('management_language', language)
     if language not in SUPPORTED_LANGUAGES:
@@ -756,7 +796,7 @@ def template_context():
         'app_base': request.script_root.rstrip('/') if has_request_context() else '',
         'display_only': has_request_context() and request.environ.get('webclock.surface') == 'display',
         'language': language,
-        'time_format': display_settings.get('time_format', '24h'),
+        'time_format': active_settings().get('time_format', '24h'),
         'languages': SUPPORTED_LANGUAGES,
         'translations': {code: UI_TRANSLATIONS[code] for code in SUPPORTED_LANGUAGES},
     }
@@ -766,7 +806,7 @@ def template_context():
 def index():
     context = template_context()
     # A management preference must never change the clock's initial language.
-    context['language'] = display_settings.get('language', DEFAULT_SETTINGS['language'])
+    context['language'] = active_settings().get('language', DEFAULT_SETTINGS['language'])
     context['deployment_mode'] = 'managed' if context['display_only'] else getattr(g, 'deployment_mode', 'recovery')
     context['device_enrollment_translations'] = DEVICE_ENROLLMENT_TRANSLATIONS
     if getattr(g, 'deployment_mode', 'self') != 'self':
@@ -785,8 +825,8 @@ def index():
 @app.route('/admin')
 def admin(error=None, editing_id=None):
     with settings_lock:
-        settings = {'night': DEFAULT_NIGHT, **display_settings}
-        settings_revision = revision(display_settings)
+        settings = {'night': DEFAULT_NIGHT, **active_settings()}
+        settings_revision = revision(active_settings())
     notes = load_notes()
     announcements = [dict(note, announcement_expires_local=(
         datetime.fromisoformat(note['expires_at']).astimezone(get_local_now().tzinfo).isoformat(timespec='minutes')[:16]
@@ -812,7 +852,7 @@ def admin(error=None, editing_id=None):
 def control():
     if request.method == 'GET':
         with storage_lock, settings_lock:
-            return jsonify(settings={'night': DEFAULT_NIGHT, **display_settings}, revision=revision(display_settings))
+            return jsonify(settings={'night': DEFAULT_NIGHT, **active_settings()}, revision=revision(active_settings()))
     try:
         changes = validate_settings(request.get_json())
     except (ValueError, TypeError):
@@ -820,16 +860,16 @@ def control():
     with storage_lock, settings_lock:
         # Legacy maintenance clients may still write without a precondition.
         # Management pages always send their last loaded version.
-        if 'If-Match' in request.headers and not request.if_match.contains(revision(display_settings)):
+        if 'If-Match' in request.headers and not request.if_match.contains(revision(active_settings())):
             return jsonify(error='Settings changed; reload before saving', code='settings_changed'), 409
-        updated = dict(display_settings, **changes)
+        updated = dict(active_settings(), **changes)
         try:
             save_display_settings(updated)
         except OSError:
             app.logger.exception('Could not save display settings')
             return jsonify({'error': 'Could not save settings'}), 500
-        display_settings.update(updated)
-        return jsonify(status='ok', settings=display_settings, revision=revision(display_settings))
+        active_settings().update(updated)
+        return jsonify(status='ok', settings=active_settings(), revision=revision(active_settings()))
 
 
 @app.route('/api/calendar', methods=['GET', 'POST', 'PATCH'])
@@ -894,10 +934,10 @@ def calendar_settings():
         except (ValueError, TypeError):
             return jsonify(error='invalid_url' if isinstance(data, dict) and set(data) == {'url'} else 'invalid_settings'), 400
         if (any(source['id'] == NATIVE_CALENDAR_SOURCE for source in updated['sources'])
-                and read_events(Path(SETTINGS_FILE).parent)):
+                and read_events(content_directory())):
             return jsonify(error='Calendar source ID conflicts with native events', code='calendar_source_conflict'), 409
         try:
-            save_json(Path(SETTINGS_FILE).parent / 'calendar.json', updated)
+            save_json(content_directory() / 'calendar.json', updated)
         except OSError:
             return jsonify(error='save_failed'), 500
         return jsonify(status='ok', **calendar_settings_response(updated))
@@ -929,7 +969,7 @@ def schedule(id):
                          or 'announcement_targets' in note else 'window_error', editing_id=id), 400
         note.clear()
         note.update(updated)
-        save_json(NOTES_FILE, notes)
+        save_json(notes_path(), notes)
     return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in updated else 'calendar-title'))
 
 
@@ -941,7 +981,7 @@ def toggle(id):
         if note is None:
             abort(404)
         note['enabled'] = not note.get('enabled', True)
-        save_json(NOTES_FILE, notes)
+        save_json(notes_path(), notes)
     return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in note else 'calendar-title'))
 
 
@@ -951,7 +991,10 @@ def backup():
         abort(403)
     with storage_lock, settings_lock:
         if request.method == 'GET':
-            response = jsonify(version=1, settings=display_settings, notes=load_notes())
+            data = dict(version=1, settings=active_settings(), notes=load_notes())
+            if auth_service().state().get('accounts'):
+                data['owner_id'] = content_owner()
+            response = jsonify(data)
             response.headers['Content-Disposition'] = 'attachment; filename="webclock-backup.json"'
             response.headers['Cache-Control'] = 'no-store'
             return response
@@ -959,7 +1002,10 @@ def backup():
             return jsonify(error='Backup too large'), 413
         try:
             data = request.get_json()
-            if not isinstance(data, dict) or set(data) != {'version', 'settings', 'notes'} or type(data['version']) is not int or data['version'] != 1:
+            fields = {'version', 'settings', 'notes'}
+            if (not isinstance(data, dict) or not fields <= set(data) or set(data) - (fields | {'owner_id'})
+                    or type(data['version']) is not int or data['version'] != 1
+                    or ('owner_id' in data and data['owner_id'] != content_owner())):
                 raise ValueError('Unknown backup format')
             settings = dict(DEFAULT_SETTINGS, **validate_settings(data['settings']))
             if not {'mode', 'brightness', 'timezone_offset', 'language'} <= set(data['settings']):
@@ -977,19 +1023,19 @@ def backup():
         previous_notes = load_notes()
         try:
             # Retain the previous data even if interrupted between the two file replacements.
-            save_json(os.path.join(os.path.dirname(SETTINGS_FILE), 'before-import.json'),
-                      dict(version=1, settings=display_settings, notes=previous_notes))
-            save_json(NOTES_FILE, notes)
+            save_json(os.path.join(str(content_directory()), 'before-import.json'),
+                      dict(version=1, settings=active_settings(), notes=previous_notes))
+            save_json(notes_path(), notes)
             try:
                 save_display_settings(settings)
             except OSError:
-                save_json(NOTES_FILE, previous_notes)
+                save_json(notes_path(), previous_notes)
                 raise
         except OSError:
             app.logger.exception('Backup restore failed; previous data retained in before-import.json')
             return jsonify(error='Could not restore backup'), 500
-        display_settings.clear()
-        display_settings.update(settings)
+        active_settings().clear()
+        active_settings().update(settings)
         return jsonify(status='ok')
 
 
@@ -1272,9 +1318,9 @@ def status():
         show_local = True
         calendar_settings = {'sources': [], 'local_display_enabled': True}
     payload = display_snapshot(now, load_notes() if show_local else [],
-                               read_legacy_schedules(Path(SETTINGS_FILE).parent), calendar_display_events(now, calendar_settings), get_calendar_events)
+                               read_legacy_schedules(content_directory()), calendar_display_events(now, calendar_settings), get_calendar_events)
     # Calendar I/O may take time; send a fresh timestamp after projection.
-    return jsonify(dict(payload, settings=display_settings, announcements=[], server_timestamp=int(get_local_now().timestamp() * 1000)))
+    return jsonify(dict(payload, settings=active_settings(), announcements=[], server_timestamp=int(get_local_now().timestamp() * 1000)))
 
 
 @app.route('/api/time')
@@ -1309,14 +1355,14 @@ def group_service(read_only=False):
     return DeviceAccessService(
         Path(SETTINGS_FILE).parent / 'device-access.json',
         identity.invite_secret(), validate_settings,
-        lambda: dict(display_settings, night=dict(DEFAULT_NIGHT, **display_settings.get('night', {}))),
-        group_content_catalog)
+        lambda: dict(active_settings(), night=dict(DEFAULT_NIGHT, **active_settings().get('night', {}))),
+        group_content_catalog, scope_started=lambda: identity.state().get('scope_changed_at', 0) / 1000)
 
 
 def group_content_catalog():
     calendar = load_calendar_settings()
     notes = [note for note in load_notes() if 'announcement_targets' not in note]
-    schedules = read_schedules(Path(SETTINGS_FILE).parent)
+    schedules = read_schedules(content_directory())
     return {
         'calendar_source_ids': [source['id'] for source in get_calendar_sources()],
         'manual_note_ids': [note['id'] for note in notes],
@@ -1324,7 +1370,7 @@ def group_content_catalog():
         'default_content': {
             'calendar_source_ids': [source['id'] for source in calendar['sources'] if source['display_enabled']],
             'manual_note_ids': [note['id'] for note in notes] if calendar['local_display_enabled'] else [],
-            'schedule_ids': [row['id'] for row in read_legacy_schedules(Path(SETTINGS_FILE).parent)],
+            'schedule_ids': [row['id'] for row in read_legacy_schedules(content_directory())],
             **({'calendar_targets': [{key: value for key, value in target.items() if key != 'display_window'}
                                      for target in calendar['calendar_targets']]} if calendar.get('calendar_targets') else {}),
         },
@@ -1341,8 +1387,8 @@ def group_ui_catalog():
     return dict(calendar_sources=[{'id': row['id'], 'name': row['name']} for row in get_calendar_sources()],
                 manual_notes=[{'id': row['id'], 'text': row['text']} for row in load_notes()
                               if 'announcement_targets' not in row],
-                schedules=[{'id': row['id'], 'name': row['name']} for row in read_schedules(Path(SETTINGS_FILE).parent)],
-                defaults=dict(display_settings, night=dict(DEFAULT_NIGHT, **display_settings.get('night', {}))))
+                schedules=[{'id': row['id'], 'name': row['name']} for row in read_schedules(content_directory())],
+                defaults=dict(active_settings(), night=dict(DEFAULT_NIGHT, **active_settings().get('night', {}))))
 
 
 def device_service():
@@ -1366,7 +1412,7 @@ def managed_content(identity):
         calendar_settings = load_calendar_settings()
         source_rows = get_calendar_sources()
         sources = {row['id'] for row in source_rows}
-        schedules = [row for row in read_schedules(Path(SETTINGS_FILE).parent)
+        schedules = [row for row in read_schedules(content_directory())
                      if row['id'] in content['schedule_ids']
                      and not set((row.get('calendar_link') or {}).get('source_ids', [])) - (sources | {'local'})]
         needed = set(content['calendar_source_ids']) | {
@@ -1378,11 +1424,11 @@ def managed_content(identity):
         if NATIVE_CALENDAR_SOURCE in needed:
             dependencies.append(native_event_rows(identity['owner_id']))
         if any('announcement_targets' in note for note in notes):
-            dependencies.append(display_settings.get('timezone_offset', 8))
+            dependencies.append(active_settings().get('timezone_offset', 8))
         rules = [target for target in calendar_settings.get('calendar_targets', []) if target['source_id'] in needed]
         # Management display rules/timezone can change while calendar I/O is running.
         if rules:
-            dependencies += [rules, display_settings.get('timezone_offset', 8)]
+            dependencies += [rules, active_settings().get('timezone_offset', 8)]
         source_revision = revision(dependencies)
         return group, notes, schedules, source_revision
 
@@ -1436,19 +1482,27 @@ def managed_display(identity):
 
 def managed_alarms(identity):
     group, notes, schedules, source_revision = managed_content(identity)
-    payload = browser_alarm_payload(schedules, holiday_service, datetime.now(TAIPEI), managed_calendar_events)
+    payload = browser_alarm_payload(schedules, holiday_service, datetime.now(TAIPEI), managed_calendar_events,
+                                    not_before=auth_service().state().get('scope_changed_at', 0))
     return managed_response(identity, group, notes, schedules, source_revision, payload)
 
 
-register_api(app, lambda: Path(SETTINGS_FILE).parent, holiday_service, template_context,
+register_api(app, lambda: content_directory(), holiday_service, template_context,
              calendar_events=lambda **query: get_calendar_events(**query),
-             calendar_sources=lambda: get_calendar_sources(), device_access=group_service, owner_id=group_owner)
+             calendar_sources=lambda: get_calendar_sources(), device_access=group_service, owner_id=group_owner,
+             scope_started=lambda: auth_service().state().get('scope_changed_at', 0))
 app.register_blueprint(groups_api(group_service, group_owner, group_ui_catalog, lambda: device_service().list()))
 app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms))
 
+from webclock.api.mode import register_mode
+app.extensions['webclock_mode_access'] = lambda: group_service(read_only=True)
+register_mode(app, auth_service, lambda: ROOT, lambda: NOTES_FILE, content_directory, template_context,
+              lambda: calendar_feed_cache.clear(), legacy_calendar=lambda: ICAL_URL)
+
 from webclock.api.control import register_control
-register_control(app, lambda: Path(SETTINGS_FILE).parent, auth_service, group_service, group_owner,
-                 template_context, get_calendar_sources, lambda **query: get_calendar_events(**query), holiday_service)
+register_control(app, content_directory, auth_service, group_service, group_owner,
+                 template_context, get_calendar_sources, lambda **query: get_calendar_events(**query), holiday_service,
+                 credential_directory=lambda: Path(SETTINGS_FILE).parent)
 
 
 def main():

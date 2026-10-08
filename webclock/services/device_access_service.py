@@ -114,13 +114,14 @@ def _assignment_membership(content, item):
 
 class DeviceAccessService:
     def __init__(self, state_path, invite_secret, validate_settings, default_settings,
-                 content_catalog, clock=None):
+                 content_catalog, clock=None, scope_started=None):
         self.path = Path(state_path)
         self.secret = invite_secret
         self.validate_settings = validate_settings
         self.default_settings = default_settings
         self.content_catalog = content_catalog
         self.clock = clock or time.time
+        self.scope_started = scope_started or (lambda: 0)
 
     def _load(self):
         try:
@@ -669,10 +670,14 @@ class DeviceAccessService:
             raise AccessError('Invitation secret is unavailable', 503, 'access_not_ready')
         return hmac.new(secret, code.encode('ascii'), hashlib.sha256).hexdigest()
 
+    def _predates_scope(self, row):
+        started = self.scope_started()
+        return started > 0 and _epoch(row['created_at']) <= started
+
     def _invite_metadata(self, state, row):
         group = state['groups'].get(row['group_id'], {})
         remaining = max(0, min(row['capacity'] - row['used'], DEVICE_LIMIT - len(state['devices'])))
-        status = ('closed' if row['closed'] else 'disabled' if not group.get('enabled')
+        status = ('closed' if row['closed'] or self._predates_scope(row) else 'disabled' if not group.get('enabled')
                   else 'expired' if self.clock() >= _epoch(row['expires_at'])
                   else 'full' if remaining == 0 else 'active')
         return {**{key: row[key] for key in ('id', 'group_id', 'created_at', 'expires_at', 'capacity', 'used')},
@@ -816,7 +821,8 @@ class DeviceAccessService:
                             # A retained attempt cannot resurrect a cleared/revoked credential.
                             raise AccessError('Device authorization is no longer valid', 403,
                                               'device_authorization_revoked')
-                        if attempt['owner_id'] == owner_id and _epoch(attempt['expires_at']) > self.clock():
+                        if (attempt['owner_id'] == owner_id and not self._predates_scope(attempt)
+                                and _epoch(attempt['expires_at']) > self.clock()):
                             return {'status': 'pending', 'attempt_id': attempt['id'],
                                     'expires_at': int(_epoch(attempt['expires_at']) * 1000)}
             raise AccessError('A device credential is required', 401, 'device_authentication_required')
@@ -936,7 +942,8 @@ class DeviceAccessService:
                 raise AccessError('Device is already joined', 409, 'join_attempt_conflict')
             now = self.clock()
             state['attempts'] = {key: row for key, row in state['attempts'].items()
-                                 if row['device_id'] is not None or _epoch(row['expires_at']) > now}
+                                 if row['device_id'] is not None or (
+                                     _epoch(row['expires_at']) > now and not self._predates_scope(row))}
             for row in state['attempts'].values():
                 if digest is not None and hmac.compare_digest(row['credential_digest'], digest):
                     if row['device_id'] is not None or row['owner_id'] != owner_id:
@@ -964,7 +971,7 @@ class DeviceAccessService:
             return {'attempt_id': attempt_id, 'expires_at': int((now + ATTEMPT_SECONDS) * 1000),
                     'token': new_token, 'created': True}
 
-    def join(self, owner_id, token, attempt_id, code, source):
+    def join(self, owner_id, token, attempt_id, code, source, owner_allowed=None):
         """Activate the same prepared credential and consume one seat in one write."""
         with storage_lock:
             self._owner(owner_id)
@@ -979,10 +986,13 @@ class DeviceAccessService:
             if attempt['device_id'] is not None:
                 row = state['devices'][attempt['device_id']]
                 return {'identity': self._active_identity(state, row, owner_id), 'created': False}
-            if _epoch(attempt['expires_at']) <= self.clock() or self._device_for_digest(state, digest) is not None:
+            if (self._predates_scope(attempt) or _epoch(attempt['expires_at']) <= self.clock()
+                    or self._device_for_digest(state, digest) is not None):
                 raise AccessError('Join attempt has expired or was replaced', 409, 'join_attempt_conflict')
             self._limit(source)
             invitation = self._matching_invite(state, code)
+            if owner_allowed and owner_allowed(invitation['owner_id']):
+                owner_id = invitation['owner_id']
             if invitation['owner_id'] != owner_id:
                 raise AccessError('Invalid or unavailable invitation', 400, 'invalid_invitation')
             device_id = self._new_id(state['devices'])
@@ -990,6 +1000,7 @@ class DeviceAccessService:
                        status='active', credential_digest=digest, credential_generation=1,
                        created_at=_stamp(self.clock()), assignment_revision=1, rejoin_required=False)
             state['devices'][device_id] = row
+            attempt['owner_id'] = owner_id
             attempt['device_id'] = device_id
             invitation['used'] += 1
             save_json(self.path, state)

@@ -24,7 +24,10 @@ def main(argv=None):
     setup.add_argument('--enable-managed', '--enable-managed-test', dest='enable_managed', action='store_true',
                        help='Enable administrator login and require each display to join with its own code. '
                             '--enable-managed-test remains a compatible alias.')
-    actions.add_parser('reset-password', help='Recover the existing administrator; revoke all login sessions.')
+    recovery = actions.add_parser('reset-password', help='Recover an existing administrator; revoke all login sessions.')
+    recovery.add_argument('--username', help='Existing administrator username; defaults to the original administrator.')
+    setup_code = actions.add_parser('setup-code', help='Issue a one-use code for first web administrator setup.')
+    setup_code.add_argument('--expires-in', type=int, default=600, help='Code lifetime in seconds (1 to 3600; default 600).')
     actions.add_parser('status', help='Print mode/owner only, without exposing secrets.')
     args = parser.parse_args(argv)
     load_dotenv(ROOT / '.env')
@@ -35,6 +38,11 @@ def main(argv=None):
             data = service.state()
             print('mode=' + data['mode'] + ' owner_id=' + data['owner_id'])
             return 0
+        if args.action == 'setup-code':
+            result = service.issue_setup_code(args.expires_in)
+            print('One-use setup code: ' + result['code'])
+            print('Expires at Unix time ' + str(result['expires_at']) + '. Enter it at /setup over HTTPS.')
+            return 0
         if args.action == 'setup' and not args.enable_managed:
             parser.error('setup requires --enable-managed; existing displays must join with a code after restart')
         # Never put a password on the command line, environment, or stdout.
@@ -44,7 +52,7 @@ def main(argv=None):
         if args.action == 'setup':
             result = service.setup(args.username, password, enable_managed=args.enable_managed)
         else:
-            result = service.reset_password(password)
+            result = service.reset_password(password, username=args.username)
         print('Administrator saved. owner_id=' + result['owner_id'] + '. Restart WebClock before use.')
         return 0
     except (AuthError, AuthStateError, OSError) as exc:

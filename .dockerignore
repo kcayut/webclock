@@ -13,3 +13,4 @@ tls
 **/.webclock-backup*
 **/.webclock-restore-*
 **/__pycache__
+.webclock-mode-backups-*/

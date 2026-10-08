@@ -107,6 +107,7 @@ const assignmentValues = {alarm: {group_ids: ["work"], partial_group_ids: []}};
 let assignmentGroups = [];
 const assignmentEditors = [], assignmentSummaries = new Set();
 let assignmentOptions, assignmentLoads = 0, assignmentLanguages = 0, groupRefreshes = 0;
+let operatingIdentity = null, operatingIdentityFailed = false, operatingIdentityPending = null, chosenGroup = null;
 const timeouts = new Map();
 let monotonicTime = 0, timeoutId = 0;
 const body = element("body");
@@ -150,13 +151,20 @@ const context = vm.createContext({
                 applyLanguage() { assignmentLanguages++; }
             };
         }},
-        WebClockGroups: {refresh() { groupRefreshes++; }},
+        WebClockGroups: {refresh() { groupRefreshes++; }, choose(id) { chosenGroup = id; }},
         WebClockTimeInputs: {refresh(root, format, language) {
             assert.equal(root, $("schedule-form"));
             inputRefreshes.push({format, language, required: $("schedule-time").required, disabled: $("schedule-time").disabled});
         }},
         addEventListener(type, handler) { navigation[type] = handler; }},
     fetch(url, options) {
+        if (url === '/api/v2/device/identity') {
+            assert.equal(options.credentials, 'same-origin');
+            assert.equal(options.cache, 'no-store');
+            if (operatingIdentityPending) return new Promise(resolve => { operatingIdentityPending.resolve = resolve; });
+            if (operatingIdentityFailed) return Promise.reject(new Error('offline'));
+            return Promise.resolve({ok: !!operatingIdentity, json: async () => ({status: 'active', identity: operatingIdentity})});
+        }
         return new Promise(resolve => {
             const request = {url, options, resolve};
             requests.push(request);
@@ -1203,7 +1211,7 @@ const completionTimeout = setTimeout(() => {
     assert.match($("status").textContent, /storage failed/);
 
     const memberRemovals = [];
-    context.window.WebClockGroups = {memberRemoved(id) { memberRemovals.push(id); }};
+    context.window.WebClockGroups = {memberRemoved(id) { memberRemovals.push(id); }, choose(id) { chosenGroup = id; }};
     const preRevokeRead = qa.loadDevices(), preRevokeRequest = take("/devices");
     const revoke = deviceButton("desk", "Revoke access").trigger("click");
     const revokeRequest = take("/devices/desk", "DELETE");
@@ -1325,6 +1333,52 @@ const completionTimeout = setTimeout(() => {
     reply(emptyPostRequest, {ok: true});
     await emptyPost;
     assert.equal(pending.length, 0);
+    const option = element('option'); option.value = 'target-group'; option.textContent = 'Target group';
+    $('group-select').append(option);
+    operatingIdentity = {device_id: 'target-one', group_id: 'target-group'};
+    const targets = qa.loadDevices();
+    reply(take('/devices'), {devices: [{id: 'target-one', name: 'First target'}, {id: 'target-two', name: 'Second target'}]});
+    await targets;
+    assert.equal($('device-target-select').children.length, 5);
+    async function target(value) { $('device-target-select').value = value; await $('device-target-select').trigger('change'); }
+    await target('device:target-one');
+    assert.equal($('device-list').children[0].hidden, false);
+    assert.equal($('device-list').children[1].hidden, true);
+    assert.match($('device-target-status').textContent, /device_target_same/);
+    const draft = deviceNameInput('target-one'); draft.value = 'Kept while switching'; await draft.trigger('input');
+    await target('device:target-two');
+    assert.match($('device-target-status').textContent, /device_target_other/);
+    await target('group:target-group');
+    assert.equal(chosenGroup, 'target-group');
+    assert.equal($('group-manager').hidden, false); assert.equal($('group-select').hidden, true);
+    assert.equal($('device-list').hidden, true);
+    assert.match($('device-target-status').textContent, /device_target_in_group/);
+    await target('all');
+    assert.equal($('device-default-target').hidden, false); assert.equal($('group-manager').hidden, true);
+    for (const language of ['zh-TW', 'en', 'ja']) {
+        context.document.documentElement.lang = language; context.window.applyManagementLanguage(language);
+        assert.equal($('device-target-select').value, 'all');
+        assert.equal(deviceNameInput('target-one').value, 'Kept while switching');
+    }
+    await target('device:target-one');
+    const missingTarget = qa.loadDevices();
+    reply(take('/devices'), {devices: [{id: 'target-two', name: 'Second target'}]}); await missingTarget;
+    assert.equal($('device-target-select').value, 'device:target-one');
+    assert.match($('device-target-status').textContent, /device_target_unavailable/);
+    assert.equal($('device-list').children[0].hidden, true, 'A removed target never silently switches to another device');
+    operatingIdentityFailed = true;
+    const unknownIdentity = qa.loadDevices();
+    reply(take('/devices'), {devices: [{id: 'target-two', name: 'Second target'}]}); await unknownIdentity;
+    await target('device:target-two');
+    assert.doesNotMatch($('device-target-status').textContent, /device_target_other|device_target_same/);
+    operatingIdentityPending = {};
+    const delayedIdentity = qa.loadDevices();
+    reply(take('/devices'), {devices: [{id: 'target-two', name: 'Latest target'}]}); await delayedIdentity;
+    assert.match(content($('device-list')), /Latest target/, 'Slow identity reads do not block device updates');
+    assert.doesNotMatch($('device-target-status').textContent, /device_target_other|device_target_same/);
+    operatingIdentityPending.resolve({ok: false}); operatingIdentityPending = null; await flush();
+    await target('');
+    assert.equal($('group-select').hidden, false); assert.equal($('device-list').hidden, false);
     assert.ok(requests.every(request => !/sound|audio|snooze|restart/.test(request.url)));
     console.log("Schedule management forms, commands and freshness checks passed");
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => clearTimeout(completionTimeout));
