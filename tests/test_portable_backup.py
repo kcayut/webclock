@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 import stat
@@ -71,6 +72,28 @@ class PortableBackupTest(unittest.TestCase):
                 backup.decrypt(invalid, password)
         with self.assertRaises(backup.BackupError):
             backup.encrypt(self.payload, 'short')
+
+    def test_optional_encryption_retains_legacy_files_and_validates_plain_files(self):
+        raw = backup.encode(self.payload, encrypted=False)
+        self.assertTrue(raw.startswith(backup.PLAIN_MAGIC))
+        self.assertIn(b'private-subscription-token', raw)
+        self.assertEqual(backup.decode(raw), self.payload)
+        self.assertEqual(backup.decode(backup.encrypt(self.payload, PASSWORD), PASSWORD), self.payload)
+        self.assertTrue(backup.encode(self.payload, PASSWORD).startswith(backup.MAGIC))
+        with self.assertRaisesRegex(backup.BackupError, 'invalid_backup_password'):
+            backup.encode(self.payload, '')
+        damaged = copy.deepcopy(self.payload)
+        damaged['files']['../outside.json'] = {}
+        invalid = backup._dump(damaged)
+        for value in (raw[:-1], raw[:-1] + bytes([raw[-1] ^ 1]),
+                      backup.PLAIN_MAGIC + b'0' * 32 + raw[len(backup.PLAIN_MAGIC) + 32:],
+                      backup.PLAIN_MAGIC + hashlib.sha256(invalid).digest() + invalid,
+                      backup.encrypt(self.payload, PASSWORD)[:9] + b'\x02' + b'not plaintext',
+                      b'WEBCLOCK\x00\x03' + raw[10:], backup.PLAIN_MAGIC):
+            with self.subTest(value=value[:10]), self.assertRaises(backup.BackupError):
+                backup.decode(value, PASSWORD)
+        with patch.object(backup, 'MAX_FILE_SIZE', len(raw) - 1), self.assertRaises(backup.BackupError):
+            backup.decode(raw)
 
     def test_complete_migration_preserves_credentials_and_ha_options(self):
         auth_before = copy.deepcopy(self.payload['files']['auth.json'])

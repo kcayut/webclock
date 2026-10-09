@@ -1,4 +1,4 @@
-"""One encrypted, portable backup with a reviewed, revision-bound restore."""
+"""One portable backup with optional encryption and a revision-bound restore."""
 import hashlib
 import json
 import secrets
@@ -66,7 +66,7 @@ def register_backup(app, auth, notes_file, legacy_calendar, validate_content, re
         raw = item.read(32 * 1024 * 1024 + 1)
         if len(raw) > 32 * 1024 * 1024:
             raise AuthError('backup_too_large', 'Backup is too large.', 413)
-        payload = portable_backup.decrypt(raw, request.form.get('password'), validate_content=validate_content)
+        payload = portable_backup.decode(raw, request.form.get('password'), validate_content=validate_content)
         if payload['files']['auth.json']['mode'] == 'managed' and not management_transport_allowed():
             raise AuthError('https_required', 'A protected management connection is required.', 403)
         return raw, payload
@@ -78,7 +78,8 @@ def register_backup(app, auth, notes_file, legacy_calendar, validate_content, re
             raise AuthError('invalid_backup', 'Expected an object.')
         with storage_lock:
             authorize(values)
-            data = portable_backup.encrypt(capture(materialize=True), values.get('password'))
+            data = portable_backup.encode(capture(materialize=True), values.get('password'),
+                                          encrypted=values.get('encrypted', True))
         response = app.response_class(data, mimetype='application/octet-stream')
         response.headers['Content-Disposition'] = 'attachment; filename="webclock-backup.webclock"'
         response.headers['Cache-Control'] = 'no-store'
@@ -94,7 +95,8 @@ def register_backup(app, auth, notes_file, legacy_calendar, validate_content, re
             ticket = secrets.token_urlsafe(32)
             session['backup_preview'] = dict(ticket=ticket, file=hashlib.sha256(raw).hexdigest(),
                                             target=target_revision(), expires=time.time() + 600)
-            return jsonify(ticket=ticket, summary=summary, preserve_devices=summary['preserve_devices'])
+            return jsonify(ticket=ticket, summary=summary, preserve_devices=summary['preserve_devices'],
+                           encrypted=raw.startswith(portable_backup.MAGIC))
 
     @api.route('/api/backup/complete/restore', methods=['POST'])
     def restore():

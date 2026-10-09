@@ -5,7 +5,7 @@
 ## 目前狀態
 
 - 本版 App 與 Integration 版本為 **1.1.0**。HA App 仍標示 `experimental`。
-- 已提供 App 來源、HACS 標準目錄、安裝捷徑、整合換址、HA 專用測試與多架構映像發行 workflow。新增管理頁單一 `.webclock` 加密完整備份，可將 managed 帳號與資料匯入新 HA App；這項變更的實機搬家驗收仍待完成。
+- 已提供 App 來源、HACS 標準目錄、安裝捷徑、整合換址、HA 專用測試與多架構映像發行 workflow。新增管理頁單一 `.webclock` 完整備份，預設加密並可選未加密，可將 managed 帳號與資料匯入新 HA App；這項變更的實機搬家驗收仍待完成。
 - **尚未完成：**本版 commit／push、GitHub Release、公開 GHCR 映像、遠端 CI、HACS 實際下載與 HA OS 商店安裝驗收。設定檔與本機測試不等於已發布。
 - 使用者的 HA 主機、Docker／ARM 部署、冷備份還原、長時間運行與通知／揚聲器仍需實測；既有 macOS HA Core／Python 3.14 測試結束 SIGSEGV 另行追蹤。
 
@@ -49,7 +49,7 @@ workflow 使用標準公開 GitHub runner；沒有使用付費大型 runner 或�
 - 商店 App 更新前做 HA 備份，更新後檢查整合、時間、行事曆、鬧鐘；在測試機驗證冷備份還原及回到前一版本。
 - HACS 更新整合後重啟 HA、重新載入瀏覽器，確認卡片資源一起更新。
 - 重新設定 Server 位址時，驗證失敗保留原設定、成功保留 HA 實體／卡片、舊裝置退出與離線清理提示；新的程式寫入憑證須另行設定。
-- 完整搬家驗收：舊 Server 匯出加密 `.webclock` → 新 App 選檔／輸入密碼／預覽 → 停止來源並確認還原 → 原 managed 帳密登入。核對所有帳號、iCal（含 `ICAL_URL`）、顯示設定、提醒、鬧鐘、原生事件、群組、裝置與程式授權。
+- 完整搬家驗收：分別匯出加密及未加密 `.webclock` → 新 App 選檔自動辨識，加密檔才須輸入密碼 → 預覽 → 停止來源並確認還原 → 原 managed 帳密登入。核對所有帳號、iCal（含 `ICAL_URL`）、顯示設定、提醒、鬧鐘、原生事件、群組、裝置與程式授權，確認未加密提示清楚且管理員驗證仍保留。
 - 分別驗證全新目標保留裝置／程式憑證、已有資料目標撤銷兩者、所有 session／舊邀請失效；HA 登入不能越過 managed 帳號登入，managed 管理員可在 `/mode` 管理成員，但模式切換停用，App options 不變。
 - 驗證密碼錯誤、檔案損壞、預覽後資料異動均不覆寫；中斷後重啟先處理 `.portable-restore-pending/`，保留私人的最近一次還原前副本。HA OS 實際斷電／冷備份與瀏覽器 Cookie 接續須另行實測。
 - 本機 App 與商店 App 有不同的安裝身份與資料目錄，可用[完整備份流程](guide.md#完整備份與搬家)搬家；確認新 App 正常後才退役舊 App。只更新既有 Local App 者繼續用[本機更新流程](installation.md#update)，不要移除後重裝來更新。

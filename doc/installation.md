@@ -150,15 +150,15 @@ WEBCLOCK_HTTP_PORT=8080 bash setup.sh --docker
 - **管理頁：**經由 HA Ingress 的 `8099`，不對區網開放。新安裝使用 HA 登入；匯入 managed 備份後，還須使用原 WebClock 帳密登入。
 - **外部時鐘：**需要時，在 App「網路」將 `8100/tcp` 對應至主機的 `8100`，開啟 `http://HA主機IP:8100`，用管理頁產生的六碼加入。此入口不提供管理頁。
 - **HA 儀表板：**再安裝[自訂整合](home-assistant.md#安裝整合)。App 啟動後，在「日誌」複製 `Home Assistant integration URL:` 後面的網址，填入整合的 Server 欄位；同機連線不必開放主機連接埠。
-- **資料：**保存在 App 的 `/data`；HA 冷備份保存整個 App，管理頁加密完整備份則用於跨主機搬家。
+- **資料：**保存在 App 的 `/data`；HA 冷備份保存整個 App，管理頁完整備份則用於跨主機搬家，可選擇是否加密。
 
 **從 bare metal／Docker 搬進 App，只需一個完整備份檔：**
 
-1. 舊 Server「備份與還原」設定至少 12 字元的備份密碼，下載 `.webclock` 檔。
-2. 新 App「開啟網頁介面」→「備份與還原」，選檔、輸入備份密碼、預覽資料數量。
+1. 舊 Server「備份與還原」預設以至少 12 字元的密碼加密；不需加密時取消「以密碼加密（建議）」，下載 `.webclock` 檔。
+2. 新 App「開啟網頁介面」→「備份與還原」，選檔，加密檔才須輸入備份密碼，再預覽資料數量。
 3. 停止舊 Server，確認是最後匯出的檔案，再確認取代並還原。managed 使用原 WebClock 帳密登入，所有帳號及私人行事曆一併保留。
 
-全新目標保留裝置與程式憑證；已有資料的目標會撤銷兩者，須重新加入／建立。原瀏覽器裝置要接續，須沿用相同 HTTPS 網域、協定與連接埠；備份不設定 TLS／DNS、不搬移瀏覽器本機資料，也不覆寫 App options。範圍與失敗復原見[完整備份指南](guide.md#完整備份與搬家)。
+未加密檔內的私人 iCal、帳號與授權資料可被持有者直接讀取；管理員驗證仍保留。全新目標保留裝置與程式憑證；已有資料的目標會撤銷兩者，須重新加入／建立。原瀏覽器裝置要接續，須沿用相同 HTTPS 網域、協定與連接埠；備份不設定 TLS／DNS、不搬移瀏覽器本機資料，也不覆寫 App options。範圍與失敗復原見[完整備份指南](guide.md#完整備份與搬家)。
 
 App 支援匯入 managed 備份，HA 登入不會替代原 WebClock 帳號。新 App 仍預設 self，不提供 `/mode` 切換或首次 managed 啟用；不要自行修改 `/data/auth.json`。HA 專用顯示通道維持管理路徑隔離與逐台憑證檢查，普通 bare metal／Docker 的 managed HTTPS 要求不變。
 
@@ -173,7 +173,7 @@ git clone https://github.com/kcayut/webclock.git && cd webclock && bash scripts/
 
 接著在 App 商店「檢查更新」→ **Local apps → WebClock → 安裝 → 啟動**。腳本只準備檔案，不會啟動 Server；會移除產物的 `image` 設定，讓 HA 自行建置。
 
-也可在另一台電腦的專案根目錄執行 `bash scripts/prepare_ha_app.sh /tmp/webclock-ha-app`，再透過 Samba 把產物複製為 HA 的 `addons/webclock`。目的地已存在時會停止，不會覆蓋。Local App 和商店 App 是不同安裝，資料不會自動搬移；可用上述完整加密備份搬到新 App，確認新 App 正常後才退役舊安裝。只更新既有 Local App 者依下方本機更新流程操作。
+也可在另一台電腦的專案根目錄執行 `bash scripts/prepare_ha_app.sh /tmp/webclock-ha-app`，再透過 Samba 把產物複製為 HA 的 `addons/webclock`。目的地已存在時會停止，不會覆蓋。Local App 和商店 App 是不同安裝，資料不會自動搬移；可用上述完整備份搬到新 App，確認新 App 正常後才退役舊安裝。只更新既有 Local App 者依下方本機更新流程操作。
 
 </details>
 

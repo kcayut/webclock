@@ -14,4 +14,4 @@
 docker build -f homeassistant/addon/Dockerfile -t webclock-addon .
 ```
 
-管理頁只經由 Home Assistant Ingress 的 `8099` 開啟；選用的 `8100/tcp` 提供區網顯示與配對，資料保存到 `/data`。全新 App 預設 self；在「備份與還原」載入加密 `.webclock` 完整備份，可保留原 managed 帳號與私人資料空間，再用原帳密登入。HA 登入仍保護外層入口，不會取代 WebClock 帳號驗證。
+管理頁只經由 Home Assistant Ingress 的 `8099` 開啟；選用的 `8100/tcp` 提供區網顯示與配對，資料保存到 `/data`。全新 App 預設 self；在「備份與還原」載入 `.webclock` 完整備份，加密檔才須輸入備份密碼，即可保留原 managed 帳號與私人資料空間，再用原帳密登入。HA 登入仍保護外層入口，不會取代 WebClock 帳號驗證。

@@ -68,20 +68,60 @@ class CompleteBackupApiTest(unittest.TestCase):
         self.assertEqual(result.status_code, 200, result.text)
         self.csrf()
 
-    def archive(self):
+    def archive(self, encrypted=True):
         with self.installation(self.source, self.notes):
             self.login()
-            result = self.request('post', BASE + 'export', json=dict(password=BACKUP_PASSWORD,
-                username='owner', admin_password=PASSWORD))
+            values = dict(username='owner', admin_password=PASSWORD)
+            if encrypted:
+                values['password'] = BACKUP_PASSWORD
+            else:
+                values['encrypted'] = False
+            result = self.request('post', BASE + 'export', json=values)
             self.assertEqual(result.status_code, 200, result.data[:200])
             self.assertEqual(result.headers['Cache-Control'], 'no-store')
-            self.assertNotIn(b'root-secret', result.data)
-            self.assertNotIn(b'member private', result.data)
+            for private in (b'root-secret', b'member private'):
+                self.assertEqual(private in result.data, not encrypted)
             return result.data
 
-    def upload(self, path, raw, **extra):
-        return self.request('post', BASE + path, data=dict(file=(BytesIO(raw), 'backup.webclock'),
-            password=BACKUP_PASSWORD, **extra), content_type='multipart/form-data')
+    def upload(self, path, raw, password=BACKUP_PASSWORD, **extra):
+        data = dict(file=(BytesIO(raw), 'backup.webclock'), **extra)
+        if password is not None:
+            data['password'] = password
+        return self.request('post', BASE + path, data=data, content_type='multipart/form-data')
+
+    def test_plain_backup_roundtrip_and_default_encryption_requirements(self):
+        raw = self.archive(encrypted=False)
+        with self.installation(self.source, self.notes):
+            self.login()
+            values = dict(username='owner', admin_password=PASSWORD, password='')
+            denied = self.request('post', BASE + 'export', json=values)
+            self.assertEqual((denied.status_code, denied.json['code']), (400, 'invalid_backup_password'))
+            for flag in ('false', 0, None):
+                self.assertEqual(self.request('post', BASE + 'export',
+                    json=dict(values, encrypted=flag)).status_code, 400)
+            values.update(encrypted=False, admin_password='wrong')
+            self.assertEqual(self.request('post', BASE + 'export', json=values).status_code, 401)
+        target = self.root / 'plain-ha-data'
+        target.mkdir()
+        with self.installation(target, ha=True):
+            damaged = self.upload('preview', raw[:-1], password=None)
+            self.assertEqual(damaged.status_code, 400)
+            self.assertFalse((target / 'auth.json').exists())
+            preview = self.upload('preview', raw, password=None)
+            self.assertEqual(preview.status_code, 200, preview.text)
+            self.assertFalse(preview.json['encrypted'])
+            self.assertEqual(preview.json['summary']['accounts'], 2)
+            self.assertNotIn('secret.ics', preview.text)
+            denied = self.upload('restore', raw, password=None, ticket=preview.json['ticket'])
+            self.assertEqual(denied.status_code, 409)
+            restored = self.upload('restore', raw, password=None, ticket=preview.json['ticket'], confirm='yes')
+            self.assertEqual(restored.status_code, 200, restored.text)
+            self.csrf()
+            self.login()
+            self.assertIn('root-secret.ics', self.request('get', '/api/calendar').text)
+            self.assertIn('portable reminder', (target / 'manual_notes.json').read_text())
+            self.login('member')
+            self.assertIn('member-secret.ics', self.request('get', '/api/calendar').text)
 
     def test_managed_all_owners_and_legacy_calendar_move_to_ha_data(self):
         raw = self.archive()
@@ -92,6 +132,7 @@ class CompleteBackupApiTest(unittest.TestCase):
             preview = self.upload('preview', raw)
             self.assertEqual(preview.status_code, 200, preview.text)
             self.assertTrue(preview.json['preserve_devices'])
+            self.assertTrue(preview.json['encrypted'])
             self.assertEqual(preview.json['summary']['accounts'], 2)
             self.assertNotIn('secret.ics', preview.text)
             self.assertFalse((target / 'auth.json').exists(), 'Preview must not import')

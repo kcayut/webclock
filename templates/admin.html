@@ -334,14 +334,16 @@
         {% endif %}
         <form id="complete-backup-export" class="panel">
             <h2 data-i18n="complete_backup_export">{{ translations[language].complete_backup_export }}</h2>
+            <label class="check"><input id="complete-backup-encrypted" type="checkbox" checked><span data-i18n="complete_backup_encrypt">{{ translations[language].complete_backup_encrypt }}</span></label>
             <p class="help" id="complete-backup-password-hint" data-i18n="complete_backup_password_hint">{{ translations[language].complete_backup_password_hint }}</p>
-            <div class="fields">
+            <p class="help" id="complete-backup-export-unencrypted" data-i18n="complete_backup_unencrypted_hint" hidden>{{ translations[language].complete_backup_unencrypted_hint }}</p>
+            <div class="fields" id="complete-backup-export-passwords">
                 <div class="field"><label for="complete-backup-export-password" data-i18n="complete_backup_password">{{ translations[language].complete_backup_password }}</label>
                     <input id="complete-backup-export-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" aria-describedby="complete-backup-password-hint" required></div>
                 <div class="field"><label for="complete-backup-export-confirm" data-i18n="complete_backup_password_confirm">{{ translations[language].complete_backup_password_confirm }}</label>
                     <input id="complete-backup-export-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required></div>
             </div>
-            <div class="actions"><button class="primary" type="submit" data-i18n="complete_backup_download">{{ translations[language].complete_backup_download }}</button></div>
+            <div class="actions"><button id="complete-backup-download" class="primary" type="submit" data-i18n="complete_backup_download">{{ translations[language].complete_backup_download }}</button></div>
             <p id="complete-backup-export-status" role="status" aria-live="polite"></p>
         </form>
         <form id="complete-backup-import" class="panel">
@@ -350,10 +352,11 @@
             <div class="fields">
                 <div class="field"><label for="complete-backup-file" data-i18n="backup_file">{{ translations[language].backup_file }}</label>
                     <input id="complete-backup-file" type="file" accept=".webclock,application/octet-stream" required></div>
-                <div class="field"><label for="complete-backup-import-password" data-i18n="complete_backup_password">{{ translations[language].complete_backup_password }}</label>
-                    <input id="complete-backup-import-password" type="password" autocomplete="off" maxlength="1024" required></div>
+                <div class="field" id="complete-backup-import-password-field" hidden><label for="complete-backup-import-password" data-i18n="complete_backup_password">{{ translations[language].complete_backup_password }}</label>
+                    <input id="complete-backup-import-password" type="password" autocomplete="off" maxlength="1024" disabled></div>
             </div>
-            <div class="actions"><button type="submit" data-i18n="complete_backup_preview">{{ translations[language].complete_backup_preview }}</button></div>
+            <p class="help" id="complete-backup-import-unencrypted" data-i18n="complete_backup_unencrypted_hint" hidden>{{ translations[language].complete_backup_unencrypted_hint }}</p>
+            <div class="actions"><button id="complete-backup-read" type="submit" data-i18n="complete_backup_preview" disabled>{{ translations[language].complete_backup_preview }}</button></div>
             <p id="complete-backup-import-status" role="status" aria-live="polite"></p>
             <section id="complete-backup-preview" hidden aria-labelledby="complete-backup-preview-title">
                 <h3 id="complete-backup-preview-title" data-i18n="complete_backup_preview_title">{{ translations[language].complete_backup_preview_title }}</h3>

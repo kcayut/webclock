@@ -1,4 +1,4 @@
-"""Password-protected, portable application data with recoverable replace-all restore."""
+"""Portable application data with optional encryption and recoverable restore."""
 import base64
 import copy
 from datetime import datetime, timezone
@@ -28,6 +28,7 @@ from .storage import save_json, storage_lock
 
 FORMAT = 'webclock-portable-backup'
 MAGIC = b'WEBCLOCK\x00\x01'
+PLAIN_MAGIC = b'WEBCLOCK\x00\x02'
 MAX_PLAINTEXT = 20 * 1024 * 1024
 MAX_FILE_SIZE = MAX_PLAINTEXT + len(MAGIC) + 16 + 12 + 16
 PENDING_DIR = '.portable-restore-pending'
@@ -271,6 +272,29 @@ def decrypt(raw, password, validate_content=None):
         value = AESGCM(_key(password, salt)).decrypt(nonce, raw[header_size:], raw[:header_size])
     except InvalidTag as exc:
         raise BackupError('backup_password_or_file_invalid') from exc
+    return validate(_parse(value), validate_content)
+
+
+def encode(payload, password=None, *, encrypted=True, validate_content=None):
+    if not isinstance(encrypted, bool):
+        raise BackupError()
+    if encrypted:
+        return encrypt(payload, password, validate_content)
+    validate(payload, validate_content)
+    raw = _dump(payload)
+    # This checksum detects accidental damage; it does not authenticate a sender.
+    return PLAIN_MAGIC + hashlib.sha256(raw).digest() + raw
+
+
+def decode(raw, password=None, validate_content=None):
+    if not isinstance(raw, bytes) or len(raw) > MAX_FILE_SIZE:
+        raise BackupError()
+    if not raw.startswith(PLAIN_MAGIC):
+        return decrypt(raw, password, validate_content)
+    start = len(PLAIN_MAGIC)
+    checksum, value = raw[start:start + 32], raw[start + 32:]
+    if not value or not secrets.compare_digest(checksum, hashlib.sha256(value).digest()):
+        raise BackupError()
     return validate(_parse(value), validate_content)
 
 

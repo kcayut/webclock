@@ -1,9 +1,9 @@
-/* Complete encrypted backups are confined to the management page. */
+/* Complete backups are confined to the management page. */
 (function () {
     'use strict';
     var container = document.getElementById('complete-backup');
     if (!container) return;
-    var preview = null, busy = false;
+    var preview = null, busy = false, importEncrypted = null, inspectedFile, readVersion = 0;
     function $(id) { return document.getElementById('complete-backup-' + id); }
     function t(key) { return window.t('complete_backup_' + key); }
     function status(kind, key, failed) {
@@ -17,7 +17,23 @@
         busy = value;
         container.setAttribute('aria-busy', String(busy));
         container.querySelectorAll('input, button').forEach(function (node) { node.disabled = busy; });
+        $('export-password').disabled = $('export-confirm').disabled = busy || !$('encrypted').checked;
+        $('import-password').disabled = busy || importEncrypted !== true;
+        $('read').disabled = busy || importEncrypted === null;
         $('restore').disabled = busy || !preview || !$('confirm').checked;
+    }
+    function renderOptions() {
+        var encrypted = $('encrypted').checked;
+        $('export-passwords').hidden = $('password-hint').hidden = !encrypted;
+        $('export-unencrypted').hidden = encrypted;
+        $('export-password').required = $('export-confirm').required = encrypted;
+        var key = encrypted ? 'download' : 'download_unencrypted';
+        $('download').textContent = t(key);
+        $('download').setAttribute('data-i18n', 'complete_backup_' + key);
+        $('import-password-field').hidden = importEncrypted !== true;
+        $('import-password').required = importEncrypted === true;
+        $('import-unencrypted').hidden = importEncrypted !== false;
+        controls(busy);
     }
     function invalidate() {
         preview = null;
@@ -34,7 +50,7 @@
     function upload() {
         var data = new FormData(), credentials = auth();
         data.append('file', $('file').files[0]);
-        data.append('password', $('import-password').value);
+        if (importEncrypted) data.append('password', $('import-password').value);
         data.append('username', credentials.username);
         data.append('admin_password', credentials.admin_password);
         return data;
@@ -61,6 +77,27 @@
             'admin_required', 'invalid_credentials', 'https_required', 'restore_failed', 'restore_recovery_required', 'downgrade_forbidden', 'invalid_backup_password'];
         status(kind, known.indexOf(code) >= 0 ? code : 'error', true);
     }
+    function inspectFile() {
+        var file = $('file').files[0];
+        if (file === inspectedFile) return;
+        inspectedFile = file;
+        var version = ++readVersion;
+        importEncrypted = null; invalidate(); renderOptions(); status('import', '');
+        if (!file) return;
+        var reader = new FileReader();
+        function current() { return version === readVersion && file === $('file').files[0]; }
+        function failed() { if (current()) failure('import', new Error('invalid_backup')); }
+        reader.onerror = failed;
+        reader.onload = function () {
+            if (!current()) return;
+            var bytes = new Uint8Array(reader.result), prefix = [87, 69, 66, 67, 76, 79, 67, 75, 0];
+            if (bytes.length !== 10 || !prefix.every(function (byte, index) { return bytes[index] === byte; }) || (bytes[9] !== 1 && bytes[9] !== 2)) {
+                failed(); return;
+            }
+            importEncrypted = bytes[9] === 1; renderOptions();
+        };
+        try { reader.readAsArrayBuffer(file.slice(0, 10)); } catch (error) { failed(); }
+    }
     function renderPreview() {
         if (!preview) return;
         var summary = preview.summary;
@@ -81,10 +118,13 @@
     $('export').addEventListener('submit', function (event) {
         event.preventDefault();
         if (busy || !validAuth()) return;
-        if ($('export-password').value !== $('export-confirm').value) {
+        var encrypted = $('encrypted').checked;
+        if (encrypted && (!$('export-password').reportValidity() || !$('export-confirm').reportValidity())) return;
+        if (encrypted && $('export-password').value !== $('export-confirm').value) {
             status('export', 'password_mismatch', true); $('export-confirm').focus(); return;
         }
-        var data = auth(); data.password = $('export-password').value;
+        var data = auth(); data.encrypted = encrypted;
+        if (encrypted) data.password = $('export-password').value;
         controls(true); status('export', 'working');
         request('export', data, true).then(function (blob) {
             var link = document.createElement('a'), objectUrl = URL.createObjectURL(blob);
@@ -92,16 +132,17 @@
             link.download = 'webclock-' + new Date().toISOString().slice(0, 10) + '.webclock';
             document.body.appendChild(link); link.click(); link.remove();
             window.setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 1000);
-            status('export', 'downloaded');
+            status('export', encrypted ? 'downloaded' : 'downloaded_unencrypted');
         }).catch(function (error) { failure('export', error); }).finally(function () { controls(false); });
     });
     $('import').addEventListener('submit', function (event) {
         event.preventDefault();
-        if (busy || !validAuth() || !$('file').files[0]) return;
+        if (busy || importEncrypted === null || !validAuth() || !$('file').files[0] || (importEncrypted && !$('import-password').reportValidity())) return;
         invalidate(); var data = upload();
         controls(true); status('import', 'working');
         request('preview', data).then(function (result) {
-            if (!result.ticket || !result.summary) throw new Error('invalid_backup');
+            if (!result.ticket || !result.summary || typeof result.encrypted !== 'boolean') throw new Error('invalid_backup');
+            importEncrypted = result.encrypted; renderOptions();
             preview = result; renderPreview(); status('import', 'ready');
         }).catch(function (error) { failure('import', error); }).finally(function () { controls(false); });
     });
@@ -125,11 +166,14 @@
     ['input', 'change'].forEach(function (event) {
         $('import').addEventListener(event, function (change) {
             if (change.target === $('confirm')) controls(busy);
+            else if (change.target === $('file')) inspectFile();
             else { invalidate(); status('import', ''); }
         });
         ['username', 'admin-password'].forEach(function (id) {
             if ($(id)) $(id).addEventListener(event, invalidate);
         });
     });
-    window.PortableBackup = {applyLanguage: renderPreview};
+    $('encrypted').addEventListener('change', function () { renderOptions(); status('export', ''); });
+    window.PortableBackup = {applyLanguage: function () { renderOptions(); renderPreview(); }};
+    renderOptions(); inspectFile();
 }());

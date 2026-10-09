@@ -17,7 +17,7 @@
 - **下載離線時鐘：**電腦[下載 ZIP 並解壓縮](doc/installation.md#offline-download)，用瀏覽器開啟最外層的 `index.html`，不必安裝 Server。平板請看[離線快取與 iOS 9 限制](doc/installation.md#offline-cache)。
 - **自行架設：**在電腦、NAS 或 Raspberry Pi 執行完整版。`/admin` 管理顯示、行事曆與文字提醒；`/schedules` 管理鬧鐘與裝置狀態。
 
-自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址不會出現在公開時鐘、狀態或舊版 JSON 匯出中；管理頁可下載單一加密 `.webclock` 檔，將帳號、私人行事曆與裝置設定完整搬到新主機或 HA App，詳見[備份與搬家](doc/guide.md#完整備份與搬家)。
+自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址不會出現在公開時鐘、狀態或舊版 JSON 匯出中；管理頁可下載單一 `.webclock` 完整備份，預設以密碼加密，也可選擇未加密，將帳號、私人行事曆與裝置設定搬到新主機或 HA App，詳見[備份與搬家](doc/guide.md#完整備份與搬家)。
 
 時鐘會先顯示時間、日期與星期；已載入且在前景執行時，連線、瀏覽器儲存或附加功能失敗不應讓它停住。裝置管理可命名、查看自報能力與同步確認狀態；群組、六碼加入、逐台授權、移組、停用／恢復與刪除授權已提供；managed 模式由主機端明確啟用，既有安裝預設維持 self。操作與限制見[使用指南](doc/guide.md#裝置同步狀態)，目前驗證與待辦見 [A 階段驗收紀錄](doc/phase-a-acceptance.md) / [B 階段群組與授權驗收](doc/phase-b-acceptance.md)；CI 與 iPad mini 1／iOS 9 實機驗收狀態分開記錄。
 
