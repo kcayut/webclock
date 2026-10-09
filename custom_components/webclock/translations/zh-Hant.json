@@ -16,6 +16,14 @@
         "data": {
           "join_code": "加入碼"
         }
+      },
+      "reconfigure": {
+        "title": "變更伺服器位址",
+        "description": "輸入新的伺服器位址及新的加入碼。保留 Home Assistant 裝置、實體與卡片，並建立新的 WebClock 裝置身份；程式寫入憑證會清除。舊伺服器離線時，請手動移除舊裝置。",
+        "data": {
+          "server_url": "伺服器位址",
+          "join_code": "加入碼"
+        }
       }
     },
     "error": {
@@ -29,7 +37,9 @@
     },
     "abort": {
       "already_configured": "已完成設定",
-      "reauth_successful": "已重新授權"
+      "reauth_successful": "已重新授權",
+      "reconfigure_successful": "伺服器位址已更新。如需程式寫入，請在選項重新設定憑證。",
+      "reconfigure_successful_cleanup_required": "伺服器位址已更新，但無法移除舊裝置，請到舊 WebClock 管理頁手動移除。如需程式寫入，請在選項重新設定憑證。"
     }
   },
   "options": {

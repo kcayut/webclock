@@ -20,9 +20,9 @@
         return {mode: target.value, primary_owner_id: primary.value, password: document.getElementById('mode-password').value,
             username: username ? username.value : undefined, confirm_shared: document.getElementById('mode-confirm').checked};
     }
-    function invalidate() { preview = null; apply.disabled = true; document.getElementById('mode-preview').textContent = ''; }
+    function invalidate() { preview = null; if (apply) apply.disabled = true; renderPreview(); }
     function renderPreview() {
-        var box = document.getElementById('mode-preview'); box.textContent = '';
+        var box = document.getElementById('mode-preview'); if (!box) return; box.textContent = '';
         if (!preview) return;
         preview.spaces.forEach(function (space) {
             var row = document.createElement('article'), title = document.createElement('strong'), details = document.createElement('p');
@@ -61,9 +61,9 @@
             apply.disabled = busy || !preview || (target.value === 'self' && !event.target.checked);
         } else invalidate();
     }
-    form.addEventListener('input', changed);
-    form.addEventListener('change', changed);
-    form.onsubmit = function (event) {
+    if (form) form.addEventListener('input', changed);
+    if (form) form.addEventListener('change', changed);
+    if (form) form.onsubmit = function (event) {
         event.preventDefault(); if (busy) return; invalidate(); busy = true;
         var sent = JSON.stringify(input());
         request('/api/mode/preview', 'POST', input()).then(function (data) {
@@ -73,7 +73,7 @@
             setStatus('ready');
         }).catch(function (error) { setStatus(error.message); }).finally(function () { busy = false; });
     };
-    apply.onclick = function () {
+    if (apply) apply.onclick = function () {
         if (busy || !preview) return;
         busy = true; apply.disabled = true;
         var data = input(); data.revision = preview.revision; data.generation = preview.generation;
@@ -88,8 +88,11 @@
         request('/api/accounts', 'POST', {username: document.getElementById('account-name').value,
             password: document.getElementById('account-password').value}).then(function (result) {
             accounts.push(result.account); renderAccounts(); create.reset(); invalidate();
-            var option = document.createElement('option'); option.value = result.account.owner_id;
-            option.textContent = result.account.username; primary.appendChild(option); setStatus('created');
+            if (primary) {
+                var option = document.createElement('option'); option.value = result.account.owner_id;
+                option.textContent = result.account.username; primary.appendChild(option);
+            }
+            setStatus('created');
         }).catch(function (error) { setStatus(error.message); }).finally(function () { busy = false; });
     };
     window.applyManagementLanguage = function () {

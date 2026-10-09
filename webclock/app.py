@@ -51,6 +51,10 @@ NOTES_FILE = os.getenv('NOTES_FILE', str(STATE_DIR / 'manual_notes.json'))
 SETTINGS_FILE = str(STATE_DIR / 'settings.json')
 CACHE_DURATION = 300
 
+# Finish an interrupted portable restore before reading authorization or data.
+from webclock.services import portable_backup
+portable_backup.recover(STATE_DIR, Path(NOTES_FILE))
+
 app = Flask(__name__, root_path=str(ROOT))
 app.wsgi_app = IngressPathMiddleware(app.wsgi_app)
 _auth_services = {}
@@ -1503,6 +1507,61 @@ from webclock.api.control import register_control
 register_control(app, content_directory, auth_service, group_service, group_owner,
                  template_context, get_calendar_sources, lambda **query: get_calendar_events(**query), holiday_service,
                  credential_directory=lambda: Path(SETTINGS_FILE).parent)
+
+
+def validate_backup_content(files):
+    if 'calendar.json' not in files:
+        raise ValueError('Missing portable calendar settings')
+    access = files.get('device-access.json', {})
+    for name, data in files.items():
+        if name.rsplit('/', 1)[-1] == 'manual_notes.json':
+            if not isinstance(data, list) or len(data) > 1000:
+                raise ValueError('Invalid reminders')
+            notes = [validate_note(row) for row in data]
+            ids = [row.get('id') for row in notes]
+            if any(type(value) is not int or value < 1 for value in ids) or len(set(ids)) != len(ids):
+                raise ValueError('Invalid reminder IDs')
+            owner = name.split('/')[1] if name.startswith('owners/') else files['auth.json']['data_owner_id']
+            for note in notes:
+                for key, collection in (('group_ids', 'groups'), ('device_ids', 'devices')):
+                    for target in note.get('announcement_targets', {}).get(key, []):
+                        row = access.get(collection, {}).get(target)
+                        if row and row['owner_id'] != owner:
+                            raise ValueError('Announcement target belongs to another account')
+        elif name.rsplit('/', 1)[-1] == 'calendar.json':
+            if not isinstance(data, dict):
+                raise ValueError('Invalid calendar settings')
+            if 'sources' not in data:
+                if set(data) != {'url'}:
+                    raise ValueError('Invalid legacy calendar settings')
+                normalize_calendar_url(data['url'])
+                continue
+            if (set(data) - {'sources', 'local_display_enabled', 'calendar_targets'}
+                    or type(data.get('local_display_enabled', True)) is not bool):
+                raise ValueError('Invalid calendar settings')
+            sources = validate_calendar_sources(data['sources'])
+            validate_display_targets(data.get('calendar_targets', []),
+                                     {row['id'] for row in sources} | {NATIVE_CALENDAR_SOURCE})
+            prefix = name[:-len('calendar.json')]
+            if (any(row['id'] == NATIVE_CALENDAR_SOURCE for row in sources)
+                    and files.get(prefix + 'events.json')):
+                raise ValueError('Calendar source conflicts with native events')
+
+
+def refresh_restored_state():
+    _auth_services.clear()
+    calendar_feed_cache.clear()
+    display_settings.clear()
+    display_settings.update(load_display_settings(Path(SETTINGS_FILE)))
+    g.owner_id = None
+    g.deployment_mode = auth_service().mode()
+    g.auth_generation = auth_service().state()['generation']
+    app.secret_key = auth_service().session_secret()
+
+
+from webclock.api.backup import register_backup
+register_backup(app, auth_service, lambda: NOTES_FILE, lambda: {'url': ICAL_URL},
+                validate_backup_content, refresh_restored_state, lambda: DEFAULT_SETTINGS)
 
 
 def main():

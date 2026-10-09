@@ -18,8 +18,9 @@
 <section data-management-panel="mode" class="is-current">
     <h1 data-mode-text="title">{{ mode_text.title }}</h1>
     <p data-mode-text="{{ mode }}">{{ mode_text[mode] }}</p>
-    <p data-mode-text="hint">{{ mode_text.hint }}</p>
     <p id="mode-status" role="status" aria-live="polite"></p>
+    {% if mode_switch_available %}
+    <p data-mode-text="hint">{{ mode_text.hint }}</p>
     <form id="mode-form" class="panel" data-mode="{{ mode }}">
         <label for="mode-target" data-mode-text="target">{{ mode_text.target }}</label>
         <select id="mode-target">
@@ -43,6 +44,7 @@
             <button id="mode-apply" type="button" class="primary" disabled data-mode-text="apply">{{ mode_text.apply }}</button></div>
         <div id="mode-preview" aria-live="polite"></div>
     </form>
+    {% endif %}
     {% if mode == 'managed' %}
     <section class="panel"><h2 data-mode-text="accounts">{{ mode_text.accounts }}</h2>
         <div id="accounts-list"></div>

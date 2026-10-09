@@ -16,6 +16,14 @@
         "data": {
           "join_code": "参加コード"
         }
+      },
+      "reconfigure": {
+        "title": "サーバーアドレスを変更",
+        "description": "新しいサーバーアドレスと新しい参加コードを入力してください。Home Assistant のデバイス、エンティティ、カードは保持され、WebClock には新しいデバイスが作成されます。プログラム書き込み認証情報は削除されます。旧サーバーがオフラインの場合は、旧デバイスを手動で削除してください。",
+        "data": {
+          "server_url": "サーバーアドレス",
+          "join_code": "参加コード"
+        }
       }
     },
     "error": {
@@ -29,7 +37,9 @@
     },
     "abort": {
       "already_configured": "設定済みです",
-      "reauth_successful": "再認証が完了しました"
+      "reauth_successful": "再認証が完了しました",
+      "reconfigure_successful": "サーバーアドレスを更新しました。書き込みが必要な場合は、オプションで認証情報を再設定してください。",
+      "reconfigure_successful_cleanup_required": "サーバーアドレスを更新しましたが、旧デバイスを削除できませんでした。旧 WebClock の管理画面で手動で削除してください。書き込みが必要な場合は、オプションで認証情報を再設定してください。"
     }
   },
   "options": {

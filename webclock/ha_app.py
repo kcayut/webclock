@@ -1,5 +1,6 @@
 """Run separate Home Assistant Ingress and LAN display listeners."""
 import os
+from socket import gethostname
 from threading import Thread
 
 from werkzeug.serving import make_server
@@ -17,6 +18,7 @@ def main():
         raise
     worker = Thread(target=ingress.serve_forever, daemon=True)
     worker.start()
+    print(f'Home Assistant integration URL: http://{gethostname()}:{display.server_port}', flush=True)
     try:
         display.serve_forever()
     finally:

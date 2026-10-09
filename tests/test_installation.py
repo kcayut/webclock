@@ -121,7 +121,7 @@ exec "$REAL_PYTHON" "$@"
         script = ROOT / 'scripts/prepare_ha_app.sh'
         result = subprocess.run(['bash', str(script), str(destination)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name in ('config.yaml', 'Dockerfile', 'app.py', 'sw.js', 'requirements.txt',
+        for name in ('config.yaml', 'Dockerfile', 'DOCS.md', 'CHANGELOG.md', 'icon.png', 'app.py', 'sw.js', 'requirements.txt',
                      'webclock/ha_app.py', 'templates/index.html', 'static/clock.js'):
             self.assertTrue((destination / name).is_file(), name)
         self.assertNotIn('\nimage:', (destination / 'config.yaml').read_text())
@@ -134,6 +134,22 @@ exec "$REAL_PYTHON" "$@"
         result = subprocess.run(['bash', str(script), 'relative-app'], cwd=self.root, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.root / 'relative-app/config.yaml').is_file())
+
+    def test_hacs_download_is_a_self_contained_integration(self):
+        hacs = json.loads((ROOT / 'hacs.json').read_text())
+        self.assertEqual(hacs['name'], 'WebClock')
+        self.assertTrue(hacs['homeassistant'])
+        components = ROOT / 'custom_components'
+        self.assertEqual([p.name for p in components.iterdir() if p.is_dir() and not p.name.startswith('__')], ['webclock'])
+        component = components / 'webclock'
+        manifest = json.loads((component / 'manifest.json').read_text())
+        self.assertEqual(manifest['domain'], 'webclock')
+        self.assertTrue(manifest['config_flow'])
+        for name in ('__init__.py', 'config_flow.py', 'sensor.py', 'strings.json', 'services.yaml',
+                     'www/webclock-cards.js', 'brand/icon.png',
+                     'translations/en.json', 'translations/zh-Hant.json', 'translations/ja.json'):
+            self.assertTrue((component / name).is_file(), name)
+        self.assertFalse((ROOT / 'homeassistant/custom_components').exists())
 
     def test_http_tls_and_incomplete_tls_configuration(self):
         for values, expected in (({}, None), ({'WEBCLOCK_TLS_CERT': 'cert.pem', 'WEBCLOCK_TLS_KEY': 'key.pem'}, ('cert.pem', 'key.pem'))):

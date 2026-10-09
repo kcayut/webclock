@@ -13,7 +13,9 @@
 | [免 Server：線上／離線時鐘](#no-server) | 只想看時間的平板或電腦 | 開啟網頁；電腦也可下載 ZIP 後直接使用 | [GitHub 線上時鐘](https://kcayut.github.io/webclock/) |
 | [Bare metal](#bare-metal)：直接安裝 | Raspberry Pi OS、Debian、Ubuntu，使用 systemd | `bash setup.sh` | `http://主機IP:5000` |
 | [Docker](#docker) | 已安裝 Docker Compose 的電腦、NAS、Linux | `bash setup.sh --docker` | `http://主機IP` |
-| [Home Assistant](#home-assistant) | 有 App 商店的 HA OS，amd64／aarch64 | `bash scripts/prepare_ha_app.sh`，再到 App 商店安裝 | HA 側邊欄／開啟網頁介面 |
+| [Home Assistant](#home-assistant) | 有 App 商店的 HA OS，amd64／aarch64 | 加入 App 來源 → 安裝 WebClock | HA 側邊欄／開啟網頁介面 |
+
+三種方式只決定 **Server 跑在哪裡**，選一種即可。要在 HA 儀表板顯示，再[安裝 WebClock 整合](home-assistant.md#安裝整合)，輸入 Server 位址與六碼；時間、行事曆、鬧鐘卡片會一起提供，不必分別安裝。
 
 以下授權模式只適用自行架設；公開版與下載的靜態時鐘不需選擇 self／managed。
 
@@ -21,7 +23,7 @@
 | --- | --- | --- |
 | **self（自用，預設）** | 一般安裝即可，不加參數 | 可信任區網內直接開啟 `/admin`；不要求 WebClock 管理員登入 |
 | **managed（受管）** | 全新 Linux／Docker 安裝加 `--managed`，並[設定 HTTPS](#https) | 管理員登入後管理；每台顯示端用六碼加入群組，取得自己的授權 |
-| **Home Assistant App** | 安裝後從 HA 開啟 | WebClock 保持 self，由 HA 登入與 Ingress 保護管理入口；區網顯示仍須六碼加入，與 WebClock managed 模式不同 |
+| **Home Assistant App** | 安裝後從 HA 開啟；搬家可匯入完整備份 | 預設 self，由 HA 登入與 Ingress 保護；匯入 managed 備份後保留原 WebClock 帳號登入與裝置配對 |
 
 模式保存在私人資料目錄的 `auth.json`，**不是 `.env` 中的開關**。已有管理員的安裝可在 [`/mode` 雙向切換](#mode-switch)，第一次建立管理員也可使用[主機一次性設定碼](#web-setup)。一般安裝與更新保留原模式；不要刪除 `auth.json`／`auth-required`。self 的管理頁不適合直接開放至 Internet。
 
@@ -135,33 +137,52 @@ WEBCLOCK_HTTP_PORT=8080 bash setup.sh --docker
 <a id="home-assistant"></a>
 ## 3. Home Assistant
 
-**目前提供本機 App 建置流程；加入 GitHub 儲存庫後的預建映像安裝尚未驗證。** 專案的 App 設定仍指向預建映像；此流程會準備完整原始碼並移除本機設定中的 `image`，由 HA 在自己的主機上建置，不依賴該映像先發布。
+**HA OS 使用者：加入來源、安裝、啟動即可，不需要 SSH、Git 或手動複製 Server。** 適用 amd64／aarch64。HA Container／單獨 Core 請用前面的 bare metal／Docker 架設 Server，再安裝相同的整合與卡片。
 
-前提：有 App 商店的 HA OS、amd64 或 aarch64。從可讀寫 `/addons` 的 Terminal／SSH App 執行，需有 Git 與 Bash。HA Container／單獨 Core 沒有 App 商店，請用前面的 bare metal／Docker 架設 Server，再安裝[自訂整合](home-assistant.md#安裝整合)。
+> **發行狀態：**本版已備妥商店與映像發行設定；首次公開映像發布、HA OS 安裝及實機驗收仍待完成。映像尚未發布前，商店安裝入口不能視為可用；開發測試可使用下方本機建置。
 
-**一行準備 App：**
+1. **[將 WebClock 加入 HA App 商店](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkcayut%2Fwebclock)**。首次使用按鈕時，輸入你自己的 HA 網址，再確認加入來源。
+2. 在商店選 **WebClock → 安裝 → 啟動**，開啟「開機啟動」與「顯示於側邊欄」。
+3. 按 **開啟網頁介面** 設定行事曆、提醒與群組。需要儀表板卡片，再[安裝整合](home-assistant.md#安裝整合)。
+
+按鈕無法開啟時，在 HA 的 **設定 → Apps → App 商店 → 右上選單 → 儲存庫**，貼上 `https://github.com/kcayut/webclock`；儲存後「檢查更新」。舊版介面可能稱為「附加元件」。
+
+- **管理頁：**經由 HA Ingress 的 `8099`，不對區網開放。新安裝使用 HA 登入；匯入 managed 備份後，還須使用原 WebClock 帳密登入。
+- **外部時鐘：**需要時，在 App「網路」將 `8100/tcp` 對應至主機的 `8100`，開啟 `http://HA主機IP:8100`，用管理頁產生的六碼加入。此入口不提供管理頁。
+- **HA 儀表板：**再安裝[自訂整合](home-assistant.md#安裝整合)。App 啟動後，在「日誌」複製 `Home Assistant integration URL:` 後面的網址，填入整合的 Server 欄位；同機連線不必開放主機連接埠。
+- **資料：**保存在 App 的 `/data`；HA 冷備份保存整個 App，管理頁加密完整備份則用於跨主機搬家。
+
+**從 bare metal／Docker 搬進 App，只需一個完整備份檔：**
+
+1. 舊 Server「備份與還原」設定至少 12 字元的備份密碼，下載 `.webclock` 檔。
+2. 新 App「開啟網頁介面」→「備份與還原」，選檔、輸入備份密碼、預覽資料數量。
+3. 停止舊 Server，確認是最後匯出的檔案，再確認取代並還原。managed 使用原 WebClock 帳密登入，所有帳號及私人行事曆一併保留。
+
+全新目標保留裝置與程式憑證；已有資料的目標會撤銷兩者，須重新加入／建立。原瀏覽器裝置要接續，須沿用相同 HTTPS 網域、協定與連接埠；備份不設定 TLS／DNS、不搬移瀏覽器本機資料，也不覆寫 App options。範圍與失敗復原見[完整備份指南](guide.md#完整備份與搬家)。
+
+App 支援匯入 managed 備份，HA 登入不會替代原 WebClock 帳號。新 App 仍預設 self，不提供 `/mode` 切換或首次 managed 啟用；不要自行修改 `/data/auth.json`。HA 專用顯示通道維持管理路徑隔離與逐台憑證檢查，普通 bare metal／Docker 的 managed HTTPS 要求不變。
+
+<details>
+<summary>開發測試／尚未發布的版本：本機建置</summary>
+
+從可讀寫 `/addons` 的 Terminal／SSH App 執行，需有 Git 與 Bash：
 
 ```bash
 git clone https://github.com/kcayut/webclock.git && cd webclock && bash scripts/prepare_ha_app.sh
 ```
 
-接著在 HA：**設定 → Apps → App 商店 → 右上選單「檢查更新」→ Local apps → WebClock → 安裝 → 啟動 → 開啟網頁介面**。舊版介面可能稱為「附加元件」。這裡仍需 HA 商店完成安裝；準備指令本身不會啟動 Server。
+接著在 App 商店「檢查更新」→ **Local apps → WebClock → 安裝 → 啟動**。腳本只準備檔案，不會啟動 Server；會移除產物的 `image` 設定，讓 HA 自行建置。
 
-無法使用 SSH 時，可在另一台有 Bash 的電腦、專案根目錄執行 `bash scripts/prepare_ha_app.sh /tmp/webclock-ha-app`，再透過 Samba 把產物資料夾複製為 HA 的 `addons/webclock`。目的地已存在時腳本會停止，不會覆蓋。
+也可在另一台電腦的專案根目錄執行 `bash scripts/prepare_ha_app.sh /tmp/webclock-ha-app`，再透過 Samba 把產物複製為 HA 的 `addons/webclock`。目的地已存在時會停止，不會覆蓋。Local App 和商店 App 是不同安裝，資料不會自動搬移；可用上述完整加密備份搬到新 App，確認新 App 正常後才退役舊安裝。只更新既有 Local App 者依下方本機更新流程操作。
 
-- **管理頁：**經由 HA Ingress 的 `8099`，不對區網開放。直接使用 HA 登入，不需另建 WebClock 管理員。
-- **外部時鐘：**需要時，在 App「網路」將 `8100/tcp` 對應至主機的 `8100`，開啟 `http://HA主機IP:8100`，用管理頁產生的六碼加入。此入口不提供管理頁。
-- **HA 儀表板：**App 與自訂整合是兩個步驟；需要時間／行事曆／鬧鐘卡片，再安裝[自訂整合](home-assistant.md#安裝整合)，Server 填 `http://webclock:8100`。
-- **資料：**保存在 App 的 `/data`，由 HA 冷備份保存。
+</details>
 
-**App 目前不提供 WebClock managed 的啟用選項。** 它使用「HA 登入 + Ingress 管理 + 個別裝置加入」流程；不要在 App 內直接執行 `--enable-managed`，否則 HTTP 裝置通道與 Ingress 的登入流程不符合 managed 的 HTTPS 要求。需要 WebClock 獨立管理員登入時，使用 bare metal／Docker managed + HTTPS，HA 自訂整合連到該 HTTPS Server。
-
-本機 App 流程依據 [HA 官方安裝教學](https://developers.home-assistant.io/docs/apps/tutorial/)與[本機建置說明](https://developers.home-assistant.io/docs/apps/testing/)。App 實際建置、HA OS 安裝與實機驗收仍需在目標主機確認。
+發行與驗收狀態見 [HA 發行說明](ha-release.md)。官方依據：[App 來源](https://developers.home-assistant.io/docs/apps/repository/)、[預建映像](https://developers.home-assistant.io/docs/apps/publishing/)與[本機建置](https://developers.home-assistant.io/docs/apps/testing/)。
 
 <a id="https"></a>
 ## managed 必要的 HTTPS 設定
 
-managed 的管理員登入與裝置加入／同步都拒絕 HTTP。`--managed` 只建立授權資料，**不會申請網域、取得憑證或自動設定 HTTPS**。
+自行架設的 managed 管理員登入與裝置加入／同步都拒絕 HTTP；HA App 使用經驗證的 Ingress 管理入口與獨立裝置通道。`--managed` 只建立授權資料，**不會申請網域、取得憑證或自動設定 HTTPS**。
 
 最直接的方式是讓 WebClock 自己使用已有的憑證。請準備與使用網址相符、且所有顯示裝置信任的憑證與私鑰；自簽憑證需先在各裝置信任，不能靠略過驗證代替。
 
@@ -223,21 +244,21 @@ docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state
 
 要在網頁輸入第一位管理員的帳密，可先在主機發出設定碼。已有管理員時不能再發碼或重新綁定；改用[密碼復原](#account-recovery)。先完成 HTTPS、停止寫入並建立完整備份，再選擇下列指令。
 
+以下指令使用預設資料目錄。自訂安裝須將 `--state-dir` 換成服務實際使用的路徑；Docker 填容器內的掛載路徑。發碼失敗時保持服務停止，排除問題後再重試。
+
 **Bare metal，於安裝目錄執行：**
 
 ```bash
 sudo systemctl stop webclock
 service_user="$(systemctl show webclock --property=User --value)"
-sudo -u "${service_user:-root}" ./venv/bin/python scripts/manage_auth.py --state-dir "$PWD/webclock_state" setup-code
-sudo systemctl start webclock
+sudo -u "${service_user:-root}" ./venv/bin/python scripts/manage_auth.py --state-dir "$PWD/webclock_state" setup-code && sudo systemctl start webclock
 ```
 
 **Docker，使用現有掛載：**
 
 ```bash
 docker compose stop
-docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state setup-code
-docker compose up -d
+docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state setup-code && docker compose up -d
 ```
 
 開啟 `https://你的主機名稱/setup`，貼上終端機顯示的設定碼，輸入帳號與至少 12 字元的密碼。成功後進入 managed，再到 `/login` 登入。設定碼預設 10 分鐘到期、只可使用一次；主機可加 `--expires-in 300` 改為 5 分鐘，有效範圍為 1 至 3600 秒。重新發碼會使前一個碼失效；碼不由匿名 API 發放，請勿貼到公開訊息或日誌。
@@ -263,7 +284,7 @@ managed 的 `/mode` 也提供成員建立、停用／啟用及刪除；self 不�
 
 預設模式備份位於狀態目錄**旁邊**的 `.webclock-mode-backups-<狀態目錄名稱>/<備份ID>/`。例如預設安裝是專案內的 `.webclock-mode-backups-webclock_state/`；目錄權限為 `700`，manifest 為 `600`。備份未加密，內含私人網址與帳號資料，請限制存取並定期另存至安全位置。
 
-可用 `WEBCLOCK_MODE_BACKUP_DIR=/獨立/私人/備份目錄` 指定模式備份父目錄；服務帳號必須能建立與寫入該處；已存在的父目錄須為 `700`，伺服器不會改動其他既有目錄權限。它不能在任何資料根目錄內，也不能包含資料根目錄。Docker 必須把該路徑另行掛載至持久儲存，容器內的路徑與主機路徑要分別核對。Home Assistant App 仍使用 HA 登入與 `/data` 冷備份，不提供 WebClock managed 切換；勿直接改 App 的模式或將備份放進 `/data` 裡造成遞迴。
+可用 `WEBCLOCK_MODE_BACKUP_DIR=/獨立/私人/備份目錄` 指定模式備份父目錄；服務帳號必須能建立與寫入該處；已存在的父目錄須為 `700`，伺服器不會改動其他既有目錄權限。它不能在任何資料根目錄內，也不能包含資料根目錄。Docker 必須把該路徑另行掛載至持久儲存，容器內的路徑與主機路徑要分別核對。Home Assistant App 可匯入 `.webclock` 完整備份並保留 managed 帳號，但仍不提供模式切換；HA 冷備份用於整個 App 復原。勿直接改 App 的模式或把主機目錄備份放進資料目錄造成遞迴。
 
 需要回復模式切換前的完整狀態時，在安裝目錄先停止全部寫入者，再還原選定副本。以下為預設 bare metal 路徑，`<備份ID>` 換成實際目錄名稱，還原前副本必須是全新路徑：
 
@@ -281,16 +302,15 @@ sudo ./venv/bin/python scripts/backup_clock.py restore "$PWD/.webclock-mode-back
 <a id="account-recovery"></a>
 ## 管理員密碼復原
 
-停止全部寫入者後，用服務帳號執行主機復原；預設復原原管理員，可加 `--username 帳號` 選擇另一位現有 admin：
+停止全部寫入者後，用服務帳號執行主機復原；預設復原原管理員，可加 `--username 帳號` 選擇另一位現有 admin。以下使用預設資料目錄，自訂安裝須將 `--state-dir` 換成服務實際使用的路徑；復原失敗時保持停止，排除問題後再重試：
 
 ```bash
 sudo systemctl stop webclock
 service_user="$(systemctl show webclock --property=User --value)"
-sudo -u "${service_user:-root}" ./venv/bin/python scripts/manage_auth.py --state-dir "$PWD/webclock_state" reset-password
-sudo systemctl start webclock
+sudo -u "${service_user:-root}" ./venv/bin/python scripts/manage_auth.py --state-dir "$PWD/webclock_state" reset-password && sudo systemctl start webclock
 ```
 
-Docker 改以停止後的 `docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state reset-password` 執行，再 `docker compose up -d`。密碼互動輸入，不放在命令列。復原保留帳號身分、目前模式與主要使用者，並使舊登入 session 失效；獨立程式憑證須在「程式存取」另外撤銷，不會重建替代帳號。
+Docker 改以停止後的 `docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state reset-password && docker compose up -d` 執行；自訂掛載須換成實際容器內路徑。密碼互動輸入，不放在命令列。復原保留帳號身分、目前模式與主要使用者，並使舊登入 session 失效；獨立程式憑證須在「程式存取」另外撤銷，不會重建替代帳號。
 
 ## 其他設定與手動執行
 
@@ -311,10 +331,13 @@ python3 -m venv venv && ./venv/bin/python -m pip install -r requirements.txt && 
 
 | 環境 | 更新／確認 |
 | --- | --- |
-| Bare metal（HTTP） | 安裝目錄執行 `sudo bash update_clock.sh`；`systemctl status webclock` 查看服務 |
+| Bare metal（HTTP／HTTPS） | 安裝目錄執行 `sudo bash update_clock.sh`（root 不加 `sudo`）；`systemctl status webclock` 查看服務 |
 | Docker | 備份後取得新版原始碼，再 `docker compose up -d --build`；`docker compose logs --tail=50` 查看啟動結果 |
+| HA 商店 App | HA 顯示新版後，在 App 頁先建立備份，再按「更新」；不要移除 App |
 | HA 本機 App | 先做 HA 備份；用新版原始碼產生至新的暫存目錄，核對後替換 `/addons/webclock` 的程式檔，再於 App 頁重建／啟動；不要移除 App 或 `/data` |
 
-目前 Linux 安全更新器的健康檢查只支援 HTTP；原生 HTTPS 安裝不適用這個一行更新指令，需另外安排停止服務、完整備份、程式與相依套件更新、啟動及 HTTPS 驗證，保留可還原版本。不要為更新刪除授權資料或切回 self。
+原生 HTTPS 同樣可用安全更新器。若憑證只包含網域名稱，在 `.env` 加上 `WEBCLOCK_UPDATE_HOST=clock.example`，換成憑證上的名稱；使用私有 CA 時另設 `WEBCLOCK_UPDATE_CA=/絕對路徑/ca.pem`。更新器仍連本機服務位址，只用該名稱驗證 TLS；不會略過憑證驗證或跟隨重新導向。憑證已包含本機檢查 IP 時無須加主機名。更新前、更新後及失敗還原都使用相同設定；不要為更新刪除授權資料或切回 self。
 
-開啟 `/api/health` 可確認服務與授權模式；managed 安裝應回報 `deployment_mode: managed`。HA App 的儲存模式仍是 self，管理入口由 HA 保護。程序啟動不代表容器、Raspberry Pi、HA OS 或 iPad mini 1／iOS 9 已完成實機驗收。
+舊版更新器若顯示「Native HTTPS is not supported」，先備份並使用新版的[獨立更新入口](guide.md#更新程式)：將入口存到安裝目錄外，從已 fetch 的上游載入新版更新器。不要直接覆蓋安裝目錄中的更新器，或先 `git pull` 改動整套程式；安全更新需要保留原版本供失敗還原。
+
+開啟 `/api/health` 可確認服務與授權模式；managed 安裝應回報 `deployment_mode: managed`。HA App 新安裝為 self；匯入 managed 備份後應回報 managed，管理入口仍經 HA Ingress 並要求原 WebClock 登入。程序啟動不代表容器、Raspberry Pi、HA OS 或 iPad mini 1／iOS 9 已完成實機驗收。

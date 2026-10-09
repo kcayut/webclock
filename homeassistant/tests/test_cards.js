@@ -20,7 +20,7 @@ const context = {HTMLElement: Element, Intl, Date, Number, JSON, performance: {n
   window: {}, document: {createElement: tag => new Element(tag)},
   customElements: {define: (name, cls) => registry.set(name, cls), get: name => registry.get(name)},
   setInterval: () => { intervalCount++; return intervalCount; }, clearInterval: () => { intervalCount--; }};
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../custom_components/webclock/www/webclock-cards.js'), 'utf8'), context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../custom_components/webclock/www/webclock-cards.js'), 'utf8'), context);
 const stamp = Date.parse('2026-10-06T23:59:58Z');
 const hass = {states: {}, callWS: async () => ({server_timestamp: stamp})};
 function card(kind, suffix = kind) {

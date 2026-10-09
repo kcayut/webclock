@@ -17,7 +17,7 @@ iPad、タブレット、使っていない画面を大きな時計にできま�
 - **オフライン時計をダウンロード：**パソコンで [ZIP をダウンロードして展開](doc/installation.md#offline-download)し、一番外側の `index.html` をブラウザーで開きます。サーバーのインストールは不要です。タブレットは[オフラインキャッシュと iOS 9 の制限](doc/installation.md#offline-cache)を参照してください（繁体字中国語）。
 - **セルフホスト：**パソコン、NAS、Raspberry Pi で完全版を実行します。`/admin` で表示・カレンダー・文字リマインダーを、`/schedules` でアラームと端末状態を管理します。
 
-セルフホスト版の UI は繁体字中国語、英語、日本語に対応しています。Google、Apple iCloud、その他の ICS カレンダーを購読できます。カレンダー URL はサーバー内に保存され、公開時計、状態応答、管理画面の JSON 出力には含まれません。ホスト側の完全バックアップには非公開データも含まれます。
+セルフホスト版の UI は繁体字中国語、英語、日本語に対応し、Google、Apple iCloud、その他の ICS カレンダーを購読できます。非公開 URL は公開時計、状態応答、旧 JSON 出力には含まれません。管理画面から暗号化した `.webclock` ファイルを保存し、アカウント・非公開カレンダー・端末設定を新サーバーや HA App に移行できます。[バックアップと移行](doc/guide.md#完整備份與搬家)（繁体字中国語）を参照してください。
 
 時計は時刻・日付・曜日を先に表示し、読み込み済みで前面実行中のページは通信・保存領域・追加機能の失敗で停止しない設計です。端末管理では名前、自報能力、同期確認状態を扱えます。グループ、6文字の参加コード、端末別認可、移動、無効化・再開、取り消しに対応します。managedモードはホスト側で明示的に有効化し、既存環境は既定でselfを維持します。操作と制限は[ガイド](doc/guide_jp.md#端末同期状態)、現在の検証と未実施項目は [A 段階の検収記録](doc/phase-a-acceptance.md) / [B 段階のグループ・認証検証](doc/phase-b-acceptance.md)（繁体字中国語）を参照してください。CI と iPad mini 1／iOS 9 の実機検収は分けて記録します。
 
@@ -27,13 +27,15 @@ iPad、タブレット、使っていない画面を大きな時計にできま�
 | --- | --- |
 | **Bare metal** | Raspberry Pi OS、Debian、Ubuntu。systemd による自動起動 |
 | **Docker** | Docker Compose が使えるパソコン、NAS、Linux |
-| **Home Assistant** | HA OS のローカル App。管理は HA サイドバー、カードは別途カスタム統合を導入 |
+| **Home Assistant** | HA OS に App リポジトリを追加してインストール。統合と同梱カードは HACS で導入 |
+
+**[HA App をインストール](doc/installation.md#home-assistant)** · **[HA 統合とカードをインストール](doc/home-assistant.md#安裝整合)**
 
 **[インストールガイドへ →](doc/installation.md)**（繁体字中国語）：3 種類の手順、前提条件、self／managed の有効化、HTTPS 設定をまとめています。
 
 **[端末を時計として使う →](doc/display-devices.md)**（繁体字中国語）：iPad／iPhone、Android、Windows、Mac のホーム画面アイコン、全画面表示、スリープ防止をバージョン別に説明。初代 iPad mini／iOS 9 も含みます。
 
-Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` を追加し、HTTPS を設定します。HA App は HA ログインで管理画面を保護し、WebClock managed モードとは異なります。現在の手順はローカルビルド方式です。ビルド済み App イメージからの直接インストールは未検証です。
+Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` を追加し、HTTPS を設定します。HA App は HA ログインで管理画面を保護し、managed 完全バックアップを読み込んだ場合は元の WebClock アカウントでもログインします。初回イメージの公開と HA OS 実機検証はまだ完了していません。[リリース状況](doc/ha-release.md)を確認してください。開発用のローカルビルドも利用できます。
 
 **詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [Home Assistant 統合とカード](doc/home-assistant.md) · [端末 API](doc/server-api_jp.md) · [ESPHome 開発](doc/esp-home.md) · [ファームウェア](firmware/README.md)（HA・ファームウェア関連は繁体字中国語）。
 

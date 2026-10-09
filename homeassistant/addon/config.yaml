@@ -1,5 +1,5 @@
 name: WebClock
-version: "0.1.0"
+version: "1.1.0"
 slug: webclock
 description: Run WebClock Server inside Home Assistant
 url: https://github.com/kcayut/webclock
@@ -16,8 +16,6 @@ ingress_entry: /admin
 panel_title: WebClock
 panel_icon: mdi:clock-digital
 panel_admin: true
-aliases:
-  - webclock
 ports:
   8100/tcp: null
 ports_description:

@@ -3,6 +3,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
+from webclock.auth import client_transport_allowed
 from webclock.csrf import same_origin
 from webclock.services.auth_service import AuthStateError
 from webclock.services.device_access_service import AccessError
@@ -83,7 +84,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         g.device_bearer_authenticated = False
         if not same_origin():
             raise AccessError('Cross-origin device access is forbidden', 403, 'cross_origin_forbidden')
-        if auth_provider().mode() == 'managed' and not request.is_secure:
+        if auth_provider().mode() == 'managed' and not client_transport_allowed():
             raise AccessError('HTTPS is required for device access', 403, 'https_required')
         authorization = request.headers.get('Authorization')
         if request.endpoint in NATIVE_ENDPOINTS:
@@ -162,7 +163,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         response.status_code = 201 if result['created'] else 200
         if result['token'] is not None:
             response.set_cookie(DEVICE_COOKIE, result['token'], max_age=COOKIE_SECONDS,
-                secure=auth_provider().mode() == 'managed', httponly=True, samesite='Lax',
+                secure=request.is_secure, httponly=True, samesite='Lax',
                 path=cookie_path())
         return response
 
@@ -188,7 +189,7 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
         access_provider().leave(g.device_token, owner())
         response = jsonify(status='left')
         response.delete_cookie(DEVICE_COOKIE, path=cookie_path(),
-                              secure=auth_provider().mode() == 'managed', httponly=True, samesite='Lax')
+                              secure=request.is_secure, httponly=True, samesite='Lax')
         return response
 
     def scoped_response(provider):

@@ -38,6 +38,17 @@ def current_owner(service):
     return service.authenticate(session.get('admin_token'))
 
 
+def management_transport_allowed():
+    """HA Ingress authenticates its proxy before accepting the browser origin."""
+    return request.is_secure or (os.getenv('WEBCLOCK_HA_APP') == '1'
+                                 and request.environ.get('webclock.surface') == 'ingress')
+
+
+def client_transport_allowed():
+    return management_transport_allowed() or (os.getenv('WEBCLOCK_HA_APP') == '1'
+                                              and request.environ.get('webclock.surface') == 'display')
+
+
 def register_auth(app, service_getter):
     auth = Blueprint('auth', __name__)
 
@@ -100,7 +111,7 @@ def register_auth(app, service_getter):
             return redirect(request.script_root.rstrip('/') + '/admin')
         if request.method == 'GET':
             return page()
-        if not request.is_secure:
+        if not management_transport_allowed():
             return jsonify(error='HTTPS is required for administrator login.', code='https_required'), 403
         values = request.get_json(silent=True) if request.is_json else request.form
         values = values if hasattr(values, 'get') else {}

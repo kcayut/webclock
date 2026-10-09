@@ -178,10 +178,10 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
         self.assertEqual(private.exception.code, 401)
         private.exception.close()
         original_http = updater.http_json
-        def public_only(url, data=None, headers=None):
+        def public_only(url, data=None, headers=None, tls_handler=None):
             self.assertTrue(url.endswith('/api/health'), url)
             self.assertIsNone(data)
-            return original_http(url, data, headers)
+            return original_http(url, data, headers, tls_handler=tls_handler)
         with patch.object(updater, 'http_json', side_effect=public_only), patch.object(updater.time, 'sleep'):
             updater.update(self.project)
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), expected_head)
@@ -216,8 +216,8 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
     def test_failed_upgrade_restores_legacy_server_after_new_api_writes(self):
         real_verify = updater.verify_server
 
-        def fail_after_writing(project, url, layout, expected_notes, configuration):
-            real_verify(project, url, layout, expected_notes, configuration)
+        def fail_after_writing(project, url, layout, expected_notes, configuration, tls_handler=None):
+            real_verify(project, url, layout, expected_notes, configuration, tls_handler=tls_handler)
             changed_settings = dict(self.settings, brightness=72, time_format='12h')
             changed_notes = [dict(self.notes[0], text='新版已改寫提醒')]
             self.assertEqual(updater.http_json(url + '/api/backup', {

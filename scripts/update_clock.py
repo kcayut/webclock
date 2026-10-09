@@ -2,6 +2,8 @@
 import fcntl
 import argparse
 import ast
+from functools import partial
+from http.client import HTTPConnection
 from http.cookiejar import CookieJar
 import json
 import math
@@ -11,6 +13,7 @@ import pwd
 import re
 import shutil
 import signal
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -43,8 +46,9 @@ def service_url(project):
             or not any((project / arg).resolve() == project / 'app.py' for arg in args[1:])):
         raise RuntimeError('Expected the existing project-local venv and app.py service.')
     defaults = service_configuration(project)
-    if defaults.get('WEBCLOCK_TLS_CERT') or defaults.get('WEBCLOCK_TLS_KEY'):
-        raise RuntimeError('Native HTTPS is not supported by this updater; nothing updated. See doc/installation.md.')
+    tls = bool(defaults.get('WEBCLOCK_TLS_CERT'))
+    if tls != bool(defaults.get('WEBCLOCK_TLS_KEY')):
+        raise RuntimeError('Both WEBCLOCK_TLS_CERT and WEBCLOCK_TLS_KEY are required; nothing updated.')
     port = int(defaults.get('PORT', 5000))
     if not 1 <= port <= 65535:
         raise RuntimeError('Invalid existing service port.')
@@ -53,13 +57,13 @@ def service_url(project):
     if ':' in host:
         host = '[' + host + ']'
     owner = proc.stat()
-    return 'http://{}:{}'.format(host, port), owner.st_uid, owner.st_gid
+    return '{}://{}:{}'.format('https' if tls else 'http', host, port), owner.st_uid, owner.st_gid
 
 
 def service_configuration(project):
     """Read only relevant settings, with the running service environment taking precedence."""
     keys = ('HOST', 'PORT', 'WEBCLOCK_STATE_DIR', 'NOTES_FILE', 'DEVICE_API_TOKEN',
-            'WEBCLOCK_TLS_CERT', 'WEBCLOCK_TLS_KEY')
+            'WEBCLOCK_TLS_CERT', 'WEBCLOCK_TLS_KEY', 'WEBCLOCK_UPDATE_HOST', 'WEBCLOCK_UPDATE_CA')
     pid = int(service_property('MainPID'))
     environment = dict(entry.split('=', 1) for entry in
                        (Path('/proc') / str(pid) / 'environ').read_bytes().decode().split('\0') if '=' in entry)
@@ -69,10 +73,47 @@ def service_configuration(project):
         cwd=project, env=environment))
 
 
-def http_json(url, data=None, headers=None):
+class LocalHTTPSConnection(HTTPConnection):
+    """Connect to the service interface while verifying its certificate name."""
+    default_port = 443
+
+    def __init__(self, *args, context, server_name, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.context, self.server_name = context, server_name
+
+    def connect(self):
+        super().connect()
+        self.sock = self.context.wrap_socket(self.sock, server_hostname=self.server_name or self.host)
+
+
+class LocalHTTPSHandler(urllib.request.HTTPSHandler, urllib.request.HTTPRedirectHandler):
+    def __init__(self, context, server_name):
+        super().__init__(context=context)
+        self.connection = partial(LocalHTTPSConnection, context=context, server_name=server_name)
+
+    def https_open(self, request):
+        return self.do_open(self.connection, request)
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        raise RuntimeError('Local service health checks must not redirect.')
+
+
+def update_tls_handler(project, configuration):
+    if not configuration.get('WEBCLOCK_TLS_CERT'):
+        return None
+    ca = configuration.get('WEBCLOCK_UPDATE_CA')
+    context = ssl.create_default_context(cafile=str(project / ca) if ca else None)
+    context.set_alpn_protocols(['http/1.1'])
+    return LocalHTTPSHandler(context, configuration.get('WEBCLOCK_UPDATE_HOST'))
+
+
+def http_json(url, data=None, headers=None, tls_handler=None):
     body = None if data is None else json.dumps(data).encode()
     headers = {'Content-Type': 'application/json', **(headers or {})}
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(CookieJar()))
+    handlers = [urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(CookieJar())]
+    if tls_handler is not None:
+        handlers.append(tls_handler)
+    opener = urllib.request.build_opener(*handlers)
     if data is not None:
         parsed = urlsplit(url)
         csrf_url = urlunsplit((parsed.scheme, parsed.netloc, '/api/csrf', '', ''))
@@ -95,15 +136,15 @@ def settings_match(saved, expected):
             and {'time_format': '24h', **saved} == {'time_format': '24h', **expected})
 
 
-def check_public_health(url, deployment_mode='managed'):
-    health = http_json(url + '/api/health')
+def check_public_health(url, deployment_mode='managed', tls_handler=None):
+    health = http_json(url + '/api/health', tls_handler=tls_handler)
     if (health.get('status') != 'ok' or type(health.get('auth_schema')) is not int or health['auth_schema'] != 1
             or health.get('deployment_mode') != deployment_mode):
         raise RuntimeError('Protected service health check failed.')
     return health
 
 
-def wait_healthy(url, expected, deployment_mode='self'):
+def wait_healthy(url, expected, deployment_mode='self', tls_handler=None):
     deadline = time.monotonic() + 60
     last_pid, stable = None, 0
     while time.monotonic() < deadline:
@@ -112,9 +153,9 @@ def wait_healthy(url, expected, deployment_mode='self'):
             if service_property('ActiveState') != 'active' or int(pid) <= 0:
                 raise RuntimeError('Service not active')
             if deployment_mode == 'managed':
-                check_public_health(url)
+                check_public_health(url, tls_handler=tls_handler)
             else:
-                status = http_json(url + '/api/status')
+                status = http_json(url + '/api/status', tls_handler=tls_handler)
                 if not settings_match(status.get('settings'), expected) or not isinstance(status.get('events'), list):
                     raise RuntimeError('Unexpected status/settings')
             stable = stable + 1 if pid == last_pid else 1
@@ -124,7 +165,7 @@ def wait_healthy(url, expected, deployment_mode='self'):
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError):
             stable = 0
         time.sleep(2)
-    raise RuntimeError('Service failed its HTTP/settings health check.')
+    raise RuntimeError('Service failed its HTTP(S)/settings health check.')
 
 
 def data_layout(project, configuration, modular):
@@ -432,25 +473,25 @@ def prepare_data(layout, snapshot, notes, uid, gid):
             os.chown(path, uid, gid)
 
 
-def verify_server(project, url, layout, expected_notes, configuration):
+def verify_server(project, url, layout, expected_notes, configuration, tls_handler=None):
     if read_json(active_data_layout(layout)[1], []) != expected_notes:
         raise RuntimeError('Reminder migration did not preserve the original data.')
     auth = authorization_state(layout[0])
     if is_protected(auth):
-        check_public_health(url, deployment_mode=auth['mode'])
+        check_public_health(url, deployment_mode=auth['mode'], tls_handler=tls_handler)
         return
     if (project / 'webclock/api/device.py').is_file():
         device_schema = 2  # Releases predating public health only support schema 2.
         if supports_authorization(project):
-            health = check_public_health(url, deployment_mode='self')
+            health = check_public_health(url, deployment_mode='self', tls_handler=tls_handler)
             device_schema = health.get('device_schema')
             if type(device_schema) is not int or device_schema < 2:
                 raise RuntimeError('Invalid advertised device schema.')
-        schedules = http_json(url + '/api/v1/schedules')
-        devices = http_json(url + '/api/v1/devices')
+        schedules = http_json(url + '/api/v1/schedules', tls_handler=tls_handler)
+        devices = http_json(url + '/api/v1/devices', tls_handler=tls_handler)
         token = configuration.get('DEVICE_API_TOKEN')
         headers = {'Authorization': 'Bearer ' + token} if token else {}
-        config = http_json(url + '/api/v1/device/config', headers=headers)
+        config = http_json(url + '/api/v1/device/config', headers=headers, tls_handler=tls_handler)
         if (not isinstance(schedules.get('schedules'), list) or not isinstance(devices.get('devices'), list)
                 or config.get('schema_version') != device_schema or config.get('timezone') != 'Asia/Taipei'):
             raise RuntimeError('Management/device API health check failed.')
@@ -467,6 +508,7 @@ def update(project):
 def perform_update(project):
     url, uid, gid = service_url(project)
     configuration = service_configuration(project)
+    tls_handler = update_tls_handler(project, configuration)
     venv = project / 'venv'
     if venv.is_symlink() or not (venv / 'bin/python3').is_file():
         raise RuntimeError('Expected a real project-local venv directory.')
@@ -504,9 +546,9 @@ def perform_update(project):
                     or any(path == data or data in path.parents or path in data.parents for data in paths)):
                 raise RuntimeError('Git version tracks installation data; refusing to overwrite it.')
     if protected:
-        check_public_health(url, deployment_mode=mode)
+        check_public_health(url, deployment_mode=mode, tls_handler=tls_handler)
     snapshot = (read_json(active_data_layout(current)[0] / 'settings.json', None) if protected
-                else http_json(url + '/api/status')['settings'])
+                else http_json(url + '/api/status', tls_handler=tls_handler)['settings'])
     check_saved_data(current, target_layout, snapshot)
     backup = Path(tempfile.mkdtemp(prefix='.webclock-update-', dir=project))
     print('Backup: ' + str(backup), flush=True)
@@ -515,7 +557,7 @@ def perform_update(project):
     try:
         run(['cp', '-a', str(venv), str(backup / 'venv')])
         if not protected:
-            snapshot = http_json(url + '/api/status')['settings']
+            snapshot = http_json(url + '/api/status', tls_handler=tls_handler)['settings']
         print('Stopping service and preserving installation data...', flush=True)
         stopped = True
         run(['systemctl', 'stop', 'webclock'])
@@ -546,10 +588,10 @@ def perform_update(project):
         if protected:
             authorization_state(target_layout[0], required=True)
             check_saved_data(target_layout, target_layout, snapshot)
-            wait_healthy(url, snapshot, deployment_mode=mode)
+            wait_healthy(url, snapshot, deployment_mode=mode, tls_handler=tls_handler)
         else:
-            wait_healthy(url, snapshot)
-        verify_server(project, url, target_layout, notes, configuration)
+            wait_healthy(url, snapshot, tls_handler=tls_handler)
+        verify_server(project, url, target_layout, notes, configuration, tls_handler=tls_handler)
     except BaseException:
         if stopped:
             print('Update failed; restoring the previous source, environment and data.', flush=True)
@@ -578,16 +620,16 @@ def perform_update(project):
                 run(['systemctl', 'start', 'webclock'])
                 # Older releases kept settings only in memory. Avoid rewriting saved files otherwise.
                 if protected:
-                    wait_healthy(url, snapshot, deployment_mode=mode)
+                    wait_healthy(url, snapshot, deployment_mode=mode, tls_handler=tls_handler)
                 else:
                     for attempt in range(15):
                         try:
-                            if not settings_match(http_json(url + '/api/status')['settings'], snapshot):
-                                http_json(url + '/api/control', snapshot)
+                            if not settings_match(http_json(url + '/api/status', tls_handler=tls_handler)['settings'], snapshot):
+                                http_json(url + '/api/control', snapshot, tls_handler=tls_handler)
                             break
                         except (OSError, ValueError):
                             time.sleep(2)
-                    wait_healthy(url, snapshot)
+                    wait_healthy(url, snapshot, tls_handler=tls_handler)
                 print('Previous service and data restored.', flush=True)
             except Exception as rollback_error:
                 print('Automatic recovery failed: ' + str(rollback_error), file=sys.stderr)

@@ -27,12 +27,17 @@ class WebClockConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_confirm(self, user_input=None):
         return await self._join_form("reauth_confirm", user_input)
 
+    async def async_step_reconfigure(self, user_input=None):
+        return await self._join_form("reconfigure", user_input)
+
     async def _join_form(self, step, user_input):
         errors = {}
         entry = self._get_reauth_entry() if step == "reauth_confirm" else None
+        if step == "reconfigure":
+            entry = self._get_reconfigure_entry()
         if user_input:
             try:
-                url = normalize_url(entry.data[CONF_URL] if entry else user_input[CONF_URL])
+                url = normalize_url(entry.data[CONF_URL] if step == "reauth_confirm" else user_input[CONF_URL])
                 code = user_input[CONF_CODE].strip().upper()
                 if not re.fullmatch(r"[A-Z0-9]{6}", code):
                     raise ValueError("invalid_code")
@@ -49,16 +54,30 @@ class WebClockConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 data = {CONF_URL: url, CONF_TOKEN: self._client.token, "device_id": identity["device_id"]}
                 unique_id = url + "|" + identity["device_id"]
+                if step == "reconfigure":
+                    # Pair with a fresh credential; never send either old credential to the new address.
+                    session = async_create_clientsession(self.hass, cookie_jar=DummyCookieJar())
+                    old_client = WebClockClient(session, entry.data[CONF_URL], entry.data[CONF_TOKEN])
+                    reason = "reconfigure_successful"
+                    try:
+                        await old_client.request("token/leave", {})
+                    except ApiError:
+                        reason = "reconfigure_successful_cleanup_required"
+                    options = dict(entry.options)
+                    options.pop(CONF_WRITE_TOKEN, None)
+                    return self.async_update_reload_and_abort(
+                        entry, data=data, unique_id=unique_id, options=options, reason=reason)
                 if entry:
                     return self.async_update_reload_and_abort(entry, data=data, unique_id=unique_id)
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(title="WebClock", data=data)
         fields = {}
-        if not entry:
+        if step != "reauth_confirm":
             fields[vol.Required(CONF_URL)] = TextSelector(TextSelectorConfig(type=TextSelectorType.URL))
         fields[vol.Required(CONF_CODE)] = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
-        schema = self.add_suggested_values_to_schema(vol.Schema(fields), user_input or {})
+        suggested = user_input or ({CONF_URL: entry.data[CONF_URL]} if step == "reconfigure" else {})
+        schema = self.add_suggested_values_to_schema(vol.Schema(fields), suggested)
         return self.async_show_form(step_id=step, data_schema=schema, errors=errors)
 
     @staticmethod

@@ -18,7 +18,7 @@ trap 'rm -rf "$staging"' EXIT
 cd "$PROJECT_DIR"
 cp app.py sw.js requirements.txt .dockerignore "$staging/"
 cp -R webclock templates static "$staging/"
-cp homeassistant/addon/Dockerfile homeassistant/addon/README.md "$staging/"
+cp homeassistant/addon/Dockerfile homeassistant/addon/README.md homeassistant/addon/DOCS.md homeassistant/addon/CHANGELOG.md homeassistant/addon/icon.png "$staging/"
 sed '/^image:/d' homeassistant/addon/config.yaml > "$staging/config.yaml"
 mv "$staging" "$DESTINATION"
 echo "Local App prepared: $DESTINATION"

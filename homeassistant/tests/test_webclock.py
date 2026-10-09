@@ -23,7 +23,6 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / 'homeassistant'))
 sys.path.insert(0, str(ROOT / 'tests'))
 import test_device_enrollment as enrollment
 from custom_components.webclock.api import ApiError, WebClockClient, normalize_url
@@ -215,6 +214,71 @@ class WebClockHATest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await async_unload_entry(self.hass, self.entry))
             await self.entry._async_process_on_unload(self.hass)
             self.assertTrue(self.coordinator._closed)
+
+    async def test_reconfigure_preserves_ha_identity_and_never_sends_old_secrets_to_new_origin(self):
+        old_data = {'server_url': 'https://old-clock.example', 'device_token': 'o' * 43,
+                    'device_id': 'old-device'}
+        configured = entry(data=old_data, options={'emit_alarm_events': True, 'write_token': 'write-secret'})
+        with patch.object(self.hass.config_entries, 'async_setup', new=AsyncMock(return_value=True)):
+            await self.hass.config_entries.async_add(configured)
+        coordinator = WebClockCoordinator(self.hass, configured, self.client)
+        before = WebClockSensor(coordinator, 'time')
+        ha_identity = (configured.entry_id, before.unique_id, before.device_info['identifiers'])
+        calls = []
+        targets = {'https://new-clock.example': ('n' * 43, 'new-device'),
+                   'https://third-clock.example': ('t' * 43, 'third-device')}
+
+        async def request(client, method, path, body, token):
+            calls.append((client.url, method, path, body, token))
+            if path.endswith('token/leave'):
+                if client.url == old_data['server_url']:
+                    raise ApiError('cannot_connect')
+                return {}
+            new_token, device_id = targets[client.url]
+            if path.endswith('token/prepare'):
+                return {'token': new_token, 'attempt_id': 'attempt'}
+            if path.endswith('token/join'):
+                if body['code'] == 'BAD123':
+                    raise ApiError('invalid_invitation', 400)
+                return {'schema_version': 3, 'identity': {'device_id': device_id}}
+            self.fail('Unexpected request')
+
+        with patch('custom_components.webclock.config_flow.async_create_clientsession', return_value=object()), \
+             patch.object(WebClockClient, '_request', new=request), \
+             patch.object(self.hass.config_entries, 'async_schedule_reload') as reload:
+            flow = WebClockConfigFlow()
+            flow.hass = self.hass
+            flow.context = {'source': 'reconfigure', 'entry_id': configured.entry_id}
+            form = await flow.async_step_reconfigure()
+            hints = {str(key): (key.description or {}).get('suggested_value') for key in form['data_schema'].schema}
+            self.assertEqual(hints, {'server_url': old_data['server_url'], 'join_code': None})
+            self.assertNotIn(old_data['device_token'], str(form))
+            invalid = await flow.async_step_reconfigure({'server_url': 'https://new-clock.example', 'join_code': 'BAD123'})
+            self.assertEqual(invalid['errors'], {'base': 'invalid_invitation'})
+            self.assertEqual(configured.data, old_data)
+            self.assertEqual(configured.options['write_token'], 'write-secret')
+            self.assertFalse(any(call[0] == old_data['server_url'] for call in calls))
+            reload.assert_not_called()
+            for index, (url, (new_token, device_id)) in enumerate(targets.items()):
+                result = await flow.async_step_reconfigure({'server_url': url, 'join_code': 'A7K9M2'})
+                self.assertEqual(result['type'], 'abort')
+                self.assertEqual(result['reason'], 'reconfigure_successful_cleanup_required' if index == 0
+                                 else 'reconfigure_successful')
+                self.assertEqual(configured.data, {'server_url': url, 'device_token': new_token, 'device_id': device_id})
+                self.assertEqual(configured.options, {'emit_alarm_events': True})
+                after = WebClockSensor(coordinator, 'time')
+                self.assertEqual((configured.entry_id, after.unique_id, after.device_info['identifiers']), ha_identity)
+                self.assertEqual(self.hass.config_entries.async_entries('webclock'), [configured])
+                reload.assert_called_with(configured.entry_id)
+                outgoing = [call for call in calls if call[0] == url]
+                self.assertTrue(outgoing)
+                self.assertTrue(all(call[4] in (None, new_token) for call in outgoing))
+                self.assertNotIn('write-secret', str(outgoing))
+            leaves = [call for call in calls if call[2].endswith('token/leave')]
+            self.assertEqual([(call[0], call[4]) for call in leaves],
+                             [(old_data['server_url'], old_data['device_token']),
+                              ('https://new-clock.example', 'n' * 43)])
+        coordinator.close()
 
     async def test_control_actions_keep_credential_and_revision_boundaries(self):
         register_services(self.hass)

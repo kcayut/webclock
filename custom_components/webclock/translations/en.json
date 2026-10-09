@@ -16,6 +16,14 @@
         "data": {
           "join_code": "Join code"
         }
+      },
+      "reconfigure": {
+        "title": "Change server address",
+        "description": "Enter the new server address and a fresh join code. Home Assistant entities and cards are kept; WebClock creates a new device identity. The program write token is cleared. If the old server is offline, remove the old device there manually.",
+        "data": {
+          "server_url": "Server address",
+          "join_code": "Join code"
+        }
       }
     },
     "error": {
@@ -29,7 +37,9 @@
     },
     "abort": {
       "already_configured": "Already configured",
-      "reauth_successful": "Reauthentication successful"
+      "reauth_successful": "Reauthentication successful",
+      "reconfigure_successful": "Server address updated. Add a new program write token in Options if needed.",
+      "reconfigure_successful_cleanup_required": "Server address updated. The old device could not be removed; remove it in the old WebClock management page. Add a new program write token in Options if needed."
     }
   },
   "options": {

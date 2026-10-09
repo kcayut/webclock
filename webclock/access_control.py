@@ -1,5 +1,8 @@
 """Deny private legacy and management entry points in protected installations."""
+import os
+
 from flask import g, jsonify, redirect, request, session, url_for
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.exceptions import HTTPException
 
 from webclock.csrf import same_origin
@@ -7,7 +10,16 @@ from webclock.services.auth_service import AuthStateError
 from webclock.services.storage import storage_lock
 
 
+class RequestSessionInterface(SecureCookieSessionInterface):
+    def get_cookie_secure(self, app):
+        if (os.getenv('WEBCLOCK_HA_APP') == '1'
+                and request.environ.get('webclock.surface') in ('ingress', 'display')):
+            return request.is_secure
+        return getattr(g, 'deployment_mode', None) in ('managed', 'recovery') or super().get_cookie_secure(app)
+
+
 def register_access_control(app, service_getter):
+    app.session_interface = RequestSessionInterface()
     public = {'index', 'status', 'public_time', 'health', 'service_worker', 'static'}
 
     def failure(code, status):
@@ -35,6 +47,12 @@ def register_access_control(app, service_getter):
             return None
         try:
             service = service_getter()
+            from webclock.services import portable_backup
+            if portable_backup.pending(service.path.parent):
+                g.deployment_mode = 'recovery'
+                if request.endpoint in public:
+                    return None
+                return failure('restore_recovery_required', 503)
             g.deployment_mode = service.mode()
             g.auth_generation = service.state()['generation']
         except (AuthStateError, OSError, ValueError):
@@ -43,7 +61,6 @@ def register_access_control(app, service_getter):
                 return None
             return failure('auth_recovery_required', 503)
 
-        app.config['SESSION_COOKIE_SECURE'] = g.deployment_mode == 'managed'
         if request.endpoint in public:
             return None
         # Unknown paths and HTTP method errors still use the normal 404/405;
@@ -65,6 +82,10 @@ def register_access_control(app, service_getter):
             if guard is None:
                 return failure('access_not_ready', 503)
             return guard()
+        if (os.getenv('WEBCLOCK_HA_APP') == '1'
+                and (request.endpoint in {'mode.mode_preview', 'mode.switch'}
+                     or (request.endpoint == 'mode.page' and g.deployment_mode != 'managed'))):
+            return failure('mode_change_unavailable_in_ha', 409)
         if g.deployment_mode == 'self':
             return None
         if not same_origin():
@@ -96,5 +117,8 @@ def register_access_control(app, service_getter):
     def auth_context():
         owner = getattr(g, 'owner_id', None)
         mode = getattr(g, 'deployment_mode', 'recovery')
+        ha_app = os.getenv('WEBCLOCK_HA_APP') == '1'
         return {'management_authenticated': mode == 'managed' and bool(owner),
-                'mode_management_available': mode == 'self' or (mode == 'managed' and service_getter().is_admin(owner))}
+                'mode_switch_available': not ha_app,
+                'mode_management_available': (mode == 'self' and not ha_app) or
+                (mode == 'managed' and service_getter().is_admin(owner))}

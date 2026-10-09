@@ -1,0 +1,193 @@
+name: Home Assistant installation and release
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - .github/workflows/home-assistant.yml
+      - custom_components/**
+      - homeassistant/**
+      - hacs.json
+      - repository.yaml
+      - scripts/**
+      - tests/**
+      - webclock/**
+      - templates/**
+      - static/**
+      - app.py
+      - sw.js
+      - setup.sh
+      - requirements.txt
+      - .dockerignore
+      - .env.example
+  pull_request:
+    paths:
+      - .github/workflows/home-assistant.yml
+      - custom_components/**
+      - homeassistant/**
+      - hacs.json
+      - repository.yaml
+      - scripts/**
+      - tests/**
+      - webclock/**
+      - templates/**
+      - static/**
+      - app.py
+      - sw.js
+      - setup.sh
+      - requirements.txt
+      - .dockerignore
+      - .env.example
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home-assistant-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  PIP_NO_CACHE_DIR: '1'
+  DOCKER_BUILD_RECORD_UPLOAD: 'false'
+
+jobs:
+  integration:
+    # Use only standard public hosted runners, without retained caches/artifacts.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Check package and release versions
+        id: version
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+
+          version = json.loads(Path('custom_components/webclock/manifest.json').read_text())['version']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), 'Use a numeric X.Y.Z version'
+          constants = Path('custom_components/webclock/const.py').read_text()
+          assert re.search(r'^VERSION = "' + re.escape(version) + r'"$', constants, re.M), 'Card cache version must match integration version'
+          config = Path('homeassistant/addon/config.yaml').read_text()
+          assert re.search(r'^version: ["\x27]?' + re.escape(version) + r'["\x27]?$', config, re.M), 'App and integration versions must match'
+          assert re.search(r'^image: ghcr\.io/kcayut/webclock-addon$', config, re.M), 'Unexpected image registry'
+          if os.environ['GITHUB_EVENT_NAME'] == 'release':
+              assert os.environ['GITHUB_REF'] == 'refs/tags/v' + version, 'Release tag must match package version'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('version=' + version + '\n')
+          PY
+      - name: Install real Home Assistant and server dependencies
+        run: python -m pip install 'homeassistant==2026.9.4' -r requirements.txt
+      - name: Test integration, cards and installation packages
+        run: |
+          python -m unittest discover -s homeassistant/tests -p 'test_*.py'
+          node homeassistant/tests/test_cards.js
+          python -m unittest discover -s tests -p 'test_installation.py'
+          python -m unittest discover -s tests -p 'test_ingress.py'
+          git diff --check
+
+  app:
+    needs: integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+          cache-image: false
+      - uses: docker/setup-buildx-action@v4
+      - name: Build installable App image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: homeassistant/addon/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: webclock-test:local
+          build-args: |
+            BUILD_VERSION=${{ needs.integration.outputs.version }}
+            BUILD_ARCH=${{ matrix.arch }}
+      - name: Test actual container startup, Ingress, display isolation and restart
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker network create --subnet 172.30.32.0/24 webclock-test
+          docker volume create webclock-data
+          docker run -d --name webclock --hostname local-webclock --network-alias local-webclock --platform "$PLATFORM" --network webclock-test --ip 172.30.32.3 -v webclock-data:/data webclock-test:local
+          docker run --rm -i --platform "$PLATFORM" --network webclock-test --ip 172.30.32.2 --entrypoint python webclock-test:local - local-webclock < scripts/check_ha_container.py
+          docker logs webclock 2>&1 | grep -F 'Home Assistant integration URL: http://local-webclock:8100'
+          identity=$(docker exec webclock sha256sum /data/auth.json)
+          docker restart webclock
+          docker run --rm -i --platform "$PLATFORM" --network webclock-test --ip 172.30.32.2 --entrypoint python webclock-test:local - local-webclock < scripts/check_ha_container.py
+          test "$identity" = "$(docker exec webclock sha256sum /data/auth.json)"
+      - name: Container diagnostics and cleanup
+        if: always()
+        run: |
+          docker logs webclock 2>&1 || true
+          docker rm -f webclock || true
+          docker volume rm webclock-data || true
+          docker network rm webclock-test || true
+
+  publish:
+    needs: [integration, app]
+    if: github.event_name == 'release' && github.repository == 'kcayut/webclock' && github.event.repository.fork == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify the release checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+          cache-image: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish versioned multi-architecture App
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: homeassistant/addon/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/kcayut/webclock-addon:${{ needs.integration.outputs.version }}
+          build-args: |
+            BUILD_VERSION=${{ needs.integration.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/kcayut/webclock
+            org.opencontainers.image.revision=${{ github.sha }}

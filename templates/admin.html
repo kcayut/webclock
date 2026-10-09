@@ -315,14 +315,66 @@
         <div class="page-heading">
             <div>
                 <h1 id="backup-title" class="page-title" data-i18n="backup_title">{{ translations[language].backup_title }}</h1>
-                <p class="page-description" data-i18n="backup_hint">{{ translations[language].backup_hint }}</p>
+                <p class="page-description" data-i18n="{{ 'complete_backup_hint' if complete_backup_available else 'backup_hint' }}">{{ translations[language].complete_backup_hint if complete_backup_available else translations[language].backup_hint }}</p>
             </div>
         </div>
+        {% if complete_backup_available %}
+        <div id="complete-backup">
+        {% if complete_backup_admin_reauth %}
         <section class="panel">
+            <h2 data-i18n="complete_backup_admin">{{ translations[language].complete_backup_admin }}</h2>
+            <p class="help" data-i18n="complete_backup_admin_hint">{{ translations[language].complete_backup_admin_hint }}</p>
+            <div class="fields">
+                <div class="field"><label for="complete-backup-username" data-i18n="complete_backup_username">{{ translations[language].complete_backup_username }}</label>
+                    <input id="complete-backup-username" autocomplete="username" maxlength="128" value="{{ complete_backup_admin_username or '' }}" required></div>
+                <div class="field"><label for="complete-backup-admin-password" data-i18n="complete_backup_admin_password">{{ translations[language].complete_backup_admin_password }}</label>
+                    <input id="complete-backup-admin-password" type="password" autocomplete="current-password" maxlength="1024" required></div>
+            </div>
+        </section>
+        {% endif %}
+        <form id="complete-backup-export" class="panel">
+            <h2 data-i18n="complete_backup_export">{{ translations[language].complete_backup_export }}</h2>
+            <p class="help" id="complete-backup-password-hint" data-i18n="complete_backup_password_hint">{{ translations[language].complete_backup_password_hint }}</p>
+            <div class="fields">
+                <div class="field"><label for="complete-backup-export-password" data-i18n="complete_backup_password">{{ translations[language].complete_backup_password }}</label>
+                    <input id="complete-backup-export-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" aria-describedby="complete-backup-password-hint" required></div>
+                <div class="field"><label for="complete-backup-export-confirm" data-i18n="complete_backup_password_confirm">{{ translations[language].complete_backup_password_confirm }}</label>
+                    <input id="complete-backup-export-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required></div>
+            </div>
+            <div class="actions"><button class="primary" type="submit" data-i18n="complete_backup_download">{{ translations[language].complete_backup_download }}</button></div>
+            <p id="complete-backup-export-status" role="status" aria-live="polite"></p>
+        </form>
+        <form id="complete-backup-import" class="panel">
+            <h2 data-i18n="complete_backup_import">{{ translations[language].complete_backup_import }}</h2>
+            <p class="help" data-i18n="complete_backup_import_hint">{{ translations[language].complete_backup_import_hint }}</p>
+            <div class="fields">
+                <div class="field"><label for="complete-backup-file" data-i18n="backup_file">{{ translations[language].backup_file }}</label>
+                    <input id="complete-backup-file" type="file" accept=".webclock,application/octet-stream" required></div>
+                <div class="field"><label for="complete-backup-import-password" data-i18n="complete_backup_password">{{ translations[language].complete_backup_password }}</label>
+                    <input id="complete-backup-import-password" type="password" autocomplete="off" maxlength="1024" required></div>
+            </div>
+            <div class="actions"><button type="submit" data-i18n="complete_backup_preview">{{ translations[language].complete_backup_preview }}</button></div>
+            <p id="complete-backup-import-status" role="status" aria-live="polite"></p>
+            <section id="complete-backup-preview" hidden aria-labelledby="complete-backup-preview-title">
+                <h3 id="complete-backup-preview-title" data-i18n="complete_backup_preview_title">{{ translations[language].complete_backup_preview_title }}</h3>
+                <p id="complete-backup-summary" aria-live="polite"></p>
+                <p id="complete-backup-device-note" class="help"></p>
+                <p class="help" data-i18n="complete_backup_access_note">{{ translations[language].complete_backup_access_note }}</p>
+                <p class="help" data-i18n="complete_backup_address_note">{{ translations[language].complete_backup_address_note }}</p>
+                <label class="check"><input id="complete-backup-confirm" type="checkbox"><span id="complete-backup-confirm-label"></span></label>
+                <div class="actions"><button id="complete-backup-restore" type="button" class="primary" disabled data-i18n="complete_backup_restore">{{ translations[language].complete_backup_restore }}</button></div>
+            </section>
+        </form>
+        </div>
+        {% endif %}
+        <details class="panel"{% if not complete_backup_available %} open{% endif %}>
+        <summary data-i18n="complete_backup_legacy">{{ translations[language].complete_backup_legacy }}</summary>
+        <p class="help" data-i18n="backup_hint">{{ translations[language].backup_hint }}</p>
+        <section>
         <h2 data-i18n="backup_export">{{ translations[language].backup_export }}</h2>
         <p><a class="btn primary" href="{{ url_for('backup') }}" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
         </section>
-        <section class="panel">
+        <section>
         <h2 data-i18n="backup_import">{{ translations[language].backup_import }}</h2>
         <form onsubmit="event.preventDefault(); importBackup()">
             <div class="field">
@@ -333,6 +385,7 @@
             <p id="backup-status" role="status"></p>
         </form>
         </section>
+        </details>
     </section>
     <section class="management-panel" data-management-panel="about" aria-labelledby="about-title">
         <div class="page-heading">
@@ -420,6 +473,7 @@
             applyTimeFormat(currentTimeFormat);
             document.getElementById('settings-status').textContent = settingsMessage ? t(settingsMessage) : '';
             if (window.CalendarSettings) window.CalendarSettings.applyLanguage();
+            if (window.PortableBackup) window.PortableBackup.applyLanguage();
         };
 
         function setWindowMode(select) {
@@ -594,6 +648,7 @@
     <script defer src="{{ url_for('static', filename='calendar-chooser.js') }}"></script>
     <script defer src="{{ url_for('static', filename='group-assignment.js') }}"></script>
     <script defer src="{{ url_for('static', filename='calendar-settings.js') }}"></script>
+    {% if complete_backup_available %}<script defer src="{{ url_for('static', filename='portable-backup.js') }}"></script>{% endif %}
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
 </body>
 

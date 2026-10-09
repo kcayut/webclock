@@ -41,6 +41,56 @@ class IngressTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('/api/hassio_ingress/test-token/static/', response.get_data(as_text=True))
 
+    def test_https_ingress_preserves_browser_origin_for_csrf_and_management_writes(self):
+        origin = 'https://ha.example.test:8123'
+        headers = dict(self.header, **{'X-Forwarded-Proto': 'https',
+                       'X-Forwarded-Host': 'ha.example.test:8123', 'Origin': origin,
+                       'Referer': origin + self.header['X-Ingress-Path'] + '/admin'})
+        environment = {'REMOTE_ADDR': '172.30.32.2', 'SERVER_PORT': '8099'}
+        with patch.dict(os.environ, WEBCLOCK_INGRESS='1', WEBCLOCK_HA_APP='1'):
+            csrf = self.client.get('/api/csrf', headers=headers, environ_overrides=environment)
+            self.assertEqual(csrf.status_code, 200)
+            headers['X-CSRF-Token'] = csrf.json['csrf_token']
+            response = self.client.post('/api/management/language', json={'language': 'en'},
+                                        headers=headers, environ_overrides=environment)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json, {'language': 'en'})
+            for invalid in ({'X-CSRF-Token': 'wrong'}, {'Origin': 'https://other.example.test'},
+                            {'Referer': 'https://other.example.test/admin'}):
+                with self.subTest(invalid=invalid):
+                    response = self.client.post('/api/management/language', json={'language': 'ja'},
+                                                headers=dict(headers, **invalid), environ_overrides=environment)
+                    self.assertEqual(response.status_code, 403)
+            response = self.client.get('/api/csrf', headers=headers,
+                                       environ_overrides=dict(environment, REMOTE_ADDR='127.0.0.1'))
+            self.assertEqual(response.status_code, 403)
+
+    def test_ingress_forwarded_origin_requires_valid_single_scheme_and_host(self):
+        self.header.update({'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'ha.example.test'})
+        with patch.dict(os.environ, WEBCLOCK_INGRESS='1', WEBCLOCK_HA_APP='1'):
+            for host in ('ha.local', '192.0.2.1:8123', '[2001:db8::1]:8123'):
+                with self.subTest(host=host):
+                    self.header.update({'X-Forwarded-Host': host, 'Origin': 'https://' + host})
+                    self.assertEqual(self.get('/api/csrf', port='8099').status_code, 200)
+            for name, values in (
+                    ('X-Forwarded-Proto', ('', 'ftp', 'HTTPS', 'https,http')),
+                    ('X-Forwarded-Host', ('', 'ha.test,other.test', 'ha.test/path', 'user@ha.test',
+                                          'ha.test:0', 'ha.test:65536', 'ha.test:', 'ha..test',
+                                          '-ha.test', 'ha.test ', '[not-ipv6]', '[::::]'))):
+                for value in values:
+                    with self.subTest(header=name, value=value):
+                        self.header.update({'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'ha.test'})
+                        self.header[name] = value
+                        self.assertEqual(self.get('/api/csrf', port='8099').status_code, 400)
+
+    def test_forwarded_origin_does_not_enable_https_outside_trusted_ingress(self):
+        self.header = {'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'ha.example.test',
+                       'Origin': 'https://ha.example.test'}
+        for enabled, port in (('0', '80'), ('1', '8100')):
+            with self.subTest(ingress=enabled, port=port), patch.dict(
+                    os.environ, WEBCLOCK_INGRESS=enabled, WEBCLOCK_HA_APP=enabled):
+                self.assertEqual(self.get('/api/csrf', port=port).status_code, 403)
+
     def test_ha_app_separates_ingress_management_from_lan_display(self):
         environment = {'WEBCLOCK_INGRESS': '1', 'WEBCLOCK_HA_APP': '1'}
         with patch.dict(os.environ, environment):

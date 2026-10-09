@@ -4,6 +4,7 @@ from pathlib import Path
 
 from flask import Blueprint, g, jsonify, render_template, request
 
+from webclock.auth import client_transport_allowed, management_transport_allowed
 from webclock.csrf import same_origin
 from webclock.services.auth_service import AuthStateError
 from webclock.services.control_access_service import (
@@ -28,7 +29,7 @@ def register_control(app, directory, auth, groups, owner, context, calendar_sour
         if not same_origin():
             raise ControlError('permission_denied', 403)
         mode = auth().mode()
-        if mode == 'managed' and not request.is_secure:
+        if mode == 'managed' and not client_transport_allowed():
             raise ControlError('tls_required', 403)
         header = request.headers.get('Authorization', '')
         token = header[7:] if header.startswith('Bearer ') else None
@@ -80,7 +81,7 @@ def register_control(app, directory, auth, groups, owner, context, calendar_sour
     def clients():
         with storage_lock:
             if request.method == 'POST':
-                if auth().mode() == 'managed' and not request.is_secure:
+                if auth().mode() == 'managed' and not management_transport_allowed():
                     raise ControlError('tls_required', 403)
                 return jsonify(client=create_client(request.get_json())), 201
             return jsonify(mode=auth().mode(), clients=credentials().list(owner()))

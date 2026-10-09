@@ -17,7 +17,7 @@
 - **下載離線時鐘：**電腦[下載 ZIP 並解壓縮](doc/installation.md#offline-download)，用瀏覽器開啟最外層的 `index.html`，不必安裝 Server。平板請看[離線快取與 iOS 9 限制](doc/installation.md#offline-cache)。
 - **自行架設：**在電腦、NAS 或 Raspberry Pi 執行完整版。`/admin` 管理顯示、行事曆與文字提醒；`/schedules` 管理鬧鐘與裝置狀態。
 
-自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址保存在主機，不會出現在公開時鐘、狀態或管理頁 JSON 匯出中；主機端完整備份仍包含私人資料。
+自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址不會出現在公開時鐘、狀態或舊版 JSON 匯出中；管理頁可下載單一加密 `.webclock` 檔，將帳號、私人行事曆與裝置設定完整搬到新主機或 HA App，詳見[備份與搬家](doc/guide.md#完整備份與搬家)。
 
 時鐘會先顯示時間、日期與星期；已載入且在前景執行時，連線、瀏覽器儲存或附加功能失敗不應讓它停住。裝置管理可命名、查看自報能力與同步確認狀態；群組、六碼加入、逐台授權、移組、停用／恢復與刪除授權已提供；managed 模式由主機端明確啟用，既有安裝預設維持 self。操作與限制見[使用指南](doc/guide.md#裝置同步狀態)，目前驗證與待辦見 [A 階段驗收紀錄](doc/phase-a-acceptance.md) / [B 階段群組與授權驗收](doc/phase-b-acceptance.md)；CI 與 iPad mini 1／iOS 9 實機驗收狀態分開記錄。
 
@@ -27,13 +27,17 @@
 | --- | --- |
 | **Bare metal** | Raspberry Pi OS、Debian、Ubuntu；直接安裝並開機自動執行 |
 | **Docker** | 已有 Docker 的電腦、NAS 或 Linux 主機 |
-| **Home Assistant** | 在 HA OS 安裝本機 App，以 HA 側邊欄管理；卡片另裝自訂整合 |
+| **Home Assistant** | HA OS 加入 App 來源後點選安裝；Integration 與卡片由 HACS 安裝 |
+
+**[安裝 HA App](doc/installation.md#home-assistant)** · **[安裝 HA 整合與卡片](doc/home-assistant.md#安裝整合)**
 
 **[前往完整安裝指南 →](doc/installation.md)**：三種方式的快速指令、必要條件、self／managed 啟用方式與 HTTPS 設定。
 
+已有帳號可在「模式與帳號」(`/mode`) [切換 self／managed、選定主要使用者及管理成員](doc/installation.md#mode-switch)；[多帳號備份與復原](doc/installation.md#owner-data)、[裝置／群組設定](doc/guide.md#群組設定與裝置加入)及[共用公告](doc/guide.md#指定群組或裝置的公告)都有操作步驟。本次測試與待驗收範圍見[第二／四階段驗收](doc/phase2-acceptance.md)。
+
 **[把裝置變成時鐘 →](doc/display-devices.md)**：依 iPad／iPhone、Android、Windows、Mac 分版本整理主畫面圖示、全螢幕與螢幕恆亮，包含 iPad mini 1／iOS 9。
 
-Linux／Docker 預設使用 **self（自用）**；需要獨立管理員登入與逐台授權時，全新安裝加 `--managed` 並設定 HTTPS。HA App 由 HA 登入保護管理入口，不等同 WebClock managed 模式；目前採本機建置；預建映像的商店安裝尚未驗證。
+Linux／Docker 預設使用 **self（自用）**；需要獨立管理員登入與逐台授權時，全新安裝加 `--managed` 並設定 HTTPS。HA App 由 HA 登入保護管理入口，匯入 managed 完整備份後另用原 WebClock 帳密登入。首次公開映像發布與 HA OS 驗收仍待完成，請先看[發行狀態](doc/ha-release.md)；開發者可用本機建置。
 
 **使用說明：**[繁體中文使用指南](doc/guide.md) · [Home Assistant 整合與卡片](doc/home-assistant.md) · [裝置 API](doc/server-api.md) · [ESPHome 原型指南](doc/esp-home.md) · [ESP32-S3 韌體](firmware/README.md)
 

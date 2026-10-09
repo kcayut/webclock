@@ -3,3 +3,4 @@ requests
 icalendar
 recurring-ical-events==3.8.2
 python-dotenv
+cryptography>=44

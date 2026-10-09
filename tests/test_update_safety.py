@@ -294,7 +294,7 @@ class UpdaterTest(unittest.TestCase):
         for name, value in [
             ('service_url', lambda project: ('http://127.0.0.1:80', os.getuid(), os.getgid())),
             ('service_configuration', lambda project: self.configuration),
-            ('http_json', lambda url, data=None: {'settings': self.settings, 'events': []}),
+            ('http_json', lambda url, data=None, **kwargs: {'settings': self.settings, 'events': []}),
             ('run', self.fake_run),
         ]:
             mocked = patch.object(updater, name, side_effect=value)
@@ -330,7 +330,7 @@ class UpdaterTest(unittest.TestCase):
     def test_success_preserves_settings_and_data(self):
         with patch.object(updater, 'wait_healthy') as health:
             updater.update(self.project)
-        health.assert_called_once_with('http://127.0.0.1:80', self.settings)
+        health.assert_called_once_with('http://127.0.0.1:80', self.settings, tls_handler=None)
         self.assertEqual((self.project / 'app.py').read_text(), 'new source\n')
         self.assertEqual(json.loads((self.project / 'webclock_state/settings.json').read_text()), self.settings)
         self.assert_data_preserved()
@@ -346,6 +346,41 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(self.state, 'active')
         self.assert_data_preserved()
         self.assertEqual(len(list(self.project.glob('.webclock-update-*'))), 1)
+
+    def test_https_verification_context_survives_update_failure_and_rollback(self):
+        handler = object()
+        current = dict(self.settings)
+
+        def response(url, data=None, **kwargs):
+            self.assertIs(kwargs['tls_handler'], handler)
+            if data is not None:
+                current.update(data)
+            return {'settings': dict(current), 'events': []}
+
+        def failed_server(*args, **kwargs):
+            self.assertIs(kwargs['tls_handler'], handler)
+            current['brightness'] = 99
+            raise RuntimeError('failed HTTPS server')
+
+        with patch.object(updater, 'update_tls_handler', return_value=handler), \
+             patch.object(updater, 'http_json', side_effect=response) as request, \
+             patch.object(updater, 'wait_healthy') as health, \
+             patch.object(updater, 'verify_server', side_effect=failed_server):
+            with self.assertRaisesRegex(RuntimeError, 'failed HTTPS server'):
+                updater.update(self.project)
+        self.assertEqual(health.call_count, 2)
+        self.assertTrue(all(call.kwargs['tls_handler'] is handler for call in health.call_args_list))
+        self.assertTrue(any(call.args[0].endswith('/api/control') for call in request.call_args_list))
+        self.assertEqual(current, self.settings)
+        self.assert_data_preserved()
+
+    def test_missing_private_ca_stops_before_service_changes(self):
+        self.configuration.update(WEBCLOCK_TLS_CERT='cert.pem', WEBCLOCK_TLS_KEY='key.pem',
+                                  WEBCLOCK_UPDATE_CA='missing-ca.pem')
+        with self.assertRaises(FileNotFoundError):
+            updater.update(self.project)
+        self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
+        self.assertEqual(list(self.project.glob('.webclock-update-*')), [])
 
     def test_success_preserves_night_schedule(self):
         self.settings['night'] = dict(clock.DEFAULT_NIGHT, enabled=True)
@@ -432,7 +467,7 @@ class UpdaterTest(unittest.TestCase):
         originals = {path: path.read_bytes() for path in (settings, schedules, notes, self.project / '.env')}
         mode = notes.stat().st_mode
 
-        def fail_after_start(*args):
+        def fail_after_start(*args, **kwargs):
             for path in originals:
                 path.write_text('changed by the failed new service')
             (state / 'new-device.json').write_text('{}')
@@ -546,7 +581,9 @@ class UpdaterTest(unittest.TestCase):
                         self.assertEqual(configuration['WEBCLOCK_STATE_DIR'], '/from-systemd/state')
                         self.assertEqual(configuration['NOTES_FILE'], '/from-systemd/notes.json')
                         (process / 'environ').write_bytes(environment + b'WEBCLOCK_TLS_CERT=/cert.pem\0WEBCLOCK_TLS_KEY=/key.pem\0')
-                        with self.assertRaisesRegex(RuntimeError, 'Native HTTPS.*nothing updated'):
+                        self.assertEqual(REAL_SERVICE_URL(self.project)[0], 'https://127.0.0.1:80')
+                        (process / 'environ').write_bytes(environment + b'WEBCLOCK_TLS_CERT=/cert.pem\0')
+                        with self.assertRaisesRegex(RuntimeError, 'Both WEBCLOCK_TLS_CERT.*nothing updated'):
                             REAL_SERVICE_URL(self.project)
                         (process / 'environ').write_bytes(environment + b'PYTHON_DOTENV_DISABLED=1\0')
                         self.assertEqual(REAL_CONFIGURATION(self.project), {'PORT': '80', 'HOST': '0.0.0.0'})
@@ -598,7 +635,7 @@ class UpdaterTest(unittest.TestCase):
         (state / 'auth-required').write_text(json.dumps({'version': 1, 'mode': 'managed'}))
         return state, auth
 
-    def public_health_only(self, url, data=None, headers=None):
+    def public_health_only(self, url, data=None, headers=None, tls_handler=None):
         self.assertTrue(url.endswith('/api/health'), url)
         self.assertIsNone(data)
         return {'status': 'ok', 'auth_schema': 1, 'deployment_mode': 'managed',
@@ -615,7 +652,7 @@ class UpdaterTest(unittest.TestCase):
 
     def test_managed_rollback_keeps_latest_revocations_and_never_reads_private_api(self):
         state, auth = self.managed_installation(external=True)
-        def fail_after_change(*args):
+        def fail_after_change(*args, **kwargs):
             auth['generation'] += 1
             (state / 'auth.json').write_text(json.dumps(auth))
             (state / 'device-access.json').write_text(json.dumps(dict(
@@ -643,7 +680,7 @@ class UpdaterTest(unittest.TestCase):
         save_events(state, [])
         latest = validate_event(dict(id='latest-event', title='Latest event', owner_id='owner',
             creator_client_id=issued['id'], start='2030-01-01T09:00:00+08:00', end='2030-01-01T10:00:00+08:00'))
-        def fail_after_change(*args):
+        def fail_after_change(*args, **kwargs):
             clients.revoke('owner', issued['id'])
             save_events(state, [latest])
             raise RuntimeError('failed new health')
@@ -699,7 +736,7 @@ class UpdaterTest(unittest.TestCase):
         self.commit('multi-owner support')
         with patch.object(updater, 'check_public_health'), patch.object(updater, 'wait_healthy') as health:
             updater.update(self.project)
-        health.assert_called_once_with('http://127.0.0.1:80', settings, deployment_mode='self')
+        health.assert_called_once_with('http://127.0.0.1:80', settings, deployment_mode='self', tls_handler=None)
         self.assertEqual({path.relative_to(state): path.read_bytes() for path in state.rglob('*') if path.is_file()}, previous)
         self.assertEqual(updater.active_data_layout((state, Path(self.configuration['NOTES_FILE']))),
                          (current, current / 'manual_notes.json'))
