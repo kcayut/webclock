@@ -9,6 +9,7 @@ from time import monotonic
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from aiohttp import ClientError
+from .const import VERSION
 
 
 class ApiError(Exception):
@@ -147,7 +148,7 @@ class WebClockClient:
         # Capture the server clock before status I/O, then advance using monotonic time.
         sampled_at = monotonic()
         status = await self.request("status", {
-            "name": "Home Assistant", "device_type": "homeassistant", "firmware": "ha-1.0.0",
+            "name": "Home Assistant", "device_type": "homeassistant", "firmware": "ha-" + VERSION,
             "capabilities": {"display": True, "calendar": True, "background": True, "audio": False},
             **{key: display[key] for key in ("config_revision", "schedule_revision", "holiday_revision")},
             "acknowledged_commands": list(acknowledgements),

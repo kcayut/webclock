@@ -12,7 +12,7 @@ WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；�
 
 ## 在 Home Assistant 內執行 WebClock Server
 
-安裝方式見[安裝指南：Home Assistant](installation.md#home-assistant)：加入 WebClock App 來源，安裝並啟動，再按「開啟網頁介面」。首次映像發布與 HA OS 驗收狀態見[發行說明](ha-release.md)；尚未發布時可用本機建置。
+安裝方式見[安裝指南：Home Assistant](installation.md#home-assistant)：加入 WebClock App 來源，安裝並啟動，再按「開啟網頁介面」。App 與整合對應同一個 [GitHub 正式 Release](https://github.com/kcayut/webclock/releases/latest)；公開映像與 HA OS 實機驗收狀態見[發行說明](ha-release.md)。
 
 新安裝預設為 self，管理頁透過 HA 登入與 Ingress 使用。匯入 managed 完整備份後，保留原本 WebClock 帳號與模式，Ingress 內仍須登入原 WebClock 帳號；HA 登入不會略過 WebClock 授權。選用的 `8100` 區網連接埠提供時鐘、六碼加入、裝置同步，以及必須另帶程式憑證的內容 API；管理頁仍由 Ingress 保護。所有可變資料保存在 `/data`，由 HA 冷備份保存。
 
@@ -42,14 +42,14 @@ WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；�
 
 **[在 HACS 開啟 WebClock](https://my.home-assistant.io/redirect/hacs_repository/?owner=kcayut&repository=webclock&category=integration)** → 確認加入自訂儲存庫 → **下載** → **重新啟動 Home Assistant**。
 
-若按鈕未找到儲存庫：在 **HACS → 右上選單 → 自訂儲存庫**，填 `https://github.com/kcayut/webclock`，類型選 **Integration**，加入後下載 WebClock。這是 HACS 自訂來源，尚非 HACS 預設清單或 HA 官方內建整合。此安裝方式需要 GitHub 上已包含本版的 `hacs.json` 與 `custom_components/webclock`；若舊 release 尚未包含，可在 HACS 選含本版的預設分支，或使用手動安裝。
+若按鈕未找到儲存庫：在 **HACS → 右上選單 → 自訂儲存庫**，填 `https://github.com/kcayut/webclock`，類型選 **Integration**，加入後下載 WebClock。這是 HACS 自訂來源，尚非 HACS 預設清單或 HA 官方內建整合。請選正式 Release 版本；HACS 依該版本取得 `hacs.json` 與 `custom_components/webclock`，卡片版本也一起更新。
 
 重啟後，**[新增 WebClock 整合](https://my.home-assistant.io/redirect/config_flow_start/?domain=webclock)**，或進入 **設定 → 裝置與服務 → 新增整合 → WebClock**，依下節填 Server 位址與加入碼。
 
 <details>
 <summary>不使用 HACS：手動安裝</summary>
 
-下載專案 ZIP 並解壓縮，將 `custom_components/webclock` 整個資料夾複製到 HA 的 `/config/custom_components/webclock`，然後重新啟動 HA。請保留 `webclock` 這層目錄，不要只複製其中的 Python 檔案。
+從 [GitHub 最新正式版](https://github.com/kcayut/webclock/releases/latest)下載 **Source code (zip)** 並解壓縮，將 `custom_components/webclock` 整個資料夾複製到 HA 的 `/config/custom_components/webclock`，然後重新啟動 HA。請保留 `webclock` 這層目錄，不要只複製其中的 Python 檔案。
 
 若可在 HA 主機使用終端機，可從 WebClock 專案根目錄執行：
 

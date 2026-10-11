@@ -34,6 +34,10 @@ if [[ ! -d "$PROJECT_DIR/.git" ]]; then
     exit 1
 fi
 
+if [[ "$(git -C "$PROJECT_DIR" config --get webclock.releaseChannel || true)" == stable ]]; then
+    exec "${SUDO[@]}" python3 "$PROJECT_DIR/update_clock.py" "$PROJECT_DIR"
+fi
+
 echo "Fetching the configured upstream for: $PROJECT_DIR"
 git -C "$PROJECT_DIR" fetch
 UPSTREAM_COMMIT="$(git -C "$PROJECT_DIR" rev-parse --verify '@{upstream}^{commit}')"

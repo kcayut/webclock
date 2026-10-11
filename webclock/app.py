@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
+from webclock import __version__
 from webclock.services.storage import load_json, save_json, revision, storage_lock
 from webclock.services.holiday_service import HolidayService
 from webclock.services.schedule_service import TAIPEI, next_event, read_schedules, read_legacy_schedules, calendar_target_matches
@@ -1337,7 +1338,7 @@ def health():
     mode = getattr(g, 'deployment_mode', 'recovery')
     if mode == 'recovery':
         return jsonify(status='recovery_required'), 503
-    return jsonify(status='ok', auth_schema=1, deployment_mode=mode,
+    return jsonify(status='ok', version=__version__, auth_schema=1, deployment_mode=mode,
                    device_schema=2, managed_device_schema=3,
                    managed_devices_ready=True)
 

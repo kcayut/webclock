@@ -33,8 +33,32 @@ class InstallationTest(unittest.TestCase):
                         SUDO_USER='installer-test')
         for key in ('WEBCLOCK_STATE_DIR', 'NOTES_FILE', 'PORT', 'WEBCLOCK_TLS_CERT', 'WEBCLOCK_TLS_KEY'):
             self.env.pop(key, None)
+        for name in ('install_check.py', 'update_clock.py'):
+            shutil.copy2(ROOT / 'scripts' / name, self.project / 'scripts' / name)
+        runner = self.project / 'scripts/install_runner.py'
+        runner.write_text('''import os
+import install_check
+from unittest.mock import patch
+def wait(*args, **kwargs):
+    if os.environ.get('FAIL_HEALTH'):
+        raise RuntimeError('simulated readiness failure')
+install_check.wait_ready = wait
+with patch.object(install_check.socket, 'socket'):
+    install_check.main()
+''')
+        self.env['PYTHONPATH'] = str(ROOT)
+        self.env['TEST_PROJECT'] = str(self.project)
         self.command('docker', '''printf 'docker %s\\n' "$*" >> "$INSTALL_LOG"
 if [ "$*" = 'compose ps -aq' ]; then printf '%s' "${EXISTING_CONTAINER:-}"; fi
+if [ "$*" = 'compose config --images' ]; then echo webclock-test; fi
+if [[ "$*" == *'scripts/install_check.py'* ]]; then
+    while [ "$1" != scripts/install_check.py ]; do shift; done
+    shift
+    exec "$REAL_PYTHON" scripts/install_runner.py "$@"
+fi
+if [[ "$*" == *'manage_auth.py setup'* && "$*" != "${FAIL_DOCKER:-unused}" ]]; then
+    "$REAL_PYTHON" -c 'from pathlib import Path; from webclock.services.auth_service import AuthService; AuthService(Path("webclock_state/auth.json")).setup("admin", "installer-test-password", enable_managed=True)'
+fi
 if [ "$*" = "${FAIL_DOCKER:-unused}" ]; then exit 1; fi
 ''')
 
@@ -51,26 +75,63 @@ if [ "$*" = "${FAIL_DOCKER:-unused}" ]; then exit 1; fi
     def log(self):
         return (self.root / 'commands').read_text()
 
-    def test_docker_fresh_self_and_managed_start_only_after_setup(self):
+    def test_docker_release_pull_health_and_explicit_build(self):
+        self.env['WEBCLOCK_HTTP_PORT'] = '8181'
+        self.command('python3', 'exit 91\n')
         result = self.run_setup('--docker')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads((self.project / 'manual_notes.json').read_text()), [])
         self.assertEqual((self.project / '.env').stat().st_mode & 0o777, 0o600)
-        self.assertNotIn('manage_auth', self.log())
-        (self.root / 'commands').unlink()
-        result = self.run_setup('--docker', '--managed')
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('WEBCLOCK_HTTP_PORT=8181', (self.project / '.env').read_text())
         log = self.log()
-        self.assertLess(log.index('compose build'), log.index('manage_auth.py'))
-        self.assertLess(log.index('--enable-managed'), log.index('compose up -d'))
+        self.assertIn('compose pull webclock', log)
+        self.assertNotIn('compose build', log)
+        self.assertIn('-p 8181:5000', log)
+        self.assertLess(log.index('compose up -d --no-build'), log.index('install_check.py wait'))
+        self.assertIn(':8181/admin', result.stdout)
+        self.assertFalse((self.project / '.webclock-install.json').exists())
         (self.root / 'commands').unlink()
-        self.env['FAIL_DOCKER'] = 'compose run --rm --no-deps webclock python scripts/manage_auth.py setup --username admin --enable-managed'
-        self.assertNotEqual(self.run_setup('--docker', '--managed').returncode, 0)
+        result = self.run_setup('--docker', '--build')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('compose build', self.log())
+        self.assertNotIn('compose pull', self.log())
+
+    def test_managed_rejects_missing_tls_before_password_or_start(self):
+        result = self.run_setup('--docker', '--managed')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('valid HTTPS', result.stderr)
+        self.assertNotIn('manage_auth', self.log())
         self.assertNotIn('compose up', self.log())
-        (self.root / 'commands').unlink()
+
+    def test_failed_managed_health_resumes_without_resetting_credentials(self):
+        from tests.test_install_check import create_certificate
+        cert, key = create_certificate(self.root)
+        args = ('--docker', '--managed', '--tls-cert', str(cert), '--tls-key', str(key),
+                '--tls-host', 'clock.test', '--tls-ca', str(cert))
+        self.env['FAIL_HEALTH'] = '1'
+        result = self.run_setup(*args)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        auth = self.project / 'webclock_state/auth.json'
+        original = auth.read_bytes()
+        self.assertTrue((self.project / '.webclock-install.json').exists())
+        self.assertEqual(self.log().count('manage_auth.py setup'), 1)
+        self.env.pop('FAIL_HEALTH')
+        self.env['EXISTING_CONTAINER'] = 'pending-container'
+        self.env['WEBCLOCK_HTTP_PORT'] = '8282'
+        result = self.run_setup(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(auth.read_bytes(), original)
+        self.assertEqual(self.log().count('manage_auth.py setup'), 1)
+        self.assertIn('https://clock.test:8282/admin', result.stdout)
+        self.assertFalse((self.project / '.webclock-install.json').exists())
+
+    def test_docker_failure_prevents_start(self):
+        self.env['FAIL_DOCKER'] = 'compose pull webclock'
+        self.assertNotEqual(self.run_setup('--docker').returncode, 0)
+        self.assertNotIn('compose up', self.log())
         self.env['FAIL_DOCKER'] = 'compose ps -aq'
         self.assertNotEqual(self.run_setup('--docker').returncode, 0)
-        self.assertNotIn('compose build', self.log())
+        self.assertNotIn('compose up', self.log())
 
     def test_existing_data_and_containers_are_preserved(self):
         (self.project / '.env').write_text('PORT=9123\nWEBCLOCK_LANGUAGE=ja\n')
@@ -92,6 +153,7 @@ if [ "$*" = "${FAIL_DOCKER:-unused}" ]; then exit 1; fi
         self.command('id', 'if [ "$1" = -u ]; then echo 0; else echo installer-test; fi\n')
         self.command('systemctl', '''printf 'systemctl %s\\n' "$*" >> "$INSTALL_LOG"
 if [ "$1" = cat ]; then exit "${UNIT_MISSING:-1}"; fi
+if [ "$1" = show ]; then echo "$TEST_PROJECT"; fi
 ''')
         self.command('apt-get', 'printf "apt-get %s\\n" "$*" >> "$INSTALL_LOG"\n')
         self.command('chown', ':\n')
@@ -100,6 +162,7 @@ if [ "$1" = cat ]; then exit "${UNIT_MISSING:-1}"; fi
         venv = self.project / 'venv/bin'
         venv.mkdir(parents=True)
         python = self.command('python-wrapper', '''if [ "$1" = -m ]; then exit 0; fi
+if [ "$1" = scripts/install_check.py ]; then shift; exec "$REAL_PYTHON" scripts/install_runner.py "$@"; fi
 exec "$REAL_PYTHON" "$@"
 ''')
         shutil.copy2(python, venv / 'python')
@@ -108,7 +171,7 @@ exec "$REAL_PYTHON" "$@"
         self.assertIn('5000', result.stdout)
         unit = (self.root / 'webclock.service').read_text()
         self.assertIn('User=installer-test', unit)
-        self.assertIn('systemctl enable --now webclock', self.log())
+        self.assertIn('systemctl restart webclock', self.log())
         self.assertNotIn('manage_auth', self.log())
         (self.root / 'commands').unlink()
         self.env['UNIT_MISSING'] = '0'
@@ -121,7 +184,7 @@ exec "$REAL_PYTHON" "$@"
         script = ROOT / 'scripts/prepare_ha_app.sh'
         result = subprocess.run(['bash', str(script), str(destination)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name in ('config.yaml', 'Dockerfile', 'DOCS.md', 'CHANGELOG.md', 'icon.png', 'app.py', 'sw.js', 'requirements.txt',
+        for name in ('config.yaml', 'Dockerfile', 'DOCS.md', 'CHANGELOG.md', 'icon.png', 'app.py', 'sw.js', 'VERSION', 'requirements.txt',
                      'webclock/ha_app.py', 'templates/index.html', 'static/clock.js'):
             self.assertTrue((destination / name).is_file(), name)
         self.assertNotIn('\nimage:', (destination / 'config.yaml').read_text())

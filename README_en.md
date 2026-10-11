@@ -29,6 +29,22 @@ The clock renders time, date, and weekday first; connection, browser-storage, or
 | **Docker** | Computers, NAS devices or Linux hosts with Docker Compose |
 | **Home Assistant** | Add the App repository on HA OS; install the integration and bundled cards through HACS |
 
+**One-command Linux / Raspberry Pi installation:**
+
+```bash
+curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.sh -o /tmp/webclock-install.sh && bash /tmp/webclock-install.sh
+```
+
+**One-command Docker installation:**
+
+```bash
+curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.sh -o /tmp/webclock-install.sh && bash /tmp/webclock-install.sh --docker
+```
+
+The installer uses the [latest official GitHub release](https://github.com/kcayut/webclock/releases/latest), verifies health, and prints the clock and management URLs. Docker pulls the matching prebuilt image.
+
+The first public version is **1.1.0**, retaining the existing HA version. Server, images, and integration share one version; see the [changelog and version policy](CHANGELOG.md) (Traditional Chinese).
+
 **[Install the HA App](doc/installation.md#home-assistant)** · **[Install the HA integration and cards](doc/home-assistant.md#安裝整合)**
 
 **[Open the installation guide →](doc/installation.md)** (Traditional Chinese): quick commands, prerequisites, self/managed activation and HTTPS setup for all three methods.
@@ -37,7 +53,7 @@ With an existing administrator, use `/mode` to [switch self/managed, choose the 
 
 **[Set up a clock display →](doc/display-devices.md)** (Traditional Chinese): home-screen shortcuts, fullscreen and keeping the screen awake on iPad/iPhone, Android, Windows and Mac, with version-specific steps including iPad mini 1/iOS 9.
 
-Linux and Docker default to **self** mode. For administrator sign-in and per-device authorization, add `--managed` to a fresh installation and configure HTTPS. The HA App protects management through HA sign-in; importing a managed full backup also retains the original WebClock account sign-in. See the [release status](doc/ha-release.md) before installing: the first public image publication and HA OS acceptance are still pending. A local build remains available for development.
+Linux and Docker default to **self** mode. For administrator sign-in and per-device authorization, add `--managed` and the TLS certificate options to a fresh installation. The HA App protects management through HA sign-in; importing a managed full backup also retains the original WebClock account sign-in. HA OS, ARM, and older iPad physical acceptance are recorded separately in the [release status](doc/ha-release.md). A local build remains available for development.
 
 **More information:** [English guide](doc/guide_en.md) · [Home Assistant integration and cards](doc/home-assistant.md) · [Device API](doc/server-api_en.md) · [ESPHome development](doc/esp-home.md) · [Firmware](firmware/README.md) (HA and firmware guides: Traditional Chinese).
 

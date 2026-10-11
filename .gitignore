@@ -23,3 +23,5 @@ Thumbs.db
 
 TODO.md
 .webclock-mode-backups-*/
+.webclock-install.json
+.webclock-bootstrap

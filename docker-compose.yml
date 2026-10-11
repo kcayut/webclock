@@ -1,6 +1,10 @@
 services:
   webclock:
-    build: .
+    image: ghcr.io/kcayut/webclock:${WEBCLOCK_VERSION:-1.1.0}
+    build:
+      context: .
+      args:
+        BUILD_VERSION: ${WEBCLOCK_VERSION:-1.1.0}
     container_name: webclock
     restart: always
     ports:

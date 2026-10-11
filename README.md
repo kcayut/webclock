@@ -29,6 +29,22 @@
 | **Docker** | 已有 Docker 的電腦、NAS 或 Linux 主機 |
 | **Home Assistant** | HA OS 加入 App 來源後點選安裝；Integration 與卡片由 HACS 安裝 |
 
+**Linux／Raspberry Pi 一行安裝：**
+
+```bash
+curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.sh -o /tmp/webclock-install.sh && bash /tmp/webclock-install.sh
+```
+
+**Docker 一行安裝：**
+
+```bash
+curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.sh -o /tmp/webclock-install.sh && bash /tmp/webclock-install.sh --docker
+```
+
+安裝器使用 [GitHub 最新正式版](https://github.com/kcayut/webclock/releases/latest)，完成健康檢查後提供時鐘與管理頁網址；Docker 直接取得同版預建映像。
+
+首個公開版本定為 **1.1.0**，沿用既有 HA 版本；Server、映像與整合統一版號，詳見[發行紀錄與版本規則](CHANGELOG.md)。
+
 **[安裝 HA App](doc/installation.md#home-assistant)** · **[安裝 HA 整合與卡片](doc/home-assistant.md#安裝整合)**
 
 **[前往完整安裝指南 →](doc/installation.md)**：三種方式的快速指令、必要條件、self／managed 啟用方式與 HTTPS 設定。
@@ -37,7 +53,7 @@
 
 **[把裝置變成時鐘 →](doc/display-devices.md)**：依 iPad／iPhone、Android、Windows、Mac 分版本整理主畫面圖示、全螢幕與螢幕恆亮，包含 iPad mini 1／iOS 9。
 
-Linux／Docker 預設使用 **self（自用）**；需要獨立管理員登入與逐台授權時，全新安裝加 `--managed` 並設定 HTTPS。HA App 由 HA 登入保護管理入口，匯入 managed 完整備份後另用原 WebClock 帳密登入。首次公開映像發布與 HA OS 驗收仍待完成，請先看[發行狀態](doc/ha-release.md)；開發者可用本機建置。
+Linux／Docker 預設使用 **self（自用）**；需要獨立管理員登入與逐台授權時，全新安裝加 `--managed` 與 TLS 憑證參數。HA App 由 HA 登入保護管理入口，匯入 managed 完整備份後另用原 WebClock 帳密登入。HA OS、ARM 與舊 iPad 實機驗收狀態另見[發行紀錄](doc/ha-release.md)；開發者仍可用本機建置。
 
 **使用說明：**[繁體中文使用指南](doc/guide.md) · [Home Assistant 整合與卡片](doc/home-assistant.md) · [裝置 API](doc/server-api.md) · [ESPHome 原型指南](doc/esp-home.md) · [ESP32-S3 韌體](firmware/README.md)
 

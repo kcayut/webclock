@@ -1,0 +1,154 @@
+"""Exercise the public bootstrap without network, Docker or system changes."""
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from scripts import update_clock
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class ReleaseInstallTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.assets = self.root / 'assets'
+        self.assets.mkdir()
+        seed = self.root / 'webclock-1.1.0'
+        seed.mkdir()
+        (seed / 'VERSION').write_text('1.1.0\n')
+        (seed / '.env.example').write_text('PORT=5000\n')
+        (seed / 'setup.sh').write_text('''#!/bin/bash
+set -eu
+project="$(cd "$(dirname "$0")" && pwd)"
+printf '%s\\n' "$@" > "$project/setup-args"
+exit "${SETUP_EXIT:-0}"
+''')
+        archive = self.assets / 'webclock-1.1.0.tar.gz'
+        with tarfile.open(archive, 'w:gz') as stream:
+            stream.add(seed, arcname=seed.name)
+        (self.assets / 'SHA256SUMS').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        self.env = dict(os.environ, PATH=str(self.bin) + ':' + os.environ['PATH'],
+                        FIXTURE_ASSETS=str(self.assets), FIXTURE_ROOT=str(self.root))
+        for name in ('PORT', 'WEBCLOCK_HTTP_PORT', 'WEBCLOCK_VERSION'):
+            self.env.pop(name, None)
+        self.command('docker', 'pass')
+        self.command('uname', 'print("Linux")')
+        self.command('apt-get', 'raise SystemExit("Unexpected package installation")')
+        self.command('systemctl', 'pass')
+        self.command('git', '''
+if sys.argv[1] == 'clone':
+    shutil.copytree(Path(os.environ['FIXTURE_ROOT']) / 'webclock-1.1.0', sys.argv[-1])
+    (Path(sys.argv[-1]) / '.git').mkdir()
+elif sys.argv[1] == '-C':
+    (Path(sys.argv[2]) / 'git-config').write_text(' '.join(sys.argv[3:]))
+''')
+        self.command('curl', '''
+args = sys.argv[1:]
+url = next(value for value in args if value.startswith('https://'))
+with (Path(os.environ['FIXTURE_ROOT']) / 'downloads').open('a') as log:
+    log.write(url + '\\n')
+if url.endswith('/latest'):
+    print('https://github.com/kcayut/webclock/releases/tag/v1.1.0', end='')
+else:
+    shutil.copyfile(Path(os.environ['FIXTURE_ASSETS']) / url.rsplit('/', 1)[1], args[args.index('-o') + 1])
+''')
+
+    def command(self, name, source):
+        path = self.bin / name
+        path.write_text('#!' + sys.executable + '\nimport os, sys, shutil\nfrom pathlib import Path\n' + source)
+        path.chmod(0o755)
+
+    def install(self, *args):
+        return subprocess.run(['/bin/bash', str(ROOT / 'install.sh'), '--dir', str(self.root / 'installed'), *args],
+                              env=self.env, cwd=self.root, capture_output=True, text=True)
+
+    def test_docker_latest_download_is_verified_pinned_and_preserves_port(self):
+        self.env['WEBCLOCK_HTTP_PORT'] = '8080'
+        result = self.install('--docker')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        installed = self.root / 'installed'
+        self.assertIn('WEBCLOCK_VERSION=1.1.0', (installed / '.env').read_text())
+        self.assertIn('WEBCLOCK_HTTP_PORT=8080', (installed / '.env').read_text())
+        self.assertFalse((installed / '.webclock-bootstrap').exists())
+        self.assertNotEqual(self.install('--docker').returncode, 0)
+
+    def test_corrupt_download_never_creates_destination(self):
+        with (self.assets / 'webclock-1.1.0.tar.gz').open('ab') as stream:
+            stream.write(b'corruption')
+        result = self.install('--docker', '--version', '1.1.0')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('checksum mismatch', result.stderr)
+        self.assertFalse((self.root / 'installed').exists())
+        self.assertNotIn('/latest', (self.root / 'downloads').read_text())
+
+    def test_failed_setup_can_resume_without_replacing_source_or_data(self):
+        self.env['SETUP_EXIT'] = '1'
+        self.assertNotEqual(self.install('--docker').returncode, 0)
+        installed = self.root / 'installed'
+        (installed / 'user-data').write_text('keep')
+        downloaded = (self.root / 'downloads').read_text()
+        self.env['SETUP_EXIT'] = '0'
+        result = self.install('--docker')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((installed / 'user-data').read_text(), 'keep')
+        self.assertEqual((self.root / 'downloads').read_text(), downloaded)
+        self.assertFalse((installed / '.webclock-bootstrap').exists())
+
+    def test_linux_pins_tag_channel_and_empty_bash_array_works(self):
+        result = self.install('--version', '1.1.0')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / 'installed/git-config').read_text(), 'config webclock.releaseChannel stable')
+        self.assertNotIn('/latest', (self.root / 'downloads').read_text())
+        self.assertNotEqual(self.install('--version', '../main').returncode, 0)
+
+
+class ReleaseUpdateTest(unittest.TestCase):
+    def test_stable_channel_selects_only_a_published_versioned_tag(self):
+        calls = []
+        def run(args, cwd=None):
+            calls.append(args)
+            if args[1:3] == ['config', '--get']:
+                return 'stable'
+            if args[1] == 'rev-parse':
+                return 'release-commit'
+            if args[1] == 'show':
+                return '1.1.1'
+            return ''
+        data = {'tag_name': 'v1.1.1', 'draft': False, 'prerelease': False}
+        with patch.object(update_clock, 'run', side_effect=run), \
+             patch.object(update_clock.urllib.request, 'urlopen', return_value=io.StringIO(json.dumps(data))):
+            self.assertEqual(update_clock.update_target(Path('/test'), ['git']), 'release-commit')
+        self.assertIn(['git', 'fetch', 'https://github.com/kcayut/webclock.git', 'tag', 'v1.1.1'], calls)
+        self.assertFalse(any('@{upstream}' in call for call in calls))
+        for bad in ({**data, 'prerelease': True}, {**data, 'draft': True}, {**data, 'tag_name': '../main'}):
+            with self.subTest(bad=bad), patch.object(update_clock, 'run', return_value='stable') as git, \
+                 patch.object(update_clock.urllib.request, 'urlopen', return_value=io.StringIO(json.dumps(bad))):
+                with self.assertRaisesRegex(RuntimeError, 'stable release'):
+                    update_clock.update_target(Path('/test'), ['git'])
+                git.assert_called_once()
+
+    def test_developer_checkout_keeps_its_configured_upstream(self):
+        def run(args, cwd=None):
+            if args[1] == 'config':
+                raise subprocess.CalledProcessError(1, args)
+            return 'development-commit' if args[1] == 'rev-parse' else ''
+        with patch.object(update_clock, 'run', side_effect=run), patch.object(update_clock.urllib.request, 'urlopen') as network:
+            self.assertEqual(update_clock.update_target(Path('/test'), ['git']), 'development-commit')
+            network.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()

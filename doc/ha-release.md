@@ -1,12 +1,13 @@
-# Home Assistant 安裝交付與發行
+# WebClock 安裝交付與 Home Assistant 發行
 
 一般使用者請看[Server 安裝](installation.md#home-assistant)與[整合／卡片安裝](home-assistant.md#安裝整合)。本頁供維護者發行與記錄驗收使用。
 
 ## 目前狀態
 
-- 本版 App 與 Integration 版本為 **1.1.0**。HA App 仍標示 `experimental`。
-- 已提供 App 來源、HACS 標準目錄、安裝捷徑、整合換址、HA 專用測試與多架構映像發行 workflow。新增管理頁單一 `.webclock` 完整備份，預設加密並可選未加密，可將 managed 帳號與資料匯入新 HA App；這項變更的實機搬家驗收仍待完成。
-- **尚未完成：**本版 commit／push、GitHub Release、公開 GHCR 映像、遠端 CI、HACS 實際下載與 HA OS 商店安裝驗收。設定檔與本機測試不等於已發布。
+- 首個公開版本定為 **1.1.0**；Server、Docker、App 與 Integration 使用相同版本。HA App 仍標示 `experimental`。
+- 已補入正式版安裝入口、獨立離線 ZIP、版本與 SHA256 檢查、安裝健康檢查／重試、managed TLS 設定及完整發行流程。App 來源、HACS 標準目錄、整合換址與可選加密的 `.webclock` 完整備份一併交付。
+- **待公開驗證：**本批變更的 commit／push、GitHub Release、兩種公開 GHCR 映像及遠端 CI。只有發行工作全部成功且匿名映像可取得，才發布 GitHub Release；此處不得以設定檔或本機測試代替發布證據。
+- **待實機驗收：**HACS 實際下載、HA OS 商店安裝及完整備份搬家。
 - 使用者的 HA 主機、Docker／ARM 部署、冷備份還原、長時間運行與通知／揚聲器仍需實測；既有 macOS HA Core／Python 3.14 測試結束 SIGSEGV 另行追蹤。
 
 ## 完整備份本機驗證（2026-10-09）
@@ -26,6 +27,12 @@
 
 | 用途 | 來源 |
 | --- | --- |
+| 產品版號與發行紀錄 | 根目錄 `VERSION`、`CHANGELOG.md`、`doc/releases/vX.Y.Z.md` |
+| 一行安裝入口 | Release 的 `install.sh`，固定同一版號；使用者入口為 `releases/latest/download/install.sh` |
+| Server 原始碼與 Docker 部署檔 | Release 的 `webclock-X.Y.Z.tar.gz`，從已提交的公開檔案打包 |
+| 電腦離線時鐘 | Release 的 `webclock-clock-X.Y.Z.zip`，解壓後開啟最外層 `index.html` |
+| 下載完整性 | Release 的 `SHA256SUMS`，包含安裝器與兩個壓縮檔 |
+| 一般 Docker 映像 | 根目錄 `Dockerfile`，發布 `ghcr.io/kcayut/webclock:X.Y.Z` |
 | App 商店來源 | 根目錄 `repository.yaml` 與 `homeassistant/addon/config.yaml` |
 | App 映像 | 從專案根目錄建置 `homeassistant/addon/Dockerfile`，發布 `ghcr.io/kcayut/webclock-addon:版本` |
 | HACS 整合 | 根目錄 `hacs.json`、`custom_components/webclock/`；三種卡片、翻譯、圖示包含其中 |
@@ -33,13 +40,22 @@
 
 HACS 使用自訂儲存庫，無須等待加入預設清單；已有 HACS 的使用者只需加入來源與下載。沒有 HACS 的使用者仍可手動複製整合。Server 的私人資料不在整合安裝包裡。
 
+## 版本來源與規則
+
+根目錄 **`VERSION` 是產品版號來源**。Server 的 `webclock.__version__` 與 `/api/health.version` 讀取它；Docker 預設版本、HA App `config.yaml`、整合 `manifest.json` 與卡片 `const.py` 必須一致。`python scripts/build_release.py --check --tag vX.Y.Z` 與 CI 會拒絕不一致的版號，發行包只讀取 Git 已提交內容，不會帶入本機 `.env`、TLS 私鑰或使用者資料。
+
+採用 `X.Y.Z`：不相容變更增加 `X`，相容功能增加 `Y`，相容修正增加 `Z`；Git tag 使用 `vX.Y.Z`。首次公開使用 **1.1.0**，因 App／整合／卡片此前已標示 1.1.0，沿用可避免既有安裝版號倒退。產品版號與 `auth_schema`、裝置 schema、備份格式等相容性欄位分開管理。
+
+正式安裝入口只選正式 Release。Linux 安裝將 `webclock.releaseChannel=stable` 寫入該 checkout 的 Git 設定，之後安全更新器依最新正式版 tag 更新；Docker 在 `.env` 固定 `WEBCLOCK_VERSION`，依[更新流程](installation.md#update)主動更新；HACS 依 Release 取得整合，HA App 依來源中的版本取得對應映像。
+
 ## 發布順序
 
-1. 同時更新 App `config.yaml`、整合 `manifest.json` 與 `const.py` 的版本，更新 App changelog。App 與整合使用同一個 `X.Y.Z` 發行版本。
-2. 提交並推送變更。確認 **Home Assistant installation and release** CI 成功：HA 2026.9.4／Python 3.14、卡片、安裝包、Ingress，以及 amd64／aarch64 容器的啟動、入口隔離與重啟資料保存。
-3. 由相同提交建立 `vX.Y.Z` GitHub Release。只有正式觸發 `release: published` 才會在全部檢查成功後發布多架構映像；一般 push／PR／手動執行只驗證，不會推送映像。tag、App 與整合版本不符時停止。
-4. 首次發布後，在 GitHub Packages 確認 `webclock-addon` 為 **Public**，且連結至此 repository。用未登入 GHCR 的環境確認 `ghcr.io/kcayut/webclock-addon:X.Y.Z` 可下載、含 `linux/amd64` 與 `linux/arm64`。使用者不應需要 registry 帳密。
-5. 在 HA OS 加入來源並安裝；在 HACS 加入來源、下載、重啟 HA，再用 App 日誌的整合網址＋六碼加入並新增三張卡片。核對網址的主機名稱與 App「資訊」相同、可由 HA 內部 DNS 解析；不要以普通 Docker 的容器名代替 Supervisor 主機名稱驗收。記錄 HA／Supervisor 版本、架構、映像 digest 與結果，再更新本頁及安裝指南的發行狀態。
+1. 更新 `VERSION`、上述各處版本、根目錄及 App changelog，新增 `doc/releases/vX.Y.Z.md` 發行說明。執行版本檢查與相關本機測試，再提交並推送。
+2. 在同一個已驗證提交建立並推送 `vX.Y.Z` tag，觸發 **Installation tests and release**；不要先建立公開 Release。一般分支 push／PR 只驗證，正式 tag 才能進入發布。
+3. CI 先執行 Linux 新安裝、Server 回歸、真實 HA 2026.9.4／Python 3.14 整合與卡片測試；再驗證普通 Docker 與 HA App 的 `linux/amd64`、`linux/arm64` 映像，包含啟動、健康檢查及適用的入口隔離／資料保存。
+4. 通過後發布 `webclock` 與 `webclock-addon` 固定版號映像，再以**未登入 GHCR** 的環境檢查兩個映像的 manifest 與架構。第一次建立 package 時，如預設為 Private，維護者須在 GitHub Packages 將兩者設成 **Public**，再重跑失敗工作；匿名檢查不通過時不得公開 Release。
+5. 最後才建立公開 GitHub Release，附上同一提交產生的安裝器、Server 壓縮檔、離線 ZIP 與 `SHA256SUMS`，並設為最新正式版。回讀 Release 版號、資產與匿名下載結果，再更新本頁的公開驗證狀態。
+6. 在 HA OS 加入來源並安裝；在 HACS 加入來源、下載、重啟 HA，再用 App 日誌的整合網址＋六碼加入並新增三張卡片。核對網址的主機名稱與 App「資訊」相同、可由 HA 內部 DNS 解析；不要以普通 Docker 的容器名代替 Supervisor 主機名稱驗收。記錄 HA／Supervisor 版本、架構、映像 digest 與結果。
 
 workflow 使用標準公開 GitHub runner；沒有使用付費大型 runner 或保留 build cache／artifact。映像發布僅限原始 `kcayut/webclock` repository，PR 與 fork 不取得發布權限。
 

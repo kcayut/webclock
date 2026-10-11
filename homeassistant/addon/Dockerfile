@@ -5,7 +5,9 @@ ARG BUILD_ARCH="aarch64|amd64"
 LABEL io.hass.name="WebClock" \
       io.hass.type="app" \
       io.hass.version="${BUILD_VERSION}" \
-      io.hass.arch="${BUILD_ARCH}"
+      io.hass.arch="${BUILD_ARCH}" \
+      org.opencontainers.image.source="https://github.com/kcayut/webclock" \
+      org.opencontainers.image.version="${BUILD_VERSION}"
 
 WORKDIR /app
 ENV HOST=0.0.0.0 \
@@ -21,7 +23,7 @@ ENV HOST=0.0.0.0 \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py sw.js ./
+COPY app.py sw.js VERSION ./
 COPY webclock ./webclock
 COPY templates ./templates
 COPY static ./static

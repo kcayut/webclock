@@ -111,7 +111,9 @@ class AccessControlTest(unittest.TestCase):
             self.assertEqual(status['events'], [])
             self.assertIsNone(status['next_event'])
             self.assertEqual(set(self.request('/api/time').json), {'server_timestamp'})
-        self.assertTrue(self.request('/api/health').json['managed_devices_ready'])
+        health = self.request('/api/health').json
+        self.assertTrue(health['managed_devices_ready'])
+        self.assertEqual(health['version'], (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip())
 
     def test_shared_token_and_admin_session_never_authorize_legacy_display(self):
         with patch.dict(os.environ, DEVICE_API_TOKEN='legacy-shared'):

@@ -9,7 +9,8 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 host = sys.argv[1] if len(sys.argv) > 1 else 'local-webclock'
 prefix = '/api/hassio_ingress/smoke-test'
-client = build_opener(HTTPCookieProcessor(CookieJar()))
+cookies = CookieJar()
+client = build_opener(HTTPCookieProcessor(cookies))
 
 
 def request(port, path, headers=None, data=None):
@@ -54,6 +55,12 @@ if not groups:
     status, body = request(8099, '/api/csrf', headers)
     assert status == 200, status
     headers.update({'Content-Type': 'application/json', 'X-CSRF-Token': json.loads(body)['csrf_token']})
+    csrf_cookie = next(cookie for cookie in cookies if cookie.name == 'webclock_csrf')
+    assert csrf_cookie.secure, 'HTTPS Ingress must issue a Secure CSRF cookie'
+    # The real Ingress proxy forwards the browser's Secure cookie over this HTTP hop.
+    headers['Cookie'] = csrf_cookie.name + '=' + csrf_cookie.value
+    for invalid in ({'X-CSRF-Token': 'wrong'}, {'Origin': 'https://other.example.test'}):
+        assert request(8099, '/api/v1/groups', dict(headers, **invalid), b'{"name":"Rejected"}')[0] == 403
     status, body = request(8099, '/api/v1/groups', headers, b'{"name":"Installation smoke"}')
     assert status == 201, (status, body)
 else:

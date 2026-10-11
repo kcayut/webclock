@@ -28,6 +28,35 @@ def run(args, cwd=None, env=None):
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
 
 
+def update_target(project, git):
+    """Release installs follow published stable tags; developer checkouts keep their upstream."""
+    try:
+        channel = run(git + ['config', '--get', 'webclock.releaseChannel'], cwd=project)
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1:
+            raise
+        channel = ''
+    if not channel:
+        run(git + ['fetch'], cwd=project)
+        return run(git + ['rev-parse', '@{upstream}'], cwd=project)
+    if channel != 'stable':
+        raise RuntimeError('Unknown WebClock release channel; nothing updated.')
+    request = urllib.request.Request('https://api.github.com/repos/kcayut/webclock/releases/latest',
+                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'WebClock-updater'})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        release = json.load(response)
+    tag = release.get('tag_name', '')
+    if (release.get('draft') is not False or release.get('prerelease') is not False
+            or not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)):
+        raise RuntimeError('GitHub did not return a published stable release; nothing updated.')
+    run(git + ['fetch', 'https://github.com/kcayut/webclock.git', 'tag', tag], cwd=project)
+    target = run(git + ['rev-parse', 'refs/tags/' + tag + '^{commit}'], cwd=project)
+    if run(git + ['show', target + ':VERSION'], cwd=project) != tag[1:]:
+        raise RuntimeError('Release tag and product version differ; nothing updated.')
+    print('Selected official release: ' + tag, flush=True)
+    return target
+
+
 def service_property(name):
     return run(['systemctl', 'show', 'webclock', '--property=' + name, '--value'])
 
@@ -522,8 +551,7 @@ def perform_update(project):
         if any(line != '?? .webclock-update.lock' for line in dirty.splitlines()):
             raise RuntimeError('Uncommitted/untracked files found. Commit or move them before updating.')
         old_head = run(git_prefix + ['rev-parse', 'HEAD'], cwd=project)
-        run(git_prefix + ['fetch'], cwd=project)
-        target = run(git_prefix + ['rev-parse', '@{upstream}'], cwd=project)
+        target = update_target(project, git_prefix)
         run(git_prefix + ['merge-base', '--is-ancestor', old_head, target], cwd=project)
         revisions = [run(git_prefix + ['ls-tree', '-r', '--name-only', ref], cwd=project).splitlines()
                      for ref in (old_head, target)]

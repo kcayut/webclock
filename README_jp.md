@@ -29,13 +29,29 @@ iPad、タブレット、使っていない画面を大きな時計にできま�
 | **Docker** | Docker Compose が使えるパソコン、NAS、Linux |
 | **Home Assistant** | HA OS に App リポジトリを追加してインストール。統合と同梱カードは HACS で導入 |
 
+**Linux／Raspberry Pi を 1 行でインストール：**
+
+```bash
+curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.sh -o /tmp/webclock-install.sh && bash /tmp/webclock-install.sh
+```
+
+**Docker を 1 行でインストール：**
+
+```bash
+curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.sh -o /tmp/webclock-install.sh && bash /tmp/webclock-install.sh --docker
+```
+
+インストーラーは [GitHub の最新正式版](https://github.com/kcayut/webclock/releases/latest)を取得し、ヘルスチェック後に時計と管理画面の URL を表示します。Docker は同じ版のビルド済みイメージを取得します。
+
+最初の公開版は、既存の HA の版番号を引き継いだ **1.1.0** です。Server、イメージ、統合は同じ版番号を使います。[変更履歴とバージョン規則](CHANGELOG.md)（繁体字中国語）を参照してください。
+
 **[HA App をインストール](doc/installation.md#home-assistant)** · **[HA 統合とカードをインストール](doc/home-assistant.md#安裝整合)**
 
 **[インストールガイドへ →](doc/installation.md)**（繁体字中国語）：3 種類の手順、前提条件、self／managed の有効化、HTTPS 設定をまとめています。
 
 **[端末を時計として使う →](doc/display-devices.md)**（繁体字中国語）：iPad／iPhone、Android、Windows、Mac のホーム画面アイコン、全画面表示、スリープ防止をバージョン別に説明。初代 iPad mini／iOS 9 も含みます。
 
-Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` を追加し、HTTPS を設定します。HA App は HA ログインで管理画面を保護し、managed 完全バックアップを読み込んだ場合は元の WebClock アカウントでもログインします。初回イメージの公開と HA OS 実機検証はまだ完了していません。[リリース状況](doc/ha-release.md)を確認してください。開発用のローカルビルドも利用できます。
+Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` と TLS 証明書のオプションを追加します。HA App は HA ログインで管理画面を保護し、managed 完全バックアップを読み込んだ場合は元の WebClock アカウントでもログインします。HA OS、ARM、旧 iPad の実機検証は[リリース状況](doc/ha-release.md)で別途記録しています。開発用のローカルビルドも利用できます。
 
 **詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [Home Assistant 統合とカード](doc/home-assistant.md) · [端末 API](doc/server-api_jp.md) · [ESPHome 開発](doc/esp-home.md) · [ファームウェア](firmware/README.md)（HA・ファームウェア関連は繁体字中国語）。
 

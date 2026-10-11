@@ -1,8 +1,9 @@
-name: Home Assistant installation and release
+name: Installation tests and release
 
 on:
   push:
     branches: ['**']
+    tags: ['v*']
     paths:
       - .github/workflows/home-assistant.yml
       - custom_components/**
@@ -17,6 +18,10 @@ on:
       - app.py
       - sw.js
       - setup.sh
+      - install.sh
+      - VERSION
+      - Dockerfile
+      - docker-compose.yml
       - requirements.txt
       - .dockerignore
       - .env.example
@@ -35,12 +40,14 @@ on:
       - app.py
       - sw.js
       - setup.sh
+      - install.sh
+      - VERSION
+      - Dockerfile
+      - docker-compose.yml
       - requirements.txt
       - .dockerignore
       - .env.example
   workflow_dispatch:
-  release:
-    types: [published]
 
 permissions:
   contents: read
@@ -72,32 +79,20 @@ jobs:
       - name: Check package and release versions
         id: version
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          import re
-
-          version = json.loads(Path('custom_components/webclock/manifest.json').read_text())['version']
-          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), 'Use a numeric X.Y.Z version'
-          constants = Path('custom_components/webclock/const.py').read_text()
-          assert re.search(r'^VERSION = "' + re.escape(version) + r'"$', constants, re.M), 'Card cache version must match integration version'
-          config = Path('homeassistant/addon/config.yaml').read_text()
-          assert re.search(r'^version: ["\x27]?' + re.escape(version) + r'["\x27]?$', config, re.M), 'App and integration versions must match'
-          assert re.search(r'^image: ghcr\.io/kcayut/webclock-addon$', config, re.M), 'Unexpected image registry'
-          if os.environ['GITHUB_EVENT_NAME'] == 'release':
-              assert os.environ['GITHUB_REF'] == 'refs/tags/v' + version, 'Release tag must match package version'
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('version=' + version + '\n')
-          PY
+          args=(--check)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then args+=(--tag "$GITHUB_REF_NAME"); fi
+          version=$(python scripts/build_release.py "${args[@]}")
+          test -f "doc/releases/v$version.md"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install real Home Assistant and server dependencies
         run: python -m pip install 'homeassistant==2026.9.4' -r requirements.txt
       - name: Test integration, cards and installation packages
         run: |
           python -m unittest discover -s homeassistant/tests -p 'test_*.py'
           node homeassistant/tests/test_cards.js
-          python -m unittest discover -s tests -p 'test_installation.py'
-          python -m unittest discover -s tests -p 'test_ingress.py'
+          python -m unittest discover -s tests -p 'test_*.py'
+          for test in tests/test_*.js; do node "$test"; done
+          bash -n install.sh setup.sh scripts/setup.sh
           git diff --check
 
   app:
@@ -154,20 +149,86 @@ jobs:
           docker volume rm webclock-data || true
           docker network rm webclock-test || true
 
-  publish:
-    needs: [integration, app]
-    if: github.event_name == 'release' && github.repository == 'kcayut/webclock' && github.event.repository.fork == false
+  server:
+    needs: integration
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    env:
+      DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
+      WEBCLOCK_VERSION: ${{ needs.integration.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Verify the release checkout
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+          cache-image: false
+      - uses: docker/setup-buildx-action@v4
+      - name: Install from a clean checkout using the real Docker installer
+        run: |
+          cp .env.example .env
+          echo 'WEBCLOCK_HTTP_PORT=18500' >> .env
+          bash setup.sh --docker --build
+          test ! -e .webclock-install.json
+          test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' webclock)" = "$WEBCLOCK_VERSION"
+      - name: Check installed service and restart
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:18500/api/health > "$RUNNER_TEMP/health.json"
+          python - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          health = json.loads((Path(os.environ['RUNNER_TEMP']) / 'health.json').read_text())
+          assert health['status'] == 'ok' and health['deployment_mode'] == 'self', health
+          assert health['version'] == os.environ['WEBCLOCK_VERSION'], health
+          PYTHON
+          docker compose restart
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:18500/api/health
+          curl --fail --silent --show-error http://127.0.0.1:18500/admin > /dev/null
+      - name: Container diagnostics and cleanup
+        if: always()
+        run: |
+          docker compose logs || true
+          docker compose down || true
+
+  systemd:
+    needs: integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Rehearse a fresh Linux installation and restart
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP bash tests/rehearse_install.sh
+
+  publish:
+    needs: [integration, app, server, systemd]
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'kcayut/webclock' && github.event.repository.fork == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: v${{ needs.integration.outputs.version }}
+      VERSION: ${{ needs.integration.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify checkout and refuse to overwrite a public release
+        id: existing
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          draft=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" | jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tag_name == $tag) | .draft')
+          if [ "$draft" = false ]; then echo 'This version is already published; choose a new version.' >&2; exit 1; fi
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
@@ -178,7 +239,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish versioned multi-architecture App
+      - name: Publish versioned multi-architecture server
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/kcayut/webclock:${{ needs.integration.outputs.version }}
+          build-args: |
+            BUILD_VERSION=${{ needs.integration.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/kcayut/webclock
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Publish versioned multi-architecture Home Assistant App
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -191,3 +265,33 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/kcayut/webclock
             org.opencontainers.image.revision=${{ github.sha }}
+      - name: Require anonymous access to both architectures before releasing
+        run: |
+          export DOCKER_CONFIG="$(mktemp -d)"
+          for package in webclock webclock-addon; do
+            if ! docker manifest inspect "ghcr.io/kcayut/$package:$VERSION" > "$RUNNER_TEMP/$package-manifest.json"; then
+              echo "Make ghcr.io/kcayut/$package public in GitHub package settings, then rerun this workflow. No Release has been published." >&2
+              exit 1
+            fi
+          done
+          python - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          for package in ('webclock', 'webclock-addon'):
+              manifest = json.loads((Path(os.environ['RUNNER_TEMP']) / (package + '-manifest.json')).read_text())
+              platforms = {(item['platform']['os'], item['platform']['architecture']) for item in manifest['manifests']}
+              assert {('linux', 'amd64'), ('linux', 'arm64')} <= platforms, (package, platforms)
+          PYTHON
+      - name: Package committed files and publish the complete stable release
+        env:
+          EXISTING_DRAFT: ${{ steps.existing.outputs.draft }}
+        run: |
+          assets="$RUNNER_TEMP/release-assets"
+          python scripts/build_release.py --tag "$RELEASE_TAG" --output "$assets"
+          if [ "$EXISTING_DRAFT" = true ]; then
+            gh release upload "$RELEASE_TAG" "$assets"/* --clobber
+            gh release edit "$RELEASE_TAG" --title "WebClock $RELEASE_TAG" --notes-file "doc/releases/$RELEASE_TAG.md"
+          else
+            gh release create "$RELEASE_TAG" "$assets"/* --draft --verify-tag --title "WebClock $RELEASE_TAG" --notes-file "doc/releases/$RELEASE_TAG.md"
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false --latest

@@ -25,4 +25,4 @@ App 預設只開放 Ingress，不會把 WebClock 連接埠公開到區網。若�
 
 沒有 HACS 可見[手動整合安裝](https://github.com/kcayut/webclock/blob/main/doc/home-assistant.md#安裝整合)。HA 只建立一份整合並顯示一個群組；其他網頁或 ESP 可用各自的加入碼連到不同群組。
 
-目前 App 是實驗版本。商店通知新版時，先建立 Home Assistant 備份，再按「更新」；整合與卡片在 HACS 更新，兩者分別管理。不要移除 App 來更新。HA 冷備份還原須停止 App；管理頁完整 `.webclock` 還原則由正在執行的新 App 接收檔案並處理復原。
+App 與 Server、整合共用 GitHub 正式 Release 的版本；App 仍標示 `experimental`，HA OS 與實機驗收範圍見[發行狀態](https://github.com/kcayut/webclock/blob/main/doc/ha-release.md)。商店通知新版時，先建立 Home Assistant 備份，再按「更新」；整合與卡片在 HACS 更新，兩者分別管理。不要移除 App 來更新。HA 冷備份還原須停止 App；管理頁完整 `.webclock` 還原則由正在執行的新 App 接收檔案並處理復原。
