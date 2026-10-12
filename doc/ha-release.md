@@ -6,9 +6,18 @@
 
 - 首個公開版本定為 **1.1.0**；Server、Docker、App 與 Integration 使用相同版本。HA App 仍標示 `experimental`。
 - 已補入正式版安裝入口、獨立離線 ZIP、版本與 SHA256 檢查、安裝健康檢查／重試、managed TLS 設定及完整發行流程。App 來源、HACS 標準目錄、整合換址與可選加密的 `.webclock` 完整備份一併交付。
-- **待公開驗證：**本批變更的 commit／push、GitHub Release、兩種公開 GHCR 映像及遠端 CI。只有發行工作全部成功且匿名映像可取得，才發布 GitHub Release；此處不得以設定檔或本機測試代替發布證據。
+- [GitHub Release v1.1.0](https://github.com/kcayut/webclock/releases/tag/v1.1.0) 已公開並設為最新正式版，附安裝器、Server 壓縮檔、離線 ZIP 與 `SHA256SUMS`。程式與標籤已同步到 GitHub／Gitea；發行前 CI、兩種映像的匿名讀取，以及公開下載後的 Linux／Docker 安裝演練均通過。
 - **待實機驗收：**HACS 實際下載、HA OS 商店安裝及完整備份搬家。
 - 使用者的 HA 主機、Docker／ARM 部署、冷備份還原、長時間運行與通知／揚聲器仍需實測；既有 macOS HA Core／Python 3.14 測試結束 SIGSEGV 另行追蹤。
+
+## 1.1.0 發行驗證（2026-10-12）
+
+- 發行提交：`020f837fdbc50a987b2da882b06424f881d3d489`；GitHub 與 Gitea 的 `v1.1.0` 使用同一提交。
+- [安裝與整合 CI](https://github.com/kcayut/webclock/actions/runs/38251398111) 全部通過：418 項 Server Python 測試、JavaScript 回歸、真實 HA 2026.9.4／Python 3.14 整合與卡片，以及普通 Docker／HA App 的 `linux/amd64`、`linux/arm64` 建置與啟動。
+- 同一 CI 在一次性 Linux runner 完成 self 與 managed HTTPS 新安裝、實際管理設定儲存、服務重啟與設定／授權資料保留；HA 容器驗證 Ingress、顯示入口隔離及重啟。
+- [Linux 更新與復原演練](https://github.com/kcayut/webclock/actions/runs/38251397992) 全部通過，包含真實 systemd 更新、備份、還原及失敗回復。
+- [標籤發行流程](https://github.com/kcayut/webclock/actions/runs/38251988151) 全部通過，發布 `ghcr.io/kcayut/webclock:1.1.0` 與 `ghcr.io/kcayut/webclock-addon:1.1.0`；以空白 Docker 登入設定確認匿名可取得兩個映像，且都有 `linux/amd64`、`linux/arm64`。
+- [正式下載安裝演練](https://github.com/kcayut/webclock/actions/runs/38252762611) 兩項皆通過：從公開 Release 下載安裝器、核對 SHA256，在乾淨 runner 完成 Linux／Docker bootstrap，核對產品版本與 self 模式，經管理 API 儲存設定並確認重啟後保留；Linux 另核對 stable 更新來源。這是公開資產的完整安裝結果，與前述來源 checkout 測試分開記錄。
 
 ## 完整備份本機驗證（2026-10-09）
 
