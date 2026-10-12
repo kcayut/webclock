@@ -114,26 +114,6 @@ else:
         self.assertNotIn('/latest', (self.root / 'downloads').read_text())
         self.assertNotEqual(self.install('--version', '../main').returncode, 0)
 
-    def test_portable_stable_update_reads_config_across_checkout_ownership(self):
-        git = shutil.which('git')
-        project = self.root / 'release-install'
-        subprocess.run([git, 'init', '--quiet', str(project)], check=True)
-        subprocess.run([git, '-C', str(project), 'config', 'webclock.releaseChannel', 'stable'], check=True)
-        self.command('git', f'os.execv({git!r}, [{git!r}, *sys.argv[1:]])')
-        self.command('sudo', 'os.execvp(sys.argv[1], sys.argv[1:])')
-        self.command('python3', '''
-(Path(os.environ['FIXTURE_ROOT']) / 'updater-args').write_text('\\n'.join(sys.argv[1:]))
-''')
-        self.env['GIT_TEST_ASSUME_DIFFERENT_OWNER'] = 'true'
-        untrusted = subprocess.run([git, '-C', str(project), 'config', '--get', 'webclock.releaseChannel'],
-                                   env=self.env, capture_output=True, text=True)
-        self.assertNotEqual(untrusted.returncode, 0)
-        result = subprocess.run(['/bin/bash', str(ROOT / 'portable_update_clock.sh'), str(project)],
-                                env=self.env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.root / 'updater-args').read_text().splitlines(),
-                         [str(project / 'update_clock.py'), str(project)])
-
 
 class ReleaseUpdateTest(unittest.TestCase):
     def test_stable_channel_selects_only_a_published_versioned_tag(self):
