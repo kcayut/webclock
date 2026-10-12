@@ -234,10 +234,11 @@ venv/bin/python scripts/backup_clock.py restore "$HOME/private-webclock-backups/
 
 安裝與更新入口見[安裝指南](installation.md#update)；Linux 更新器支援 HTTP 與原生 HTTPS。HTTPS 憑證只有網域名稱或使用私有 CA 時，先依指南設定更新器的驗證名稱／CA。
 
-Docker 取得新版程式後，重新執行：
+Docker 正式版更新前先備份資料，將 `.env` 的 `WEBCLOCK_VERSION` 改成要安裝的正式 Release 版號（不含 `v`），再執行：
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
 
 由 Linux 安裝腳本建立的服務可執行：

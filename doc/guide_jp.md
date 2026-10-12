@@ -199,12 +199,13 @@ venv/bin/python scripts/backup_clock.py restore "$HOME/private-webclock-backups/
 
 ### プログラムの更新
 
-更新方法は[インストールガイド](installation.md#update)を参照してください。以下の Linux 更新ツールは HTTP のヘルスチェック専用で、ネイティブ HTTPS の導入環境には対応していません。
+更新方法は[インストールガイド](installation.md#update)を参照してください。Linux 更新ツールは HTTP とネイティブ HTTPS に対応しています。証明書の検証用ホスト名やプライベート CA が必要な場合は、ガイドに従って設定してください。
 
-新しいソースを取得した後、Docker は次のコマンドで再構築します。
+Docker の正式リリースを更新する前にデータをバックアップし、`.env` の `WEBCLOCK_VERSION` を対象の正式 Release 版番号（`v` を除く）に変更してから実行します。
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
 
 Linux インストーラーで作成したサービスは次を実行します。

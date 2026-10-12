@@ -201,12 +201,13 @@ Target data paths come only from the target host's effective environment, `.env`
 
 ### Updating the application
 
-See the [installation guide](installation.md#update) for update options. The Linux updater below supports HTTP health checks only; it does not support native HTTPS installations.
+See the [installation guide](installation.md#update) for update options. The Linux updater supports HTTP and native HTTPS. Follow that guide to set the verification hostname or private CA when needed.
 
-After obtaining updated source, rebuild Docker with:
+Before updating a Docker release installation, back up your data and set `WEBCLOCK_VERSION` in `.env` to the desired official Release version (without `v`), then run:
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
 
 For a service created by the Linux installer, run:

@@ -158,7 +158,6 @@ jobs:
       matrix:
         platform: [linux/amd64, linux/arm64]
     env:
-      DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
       WEBCLOCK_VERSION: ${{ needs.integration.outputs.version }}
     steps:
       - uses: actions/checkout@v6
@@ -170,6 +169,8 @@ jobs:
           cache-image: false
       - uses: docker/setup-buildx-action@v4
       - name: Install from a clean checkout using the real Docker installer
+        env:
+          DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
         run: |
           cp .env.example .env
           echo 'WEBCLOCK_HTTP_PORT=18500' >> .env
@@ -177,6 +178,8 @@ jobs:
           test ! -e .webclock-install.json
           test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' webclock)" = "$WEBCLOCK_VERSION"
       - name: Check installed service and restart
+        env:
+          DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
         run: |
           curl --fail --silent --show-error http://127.0.0.1:18500/api/health > "$RUNNER_TEMP/health.json"
           python - <<'PYTHON'

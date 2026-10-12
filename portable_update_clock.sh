@@ -34,7 +34,7 @@ if [[ ! -d "$PROJECT_DIR/.git" ]]; then
     exit 1
 fi
 
-if [[ "$(git -C "$PROJECT_DIR" config --get webclock.releaseChannel || true)" == stable ]]; then
+if [[ "$(git -c safe.directory="$PROJECT_DIR" -C "$PROJECT_DIR" config --get webclock.releaseChannel || true)" == stable ]]; then
     exec "${SUDO[@]}" python3 "$PROJECT_DIR/update_clock.py" "$PROJECT_DIR"
 fi
 

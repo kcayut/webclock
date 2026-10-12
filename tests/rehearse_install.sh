@@ -40,19 +40,32 @@ for mode in self managed; do
     printf '%s\n%s\n' WebClock-CI-only-password-2026 WebClock-CI-only-password-2026 | \
         SUDO_USER="$owner" bash "$TARGET/setup.sh" ${args[@]+"${args[@]}"}
     MODE="$mode" "$TARGET/venv/bin/python" - "$TARGET" <<'PY'
-import hashlib, json, os, pathlib, ssl, subprocess, sys, time, urllib.request
+import hashlib, http.cookiejar, json, os, pathlib, ssl, subprocess, sys, time, urllib.request
 project = pathlib.Path(sys.argv[1])
 managed = os.environ['MODE'] == 'managed'
 context = ssl.create_default_context(cafile=str(project / 'tls/install-ca.pem')) if managed else None
-url = ('https' if managed else 'http') + '://localhost:5000/api/health'
+base = ('https' if managed else 'http') + '://localhost:5000'
+url = base + '/api/health'
 def health():
     with urllib.request.urlopen(url, context=context, timeout=5) as response:
         data = json.load(response)
     assert data['status'] == 'ok' and data['version'] == (project / 'VERSION').read_text().strip(), data
     assert data['deployment_mode'] == os.environ['MODE'], data
 health()
-auth = project / 'webclock_state/auth.json'
-before = hashlib.sha256(auth.read_bytes()).digest()
+state = project / 'webclock_state' / ('auth.json' if managed else 'settings.json')
+if not managed:
+    # Fresh self mode deliberately has no auth.json; exercise a real settings save.
+    client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    with client.open(base + '/admin', timeout=5) as response:
+        assert response.status == 200
+    with client.open(base + '/api/csrf', timeout=5) as response:
+        token = json.load(response)['csrf_token']
+    request = urllib.request.Request(base + '/api/control', data=b'{"brightness":73}',
+        headers={'Content-Type': 'application/json', 'X-CSRF-Token': token, 'Origin': base})
+    with client.open(request, timeout=5) as response:
+        assert json.load(response)['settings']['brightness'] == 73
+    assert json.loads(state.read_text())['brightness'] == 73
+before = hashlib.sha256(state.read_bytes()).digest()
 subprocess.run(['systemctl', 'restart', 'webclock'], check=True)
 for attempt in range(30):
     try:
@@ -62,7 +75,10 @@ for attempt in range(30):
         time.sleep(1)
 else:
     raise AssertionError('Service did not recover after restart')
-assert hashlib.sha256(auth.read_bytes()).digest() == before
+assert hashlib.sha256(state.read_bytes()).digest() == before
+if not managed:
+    with urllib.request.urlopen(base + '/api/control', timeout=5) as response:
+        assert json.load(response)['settings']['brightness'] == 73
 assert not (project / '.webclock-install.json').exists()
 print('Fresh install and restart passed:', os.environ['MODE'])
 PY

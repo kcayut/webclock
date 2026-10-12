@@ -1,0 +1,133 @@
+name: Published release installation smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published stable version (X.Y.Z)
+        required: true
+        default: '1.1.0'
+        type: string
+
+permissions: {}
+
+jobs:
+  install:
+    if: github.repository == 'kcayut/webclock' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: docker
+            port: 18500
+          - kind: systemd
+            port: 5000
+    env:
+      VERSION: ${{ inputs.version }}
+      INSTALL_KIND: ${{ matrix.kind }}
+      HEALTH_PORT: ${{ matrix.port }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Download and verify the published installer
+        run: |
+          [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo 'Version must be a stable X.Y.Z release.' >&2; exit 1;
+          }
+          work="$RUNNER_TEMP/webclock-release-smoke"
+          test ! -e "$work"
+          mkdir "$work"
+          cd "$work"
+          base="https://github.com/kcayut/webclock/releases/download/v$VERSION"
+          for asset in install.sh SHA256SUMS; do
+            curl --proto '=https' --proto-redir '=https' --fail --silent --show-error --location --retry 2 --connect-timeout 15 "$base/$asset" --output "$asset"
+          done
+          expected=$(awk '$2 == "install.sh" {print $1}' SHA256SUMS)
+          [[ "$expected" =~ ^[a-f0-9]{64}$ ]]
+          printf '%s  install.sh\n' "$expected" | sha256sum --check -
+
+      - name: Install through the public bootstrap
+        run: |
+          work="$RUNNER_TEMP/webclock-release-smoke"
+          if [[ "$INSTALL_KIND" == docker ]]; then
+            if docker inspect webclock >/dev/null 2>&1; then
+              echo 'Refusing to replace an existing WebClock container.' >&2; exit 1;
+            fi
+            WEBCLOCK_HTTP_PORT="$HEALTH_PORT" bash "$work/install.sh" --docker --version "$VERSION" --dir "$work/app"
+          else
+            if systemctl cat webclock.service >/dev/null 2>&1; then
+              echo 'Refusing to replace an existing WebClock service.' >&2; exit 1;
+            fi
+            PORT="$HEALTH_PORT" bash "$work/install.sh" --version "$VERSION" --dir "$work/app"
+          fi
+
+      - name: Verify release version, self mode and data after restart
+        run: |
+          python3 - <<'PYTHON'
+          import http.cookiejar, json, os, pathlib, subprocess, time, urllib.request
+          project = pathlib.Path(os.environ['RUNNER_TEMP']) / 'webclock-release-smoke/app'
+          version, kind = os.environ['VERSION'], os.environ['INSTALL_KIND']
+          assert (project / 'VERSION').read_text().strip() == version
+          assert not (project / '.webclock-bootstrap').exists()
+          assert not (project / '.webclock-install.json').exists()
+          base = 'http://127.0.0.1:' + os.environ['HEALTH_PORT']
+          url = base + '/api/health'
+          def health():
+              for attempt in range(30):
+                  try:
+                      with urllib.request.urlopen(url, timeout=5) as response:
+                          data = json.load(response)
+                      break
+                  except OSError:
+                      time.sleep(1)
+              else:
+                  raise AssertionError('Service did not become ready')
+              assert data['status'] == 'ok', data
+              assert data['version'] == version, data
+              assert data['deployment_mode'] == 'self', data
+          health()
+          # Fresh self mode deliberately has no auth.json; exercise a real settings save.
+          client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+          with client.open(base + '/admin', timeout=5) as response:
+              assert response.status == 200
+          with client.open(base + '/api/csrf', timeout=5) as response:
+              token = json.load(response)['csrf_token']
+          request = urllib.request.Request(base + '/api/control', data=b'{"brightness":73}',
+              headers={'Content-Type': 'application/json', 'X-CSRF-Token': token, 'Origin': base})
+          with client.open(request, timeout=5) as response:
+              assert json.load(response)['settings']['brightness'] == 73
+          state = str(project / 'webclock_state/settings.json')
+          assert json.loads(subprocess.check_output(['sudo', 'cat', state]))['brightness'] == 73
+          before = subprocess.check_output(['sudo', 'sha256sum', state])
+          if kind == 'docker':
+              subprocess.run(['docker', 'compose', 'restart'], cwd=project, check=True)
+          else:
+              channel = subprocess.check_output(['git', 'config', 'webclock.releaseChannel'], cwd=project, text=True)
+              assert channel.strip() == 'stable', channel
+              subprocess.run(['sudo', 'systemctl', 'restart', 'webclock'], check=True)
+          health()
+          assert subprocess.check_output(['sudo', 'sha256sum', state]) == before
+          with urllib.request.urlopen(base + '/api/control', timeout=5) as response:
+              assert json.load(response)['settings']['brightness'] == 73
+          print('Published release installation and restart passed:', kind, version)
+          PYTHON
+
+      - name: Diagnostics and cleanup of this disposable installation
+        if: always()
+        run: |
+          project="$RUNNER_TEMP/webclock-release-smoke/app"
+          if [[ "$INSTALL_KIND" == docker ]]; then
+            state=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/webclock_state"}}{{.Source}}{{end}}{{end}}' webclock 2>/dev/null || true)
+            if [[ "$state" == "$project/webclock_state" ]]; then
+              cd "$project"
+              docker compose logs || true
+              docker compose down
+            fi
+          elif [[ "$(systemctl show webclock --property=WorkingDirectory --value)" == "$project" ]]; then
+            sudo journalctl --unit webclock --no-pager --lines 60
+            sudo systemctl disable --now webclock
+            sudo rm /etc/systemd/system/webclock.service
+            sudo systemctl daemon-reload
+          fi
