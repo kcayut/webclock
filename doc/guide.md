@@ -244,10 +244,10 @@ docker compose up -d --no-build
 由 Linux 安裝腳本建立的服務支援於受管模式管理頁「更新」（`/updates`）點擊一鍵升級、由背景服務自動檢查與升級，或在主機執行：
 
 ```bash
-sudo bash update_clock.sh
+sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh
 ```
 
-亦可指定管道切換至測試版或正式版：`sudo bash update_clock.sh --channel beta` 或 `sudo bash update_clock.sh --channel stable`。
+亦可指定管道切換至測試版或正式版：`sudo bash update_clock.sh --channel beta && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh` 或 `sudo bash update_clock.sh --channel stable && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`。
 
 更新器要求 Git 工作目錄乾淨且可 fast-forward，並會在停止服務前檢查資料路徑、備份程式環境與狀態資料。更新失敗時會嘗試還原；若無法完整還原，請保留 `.webclock-update-*` 目錄及其中的 `manifest.json`、`failed-data/`、`failed-venv/`。更新期間不要修改管理頁資料，也不要把本機測試視為 Raspberry Pi 實機部署已驗證。
 

@@ -63,7 +63,10 @@ class Updater:
         elif self.data['state'] == 'checking':
             self.data.update(state='idle', phase='')
         self.data['next_check'] = max(float(self.data['next_check'] or 0), time.time() + STARTUP_DELAY)
-        self._save()
+        try:
+            self._save()
+        except OSError:
+            pass
 
     @staticmethod
     def _validate_settings(channel, auto_update):
@@ -84,12 +87,14 @@ class Updater:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
-    def _change(self, **values):
+    def _change(self, allow_failure=False, **values):
         with self.lock:
             self.data.update(values)
             try:
                 self._save()
             except OSError as error:
+                if not allow_failure:
+                    raise
                 print('WebClock updater could not persist state: ' + type(error).__name__, flush=True)
 
     def status(self):
@@ -128,16 +133,25 @@ class Updater:
                     self.data.update(latest_version=None, update_available=False,
                                      release_url='', release_notes='', last_checked=None,
                                      next_check=time.time() + STARTUP_DELAY)
-                self._save()
+                try:
+                    self._save()
+                except OSError:
+                    return {'ok': False, 'error': 'state_save_failed', 'status': self.status()}
                 if changed_channel:
                     self._sync_channel(request['channel'])
             elif action == 'check':
-                self._start(self._check, False)
+                try:
+                    self._start(self._check, False)
+                except OSError:
+                    return {'ok': False, 'error': 'state_save_failed', 'status': self.status()}
             elif action == 'install':
                 expected = request.get('expected_version')
                 if not isinstance(expected, str) or not self.data['update_available'] or expected != self.data['latest_version']:
                     return {'ok': False, 'error': 'release_changed', 'status': self.status()}
-                self._start(self._install, expected)
+                try:
+                    self._start(self._install, expected)
+                except OSError:
+                    return {'ok': False, 'error': 'state_save_failed', 'status': self.status()}
             return {'ok': True, 'status': self.status()}
 
     def _start(self, target, *args):
@@ -156,8 +170,8 @@ class Updater:
                      last_checked=time.time(), next_check=time.time() + CHECK_INTERVAL)
 
     def _check(self, automatic=False):
-        self._change(state='checking', phase='checking', error=None)
         try:
+            self._change(state='checking', phase='checking', error=None)
             release = self._discover()
             self._record_release(release)
             self._change(state='available' if release['update_available'] else 'idle', phase='')
@@ -166,8 +180,11 @@ class Updater:
         except Exception as error:
             # Command output may contain private URLs; web-visible status uses fixed codes.
             print('WebClock release check failed: ' + type(error).__name__, flush=True)
-            self._change(state='failed', phase='', error='release_check_failed',
-                         next_check=time.time() + RETRY_INTERVAL)
+            try:
+                self._change(state='failed', phase='', error='release_check_failed',
+                             next_check=time.time() + RETRY_INTERVAL)
+            except OSError:
+                pass
 
     def _install(self, expected):
         self._change(state='updating', phase='checking', error=None, result=None)
@@ -182,7 +199,7 @@ class Updater:
             started = True
             result = update_clock.update(self.project, channel=self.data['channel'],
                                         expected_version=expected,
-                                        progress=lambda phase: self._change(phase=phase))
+                                        progress=lambda phase: self._change(allow_failure=True, phase=phase))
             self._change(state='idle', phase='', error=None, result=result or 'updated',
                          update_available=False, auto_update_paused=False)
             if result == 'updated' and self.on_updated is not None:
@@ -192,9 +209,12 @@ class Updater:
             print('WebClock update failed: ' + type(error).__name__, flush=True)
             recovered = getattr(error, 'rollback_succeeded', None)
             result = 'rolled_back' if recovered is True else ('manual_recovery' if recovered is False else 'failed')
-            self._change(state='failed', phase='', error='update_failed' if started else 'release_check_failed',
-                         result=result, auto_update_paused=True,
-                         next_check=time.time() + RETRY_INTERVAL)
+            try:
+                self._change(state='failed', phase='', error='update_failed' if started else 'release_check_failed',
+                             result=result, auto_update_paused=True,
+                             next_check=time.time() + RETRY_INTERVAL)
+            except OSError as save_error:
+                print('WebClock updater could not persist state: ' + type(save_error).__name__, flush=True)
 
     def _git_channel(self):
         try:

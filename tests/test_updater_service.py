@@ -191,20 +191,47 @@ class UpdaterServiceTest(unittest.TestCase):
 
     def test_sync_channel_handles_root_with_non_root_git_repo(self):
         from types import SimpleNamespace
-        subprocess = service.subprocess
-        run = lambda *args: subprocess.run(['git', *args], cwd=self.project, check=True,
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        run('init', '-q')
-        run('config', 'webclock.releaseChannel', 'stable')
+        (self.project / '.git').mkdir(exist_ok=True)
         with patch('os.geteuid', return_value=0), \
-             patch('pwd.getpwuid', return_value=SimpleNamespace(pw_name='regular_user')):
+             patch('pwd.getpwuid', return_value=SimpleNamespace(pw_name='regular_user')), \
+             patch.object(service.shutil, 'which', return_value='/usr/sbin/runuser'), \
+             patch.object(service.subprocess, 'run') as mock_run:
             self.updater._sync_channel('beta')
-            self.assertEqual(self.updater._git_channel(), 'beta')
+            expected_cmd = [
+                'runuser', '-u', 'regular_user', '--',
+                'git', '-c', f'safe.directory={self.updater.project}',
+                '-C', str(self.updater.project),
+                'config', '--local', 'webclock.releaseChannel', 'beta'
+            ]
+            mock_run.assert_called_once_with(
+                expected_cmd, check=True, stdout=service.subprocess.DEVNULL,
+                stderr=service.subprocess.DEVNULL, timeout=15
+            )
 
-    def test_disk_full_during_change_does_not_crash(self):
+    def test_disk_full_during_progress_does_not_crash(self):
         with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
-            self.updater._change(state='available', phase='checking')
-        self.assertEqual(self.updater.status()['state'], 'available')
+            self.updater._change(phase='installing', allow_failure=True)
+        self.assertEqual(self.updater.status()['phase'], 'installing')
+
+    def test_state_change_requires_successful_save_before_update(self):
+        with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
+            with self.assertRaises(OSError):
+                self.updater._change(state='updating')
+
+    def test_updating_state_saved_on_disk_preserves_auto_update_paused_after_restart(self):
+        self.updater._change(state='updating', phase='checking')
+        restored = service.Updater(self.project, self.state)
+        self.assertTrue(restored.status()['auto_update_paused'])
+        self.assertEqual(restored.status()['state'], 'interrupted')
+
+    def test_dispatch_install_fails_cleanly_if_saving_updating_state_fails(self):
+        self.updater.data['update_available'] = True
+        self.updater.data['latest_version'] = '1.3.0'
+        with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
+            result = self.updater.dispatch({'action': 'install', 'expected_version': '1.3.0'})
+            self.assertFalse(result['ok'])
+            self.assertEqual(result['error'], 'state_save_failed')
+            self.assertIsNone(self.updater.worker)
 
 
 if __name__ == '__main__':
