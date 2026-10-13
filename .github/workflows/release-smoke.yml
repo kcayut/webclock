@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Published stable version (X.Y.Z)
+        description: Published version (X.Y.Z or X.Y.Z-beta.N)
         required: true
         default: '1.1.0'
         type: string
@@ -33,8 +33,8 @@ jobs:
       - name: Download and verify the published installer
         run: |
           [[ "$GITHUB_ACTIONS" == true && "$RUNNER_ENVIRONMENT" == github-hosted ]]
-          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
-            echo 'Version must be a stable X.Y.Z release.' >&2; exit 1;
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] || {
+            echo 'Version must be X.Y.Z or a prerelease such as X.Y.Z-beta.1.' >&2; exit 1;
           }
           work="$RUNNER_TEMP/webclock-release-smoke"
           test ! -e "$work"
@@ -105,7 +105,7 @@ jobs:
               subprocess.run(['docker', 'compose', 'restart'], cwd=project, check=True)
           else:
               channel = subprocess.check_output(['git', 'config', 'webclock.releaseChannel'], cwd=project, text=True)
-              assert channel.strip() == 'stable', channel
+              assert channel.strip() == ('beta' if '-' in version else 'stable'), channel
               subprocess.run(['sudo', 'systemctl', 'restart', 'webclock'], check=True)
           health()
           assert subprocess.check_output(['sudo', 'sha256sum', state]) == before

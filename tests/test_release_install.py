@@ -1,6 +1,5 @@
 """Exercise the public bootstrap without network, Docker or system changes."""
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -114,8 +113,29 @@ else:
         self.assertNotIn('/latest', (self.root / 'downloads').read_text())
         self.assertNotEqual(self.install('--version', '../main').returncode, 0)
 
+    def test_explicit_prerelease_install_tracks_beta_channel(self):
+        (self.root / 'webclock-1.1.0/VERSION').write_text('1.2.0-beta.1\n')
+        result = self.install('--version', '1.2.0-beta.1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / 'installed/git-config').read_text(), 'config webclock.releaseChannel beta')
+        self.assertIn('WEBCLOCK_VERSION=1.2.0-beta.1', (self.root / 'installed/.env').read_text())
+
+    def test_invalid_prerelease_never_downloads_or_creates_destination(self):
+        for invalid in ('1.2.0-beta.01', '1.2.0-', '1.2.0-rc..1', '1.2.0+build.1'):
+            with self.subTest(version=invalid):
+                self.assertNotEqual(self.install('--version', invalid).returncode, 0)
+                self.assertFalse((self.root / 'downloads').exists())
+                self.assertFalse((self.root / 'installed').exists())
+
 
 class ReleaseUpdateTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.project = Path(temporary.name)
+        (self.project / 'VERSION').write_text('1.1.0\n')
+        self.release = {'tag_name': 'v1.1.1', 'latest_version': '1.1.1', 'update_available': True}
+
     def test_stable_channel_selects_only_a_published_versioned_tag(self):
         calls = []
         def run(args, cwd=None):
@@ -127,25 +147,48 @@ class ReleaseUpdateTest(unittest.TestCase):
             if args[1] == 'show':
                 return '1.1.1'
             return ''
-        data = {'tag_name': 'v1.1.1', 'draft': False, 'prerelease': False}
         with patch.object(update_clock, 'run', side_effect=run), \
-             patch.object(update_clock.urllib.request, 'urlopen', return_value=io.StringIO(json.dumps(data))):
-            self.assertEqual(update_clock.update_target(Path('/test'), ['git']), 'release-commit')
+             patch.object(update_clock.release_versions, 'discover_release', return_value=self.release) as discover:
+            self.assertEqual(update_clock.update_target(self.project, ['git']), 'release-commit')
+            discover.assert_called_once_with('stable', '1.1.0')
         self.assertIn(['git', 'fetch', 'https://github.com/kcayut/webclock.git', 'tag', 'v1.1.1'], calls)
         self.assertFalse(any('@{upstream}' in call for call in calls))
-        for bad in ({**data, 'prerelease': True}, {**data, 'draft': True}, {**data, 'tag_name': '../main'}):
-            with self.subTest(bad=bad), patch.object(update_clock, 'run', return_value='stable') as git, \
-                 patch.object(update_clock.urllib.request, 'urlopen', return_value=io.StringIO(json.dumps(bad))):
-                with self.assertRaisesRegex(RuntimeError, 'stable release'):
-                    update_clock.update_target(Path('/test'), ['git'])
-                git.assert_called_once()
+
+    def test_unchanged_release_does_not_fetch_or_reset(self):
+        with patch.object(update_clock, 'run') as git, \
+             patch.object(update_clock.release_versions, 'discover_release',
+                          return_value={**self.release, 'update_available': False}):
+            self.assertIsNone(update_clock.update_target(self.project, ['git'], channel='stable'))
+            git.assert_not_called()
+
+    def test_explicit_beta_and_pinned_version_are_checked_before_fetching(self):
+        candidate = {**self.release, 'tag_name': 'v1.2.0-beta.1', 'latest_version': '1.2.0-beta.1'}
+        with patch.object(update_clock, 'run') as git, \
+             patch.object(update_clock.release_versions, 'discover_release', return_value=candidate) as discover:
+            with self.assertRaisesRegex(RuntimeError, 'Available release changed'):
+                update_clock.update_target(self.project, ['git'], channel='beta', expected_version='1.1.1')
+            discover.assert_called_once_with('beta', '1.1.0')
+            git.assert_not_called()
+
+    def test_tag_must_contain_its_claimed_product_version(self):
+        with patch.object(update_clock, 'run', return_value='1.1.0'), \
+             patch.object(update_clock.release_versions, 'discover_release', return_value=self.release):
+            with self.assertRaisesRegex(RuntimeError, 'tag and product version differ'):
+                update_clock.update_target(self.project, ['git'], channel='stable')
+
+    def test_unknown_channel_is_rejected_before_network_access(self):
+        with patch.object(update_clock.release_versions, 'discover_release') as discover:
+            with self.assertRaisesRegex(RuntimeError, 'Unknown WebClock release channel'):
+                update_clock.update_target(self.project, ['git'], channel='nightly')
+            discover.assert_not_called()
 
     def test_developer_checkout_keeps_its_configured_upstream(self):
         def run(args, cwd=None):
             if args[1] == 'config':
                 raise subprocess.CalledProcessError(1, args)
             return 'development-commit' if args[1] == 'rev-parse' else ''
-        with patch.object(update_clock, 'run', side_effect=run), patch.object(update_clock.urllib.request, 'urlopen') as network:
+        with patch.object(update_clock, 'run', side_effect=run), \
+             patch.object(update_clock.release_versions, 'discover_release') as network:
             self.assertEqual(update_clock.update_target(Path('/test'), ['git']), 'development-commit')
             network.assert_not_called()
 

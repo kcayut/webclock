@@ -202,6 +202,9 @@ UNIT
     systemctl is-active --quiet webclock
 fi
 "${CHECK[@]}" wait
+if ! $DOCKER; then
+    bash "$PROJECT_DIR/scripts/enable_updates.sh"
+fi
 "${CHECK[@]}" complete
 trap - ERR
 echo "WebClock is ready ($MODE mode)."

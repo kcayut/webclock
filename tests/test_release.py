@@ -61,6 +61,17 @@ class ReleaseTest(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 check_versions(changed.__getitem__)
 
+    def test_prerelease_versions_package_with_their_complete_version(self):
+        self.files = {name: content.replace('1.1.0', '1.2.0-beta.2') for name, content in self.files.items()}
+        self.commit()
+        output = self.root.parent / 'beta-assets'
+        self.assertEqual(build_release(output, '1.2.0-beta.2', self.root), '1.2.0-beta.2')
+        self.assertTrue((output / 'webclock-1.2.0-beta.2.tar.gz').exists())
+        self.assertIn('RELEASE_VERSION="1.2.0-beta.2"', (output / 'install.sh').read_text())
+        for invalid in ('1.2.0-beta.01', '01.2.0', '1.2.0+build.1'):
+            with self.subTest(version=invalid), self.assertRaises(ValueError):
+                check_versions(lambda name: self.files[name].replace('1.2.0-beta.2', invalid))
+
     def test_assets_use_committed_public_files_and_reproducible_checksums(self):
         self.commit()
         (self.root / 'app.py').write_text('local private change')

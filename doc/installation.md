@@ -327,10 +327,22 @@ python3 -m venv venv && ./venv/bin/python -m pip install -r requirements.txt && 
 
 | 環境 | 更新／確認 |
 | --- | --- |
-| Bare metal（HTTP／HTTPS） | 安裝目錄執行 `sudo bash update_clock.sh`（root 不加 `sudo`），正式版安裝自動選最新正式 Release；`systemctl status webclock` 查看服務 |
+| Bare metal（HTTP／HTTPS） | 網頁端於「更新」頁面（`/updates`）點擊一鍵升級；或在安裝目錄執行 `sudo bash update_clock.sh`（root 不加 `sudo`）。正式版安裝自動選最新正式 Release；`systemctl status webclock` 查看服務 |
 | Docker | 備份後在 `.env` 將 `WEBCLOCK_VERSION` 改為[最新 Release](https://github.com/kcayut/webclock/releases/latest)的 `X.Y.Z`，執行 `docker compose pull && docker compose up -d --no-build`，再確認 `/api/health` 的版本 |
 | HA 商店 App | HA 顯示新版後，在 App 頁先建立備份，再按「更新」；不要移除 App |
 | HA 本機 App | 先做 HA 備份；用新版原始碼產生至新的暫存目錄，核對後替換 `/addons/webclock` 的程式檔，再於 App 頁重建／啟動；不要移除 App 或 `/data` |
+
+### Bare Metal 自動升級與發行管道
+
+Bare metal 安裝由獨立的背景服務 `webclock-updater.service` 定期檢查 GitHub Releases，支援自動無人值守升級或由受管模式管理員在「更新」（`/updates`）頁面手動一鍵升級：
+
+- **自動升級與自我維護**：`webclock-updater.service` 預設啟用，每日檢查一次版本。若開啟自動升級，偵測到新版本時會自動建立備份、升級程式與套件、重啟並執行健康檢查；升級成功後更新服務會自動重新載入使用新版代碼，無須人工額外維護更新器。若升級檢查或健康檢查失敗，會自動復原先前版本並暫停自動升級，避免反覆失敗重試。
+- **發行管道（Release Channels）**：
+  - **正式版（`stable`，建議）**：僅安裝正式發布的 Release，忽略預先發行版（prerelease）。
+  - **測試版（`beta`）**：可接收正式版與 `-beta.N` 等測試版 Release。若從測試版切換回正式版，系統不會自動降級，而是保留目前版本並等待版本號更高的正式發布版。
+- **手動切換管道或更新**：
+  - 網頁介面：受管模式管理員在「更新」分頁可直接切換 Release 管道與設定自動升級。
+  - 命令列：在安裝目錄執行 `sudo bash update_clock.sh --channel stable` 或 `sudo bash update_clock.sh --channel beta`，亦會同步更新 Git 配置與背景服務管道。
 
 正式版 Linux 安裝以 Git 的 `webclock.releaseChannel=stable` 記錄更新來源；更新器從 GitHub 解析正式 Release，再固定更新至該 tag。既有開發 checkout 保留原本 upstream，不會被安裝器悄悄改成別的來源。Docker 固定 `.env` 中的版本，不因容器重啟自動更新；更新前先備份資料。
 

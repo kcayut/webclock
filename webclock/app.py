@@ -1504,6 +1504,9 @@ app.extensions['webclock_mode_access'] = lambda: group_service(read_only=True)
 register_mode(app, auth_service, lambda: ROOT, lambda: NOTES_FILE, content_directory, template_context,
               lambda: calendar_feed_cache.clear(), legacy_calendar=lambda: ICAL_URL)
 
+from webclock.api.updates import register_updates
+register_updates(app, auth_service, template_context)
+
 from webclock.api.control import register_control
 register_control(app, content_directory, auth_service, group_service, group_owner,
                  template_context, get_calendar_sources, lambda **query: get_calendar_events(**query), holiday_service,

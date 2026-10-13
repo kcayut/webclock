@@ -23,6 +23,28 @@ def bootstrap():
         revision = subprocess.run(git + ['rev-parse', '--verify', '@{upstream}^{commit}'],
                                   cwd=project, check=True, text=True,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
+        try:
+            rv_source = subprocess.run(git + ['show', revision + ':scripts/release_versions.py'],
+                                       cwd=project, check=True, text=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
+            rv_filename = str(project / 'scripts/release_versions.py')
+            import types
+            rv_mod = types.ModuleType('release_versions')
+            exec(compile(rv_source, rv_filename, 'exec'), rv_mod.__dict__)
+            sys.modules['release_versions'] = rv_mod
+            if 'scripts' in sys.modules:
+                scripts_mod = sys.modules['scripts']
+            else:
+                try:
+                    import scripts as scripts_mod
+                except ImportError:
+                    scripts_mod = types.ModuleType('scripts')
+                    scripts_mod.__path__ = [str(project / 'scripts')]
+                    sys.modules['scripts'] = scripts_mod
+            sys.modules['scripts.release_versions'] = rv_mod
+            setattr(scripts_mod, 'release_versions', rv_mod)
+        except (OSError, subprocess.CalledProcessError):
+            pass
         source = subprocess.run(git + ['show', revision + ':scripts/update_clock.py'],
                                 cwd=project, check=True, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout

@@ -22,33 +22,77 @@ import urllib.request
 from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
 
+try:
+    from scripts import release_versions
+except ImportError:
+    try:
+        import release_versions
+    except ImportError:
+        import os as _os
+        import pwd as _pwd
+        import subprocess as _subprocess
+        import types as _types
+        _project = Path(__file__).resolve().parent.parent
+        _loaded = False
+        if (_project / '.git').exists():
+            _owner = _pwd.getpwuid((_project / '.git').stat().st_uid).pw_name
+            _git = (['runuser', '-u', _owner, '--'] if _os.geteuid() == 0 and _owner != 'root' else []) + ['git']
+            for _ref in ('@{upstream}^{commit}', 'HEAD'):
+                try:
+                    _source = _subprocess.run(_git + ['show', _ref + ':scripts/release_versions.py'],
+                                              cwd=_project, check=True, text=True,
+                                              stdout=_subprocess.PIPE, stderr=_subprocess.PIPE).stdout
+                    _mod = _types.ModuleType('release_versions')
+                    exec(compile(_source, str(_project / 'scripts/release_versions.py'), 'exec'), _mod.__dict__)
+                    sys.modules['release_versions'] = _mod
+                    if 'scripts' in sys.modules:
+                        _scripts_mod = sys.modules['scripts']
+                    else:
+                        try:
+                            import scripts as _scripts_mod
+                        except ImportError:
+                            _scripts_mod = _types.ModuleType('scripts')
+                            _scripts_mod.__path__ = [str(_project / 'scripts')]
+                            sys.modules['scripts'] = _scripts_mod
+                    sys.modules['scripts.release_versions'] = _mod
+                    setattr(_scripts_mod, 'release_versions', _mod)
+                    release_versions = _mod
+                    _loaded = True
+                    break
+                except (OSError, _subprocess.CalledProcessError):
+                    continue
+        if not _loaded:
+            raise
+
 
 def run(args, cwd=None, env=None):
+    if args in (['systemctl', 'start', 'webclock'], ['systemctl', 'stop', 'webclock']) and os.geteuid() != 0:
+        args = ['sudo', '-n', '/usr/bin/systemctl', *args[1:]]
     return subprocess.run(args, cwd=cwd, env=env, check=True, text=True,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
 
 
-def update_target(project, git):
-    """Release installs follow published stable tags; developer checkouts keep their upstream."""
-    try:
-        channel = run(git + ['config', '--get', 'webclock.releaseChannel'], cwd=project)
-    except subprocess.CalledProcessError as error:
-        if error.returncode != 1:
-            raise
-        channel = ''
+def update_target(project, git, channel=None, expected_version=None):
+    """Use published versions for release installs and explicit web update requests."""
+    if channel is None:
+        try:
+            channel = run(git + ['config', '--get', 'webclock.releaseChannel'], cwd=project)
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 1:
+                raise
+            channel = ''
     if not channel:
         run(git + ['fetch'], cwd=project)
         return run(git + ['rev-parse', '@{upstream}'], cwd=project)
-    if channel != 'stable':
+    if channel not in ('stable', 'beta'):
         raise RuntimeError('Unknown WebClock release channel; nothing updated.')
-    request = urllib.request.Request('https://api.github.com/repos/kcayut/webclock/releases/latest',
-                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'WebClock-updater'})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        release = json.load(response)
-    tag = release.get('tag_name', '')
-    if (release.get('draft') is not False or release.get('prerelease') is not False
-            or not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)):
-        raise RuntimeError('GitHub did not return a published stable release; nothing updated.')
+    current = (project / 'VERSION').read_text().strip()
+    release = release_versions.discover_release(channel, current)
+    if not release['update_available']:
+        return None
+    if expected_version is not None and release['latest_version'] != expected_version:
+        raise RuntimeError('Available release changed; check for updates again.')
+    tag = release['tag_name']
     run(git + ['fetch', 'https://github.com/kcayut/webclock.git', 'tag', tag], cwd=project)
     target = run(git + ['rev-parse', 'refs/tags/' + tag + '^{commit}'], cwd=project)
     if run(git + ['show', target + ':VERSION'], cwd=project) != tag[1:]:
@@ -526,15 +570,23 @@ def verify_server(project, url, layout, expected_notes, configuration, tls_handl
             raise RuntimeError('Management/device API health check failed.')
 
 
-def update(project):
+def update(project, channel=None, expected_version=None, progress=None):
     project = project.resolve()
     fd = os.open(project / '.webclock-update.lock', os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        perform_update(project)
+        return perform_update(project, channel=channel, expected_version=expected_version, progress=progress)
 
 
-def perform_update(project):
+def perform_update(project, channel=None, expected_version=None, progress=None):
+    raw_progress = progress or (lambda phase: None)
+    def safe_progress(phase):
+        try:
+            raw_progress(phase)
+        except Exception:
+            pass
+    progress = safe_progress
+    progress('checking')
     url, uid, gid = service_url(project)
     configuration = service_configuration(project)
     tls_handler = update_tls_handler(project, configuration)
@@ -545,18 +597,27 @@ def perform_update(project):
     target_layout = current
     git_prefix, old_head, target, revisions = None, None, None, []
     if (project / '.git').exists():
-        owner = pwd.getpwuid((project / '.git').stat().st_uid).pw_name
-        git_prefix = (['runuser', '-u', owner, '--'] if owner != 'root' else []) + ['git']
+        owner_uid = (project / '.git').stat().st_uid
+        owner = pwd.getpwuid(owner_uid).pw_name
+        if os.geteuid() not in (0, owner_uid):
+            raise RuntimeError('The updater and Git checkout must have the same owner.')
+        git_prefix = (['runuser', '-u', owner, '--'] if os.geteuid() == 0 and owner != 'root' else []) + ['git']
         dirty = run(git_prefix + ['status', '--porcelain', '--untracked-files=normal'], cwd=project)
         if any(line != '?? .webclock-update.lock' for line in dirty.splitlines()):
             raise RuntimeError('Uncommitted/untracked files found. Commit or move them before updating.')
         old_head = run(git_prefix + ['rev-parse', 'HEAD'], cwd=project)
-        target = update_target(project, git_prefix)
+        progress('downloading')
+        target = update_target(project, git_prefix, channel=channel, expected_version=expected_version)
+        if target is None or target == old_head:
+            progress('complete')
+            return 'up_to_date'
         run(git_prefix + ['merge-base', '--is-ancestor', old_head, target], cwd=project)
         revisions = [run(git_prefix + ['ls-tree', '-r', '--name-only', ref], cwd=project).splitlines()
                      for ref in (old_head, target)]
         target_layout = data_layout(project, configuration, 'webclock/app.py' in revisions[1])
     else:
+        if channel is not None:
+            raise RuntimeError('One-click upgrades require an official Git installation.')
         print('No Git repository: using files already copied here; old source cannot be recovered.', flush=True)
 
     paths = protected_paths(project, current, target_layout)
@@ -583,6 +644,7 @@ def perform_update(project):
     stopped = changed = packages_changed = False
     entries = []
     try:
+        progress('backing_up')
         run(['cp', '-a', str(venv), str(backup / 'venv')])
         if not protected:
             snapshot = http_json(url + '/api/status', tls_handler=tls_handler)['settings']
@@ -604,6 +666,7 @@ def perform_update(project):
             raise RuntimeError('Updated code does not support protected authorization state.')
         prepare_data(target_layout, snapshot, notes, uid, gid)
         print('Installing and checking Python packages...', flush=True)
+        progress('installing')
         packages_changed = True
         run([str(venv / 'bin/python3'), '-m', 'pip', 'install', '-r', 'requirements.txt'], cwd=project)
         run([str(venv / 'bin/python3'), '-m', 'pip', 'check'], cwd=project)
@@ -611,8 +674,10 @@ def perform_update(project):
             verify_protected_data(project, target_layout[0])
         else:
             verify_control_data(project, target_layout[0])
+        progress('restarting')
         run(['systemctl', 'start', 'webclock'])
         print('Checking service health, reminders and management APIs...', flush=True)
+        progress('health_check')
         if protected:
             authorization_state(target_layout[0], required=True)
             check_saved_data(target_layout, target_layout, snapshot)
@@ -620,8 +685,14 @@ def perform_update(project):
         else:
             wait_healthy(url, snapshot, tls_handler=tls_handler)
         verify_server(project, url, target_layout, notes, configuration, tls_handler=tls_handler)
-    except BaseException:
+    except BaseException as error:
+        error.rollback_succeeded = None
         if stopped:
+            error.rollback_succeeded = False
+            try:
+                progress('rolling_back')
+            except Exception:
+                pass
             print('Update failed; restoring the previous source, environment and data.', flush=True)
             try:
                 run(['systemctl', 'stop', 'webclock'])
@@ -659,31 +730,66 @@ def perform_update(project):
                             time.sleep(2)
                     wait_healthy(url, snapshot, tls_handler=tls_handler)
                 print('Previous service and data restored.', flush=True)
+                error.rollback_succeeded = True
             except Exception as rollback_error:
                 print('Automatic recovery failed: ' + str(rollback_error), file=sys.stderr)
         print('Backup retained at: ' + str(backup), file=sys.stderr)
         raise
     shutil.rmtree(backup)
+    progress('complete')
     print('Update Complete: service, settings, reminders and APIs verified.', flush=True)
+    return 'updated'
+
+
+def set_channel(project, channel):
+    """Record the channel as the checkout owner so Git files keep their ownership."""
+    repository = project / '.git'
+    if repository.is_symlink() or not repository.is_dir():
+        raise RuntimeError('Release channels require an official Git installation.')
+    owner = pwd.getpwuid(repository.stat().st_uid).pw_name
+    git = (['runuser', '-u', owner, '--'] if os.geteuid() == 0 and owner != 'root' else []) + ['git']
+    run(git + ['config', 'webclock.releaseChannel', channel], cwd=project)
+    print('Release channel: ' + channel, flush=True)
+
+
+def refresh_update_service(project):
+    """Install or refresh the background updater shipped with the installed release."""
+    script = project / 'scripts/enable_updates.sh'
+    if (os.geteuid() != 0 or not script.is_file() or script.is_symlink()
+            or not (project / '.git').is_dir() or shutil.which('systemctl') is None):
+        return
+    try:
+        subprocess.run(['bash', str(script)], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        # WebClock itself is updated and verified; only web/automatic updates are unavailable.
+        print('Warning: automatic updates could not be enabled. Run: sudo bash scripts/enable_updates.sh',
+              file=sys.stderr, flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('project', nargs='?', type=Path, default=Path(__file__).resolve().parent.parent)
+    parser.add_argument('--channel', choices=('stable', 'beta'),
+                        help='switch this installation to the stable or beta release channel first')
     args = parser.parse_args()
     if os.geteuid() != 0:
         sys.exit('Please run: sudo bash update_clock.sh')
     def interrupted(signum, frame):
         raise KeyboardInterrupt('Update interrupted')
     signal.signal(signal.SIGTERM, interrupted)
+    project = args.project.resolve()
     try:
-        update(args.project)
+        if args.channel:
+            set_channel(project, args.channel)
+        if update(project) == 'up_to_date':
+            print('WebClock is already up to date.', flush=True)
     except (Exception, KeyboardInterrupt) as error:
         print('Update failed: ' + str(error), file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError):
             print(error.stdout, file=sys.stderr)
             print(error.stderr, file=sys.stderr)
         sys.exit(1)
+    refresh_update_service(project)
 
 
 if __name__ == '__main__':

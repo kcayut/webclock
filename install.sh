@@ -21,7 +21,7 @@ while (( $# )); do
             esac
             shift 2 ;;
         -h|--help)
-            echo 'Usage: bash install.sh [--docker] [--dir DIRECTORY] [--version X.Y.Z]'
+            echo 'Usage: bash install.sh [--docker] [--dir DIRECTORY] [--version X.Y.Z[-beta.N]]'
             echo 'Managed: add --managed --tls-cert FILE --tls-key FILE --tls-host HOST [--tls-ca FILE]'
             echo 'Installs an official GitHub release; existing installations are never replaced.'
             exit 0 ;;
@@ -72,7 +72,16 @@ if [[ -z "$RELEASE_VERSION" ]]; then
         || fail 'No published release is available, or GitHub could not be reached. No installation was created.'
     case "$release_url" in "$REPOSITORY/releases/tag/v"*) RELEASE_VERSION="${release_url##*/v}" ;; *) fail 'GitHub did not return an official release.' ;; esac
 fi
-[[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail 'Version must be X.Y.Z (a stable release).'
+[[ ${#RELEASE_VERSION} -le 128 && "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] \
+    || fail 'Version must be X.Y.Z or a prerelease such as X.Y.Z-beta.1.'
+RELEASE_CHANNEL=stable
+if [[ "$RELEASE_VERSION" == *-* ]]; then
+    RELEASE_CHANNEL=beta
+    IFS='.' read -ra identifiers <<< "${RELEASE_VERSION#*-}"
+    for identifier in "${identifiers[@]}"; do
+        [[ ! "$identifier" =~ ^0[0-9]+$ ]] || fail 'Numeric prerelease identifiers cannot have leading zeros.'
+    done
+fi
 base="$REPOSITORY/releases/download/v$RELEASE_VERSION"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/webclock-install.XXXXXX")"
 trap 'rm -rf -- "$temporary"' EXIT
@@ -102,7 +111,7 @@ if $DOCKER; then
 else
     source_dir="$temporary/source"
     git clone --quiet --branch "v$RELEASE_VERSION" "$REPOSITORY.git" "$source_dir"
-    git -C "$source_dir" config webclock.releaseChannel stable
+    git -C "$source_dir" config webclock.releaseChannel "$RELEASE_CHANNEL"
 fi
 [[ "$(cat "$source_dir/VERSION")" == "$RELEASE_VERSION" ]] || fail 'Downloaded product version does not match the release.'
 (umask 077

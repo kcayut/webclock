@@ -35,6 +35,14 @@ class UpdateEntrypointTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
+        original_modules = dict(sys.modules)
+        def restore_modules():
+            for key in list(sys.modules):
+                if key not in original_modules:
+                    sys.modules.pop(key, None)
+                else:
+                    sys.modules[key] = original_modules[key]
+        self.addCleanup(restore_modules)
         self.root = Path(temporary.name).resolve()
         self.remote = self.root / 'remote'
         self.project = self.root / 'installed'
@@ -129,6 +137,48 @@ class UpdateEntrypointTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No module named 'missing_webclock_test_dependency'", result.stderr)
         self.assertNotIn('Cannot read the fetched upstream updater', result.stderr)
+
+    def test_downloaded_entrypoint_preloads_release_versions_from_upstream_commit(self):
+        updater_source = '''import json
+from pathlib import Path
+import sys
+try:
+    from scripts import release_versions
+except ImportError:
+    import release_versions
+
+def main():
+    print(json.dumps({'channel': release_versions.TEST_CHANNEL}))
+
+if __name__ == '__main__':
+    main()
+'''
+        (self.remote / 'scripts/release_versions.py').write_text("TEST_CHANNEL = 'custom_beta'\n")
+        (self.remote / 'scripts/update_clock.py').write_text(updater_source)
+        self.commit()
+        self.git('fetch', cwd=self.project)
+        sys.modules.pop('release_versions', None)
+        sys.modules.pop('scripts.release_versions', None)
+        result = json.loads(self.bootstrap(self.project))
+        self.assertEqual(result['channel'], 'custom_beta')
+        self.assertFalse((self.project / 'scripts/release_versions.py').exists())
+
+    def test_scripts_update_clock_fallback_loader_loads_release_versions_from_git(self):
+        shutil.copy2(ROOT / 'scripts/release_versions.py', self.remote / 'scripts/release_versions.py')
+        shutil.copy2(ROOT / 'scripts/update_clock.py', self.remote / 'scripts/update_clock.py')
+        self.commit()
+        self.git('fetch', cwd=self.project)
+        cmd = [
+            sys.executable, '-c',
+            'import runpy; runpy.run_path("{}", run_name="__main__")'.format(
+                self.remote / 'scripts/update_clock.py'
+            ),
+            '--help'
+        ]
+        result = subprocess.run(cmd, cwd=self.project, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Update an existing Linux/systemd installation', result.stdout)
 
 
 if __name__ == '__main__':

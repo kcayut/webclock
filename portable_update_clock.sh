@@ -34,8 +34,12 @@ if [[ ! -d "$PROJECT_DIR/.git" ]]; then
     exit 1
 fi
 
-if [[ "$(git -c safe.directory="$PROJECT_DIR" -C "$PROJECT_DIR" config --get webclock.releaseChannel || true)" == stable ]]; then
-    exec "${SUDO[@]}" python3 "$PROJECT_DIR/update_clock.py" "$PROJECT_DIR"
+if [[ "$(git -c safe.directory="$PROJECT_DIR" -C "$PROJECT_DIR" config --get webclock.releaseChannel || true)" =~ ^(stable|beta)$ ]]; then
+    "${SUDO[@]}" python3 "$PROJECT_DIR/update_clock.py" "$PROJECT_DIR"
+    if [[ -f "$PROJECT_DIR/scripts/enable_updates.sh" ]]; then
+        "${SUDO[@]}" bash "$PROJECT_DIR/scripts/enable_updates.sh"
+    fi
+    exit 0
 fi
 
 echo "Fetching the configured upstream for: $PROJECT_DIR"
@@ -57,3 +61,6 @@ fi
 
 echo "Starting the guarded WebClock updater from upstream commit $UPSTREAM_COMMIT"
 "${SUDO[@]}" python3 "$UPDATER_FILE" "$PROJECT_DIR"
+if [[ -f "$PROJECT_DIR/scripts/enable_updates.sh" ]]; then
+    "${SUDO[@]}" bash "$PROJECT_DIR/scripts/enable_updates.sh"
+fi

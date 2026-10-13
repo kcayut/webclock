@@ -26,6 +26,7 @@ class InstallationTest(unittest.TestCase):
         source = (ROOT / 'scripts/setup.sh').read_text().replace(
             '/etc/systemd/system/webclock.service', str(self.root / 'webclock.service'))
         (self.project / 'scripts/setup.sh').write_text(source)
+        (self.project / 'scripts/enable_updates.sh').write_text('printf "enable_updates\\n" >> "$INSTALL_LOG"\n')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.env = dict(os.environ, PATH=str(self.bin) + ':' + os.environ['PATH'],
@@ -86,6 +87,7 @@ if [ "$*" = "${FAIL_DOCKER:-unused}" ]; then exit 1; fi
         log = self.log()
         self.assertIn('compose pull webclock', log)
         self.assertNotIn('compose build', log)
+        self.assertNotIn('enable_updates', log)
         self.assertIn('-p 8181:5000', log)
         self.assertLess(log.index('compose up -d --no-build'), log.index('install_check.py wait'))
         self.assertIn(':8181/admin', result.stdout)
@@ -172,6 +174,7 @@ exec "$REAL_PYTHON" "$@"
         unit = (self.root / 'webclock.service').read_text()
         self.assertIn('User=installer-test', unit)
         self.assertIn('systemctl restart webclock', self.log())
+        self.assertLess(self.log().index('systemctl restart webclock'), self.log().index('enable_updates'))
         self.assertNotIn('manage_auth', self.log())
         (self.root / 'commands').unlink()
         self.env['UNIT_MISSING'] = '0'

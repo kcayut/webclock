@@ -285,7 +285,7 @@ jobs:
               platforms = {(item['platform']['os'], item['platform']['architecture']) for item in manifest['manifests']}
               assert {('linux', 'amd64'), ('linux', 'arm64')} <= platforms, (package, platforms)
           PYTHON
-      - name: Package committed files and publish the complete stable release
+      - name: Package committed files and publish the complete release
         env:
           EXISTING_DRAFT: ${{ steps.existing.outputs.draft }}
         run: |
@@ -297,4 +297,8 @@ jobs:
           else
             gh release create "$RELEASE_TAG" "$assets"/* --draft --verify-tag --title "WebClock $RELEASE_TAG" --notes-file "doc/releases/$RELEASE_TAG.md"
           fi
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+          if [[ "$VERSION" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest
+          fi

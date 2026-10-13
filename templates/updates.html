@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta id="csrf-token" name="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ update_text.title }} · WebClock</title>
+    {% include 'brand_head.html' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
+    <style>
+        .update-versions { display: flex; flex-wrap: wrap; gap: 18px 48px; margin: 0 0 20px; }
+        .update-versions dt { color: var(--muted); font-size: 15px; }
+        .update-versions dd { margin: 0; font-size: 26px; font-weight: 600; overflow-wrap: anywhere; }
+        #update-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+        #update-enable code { display: block; overflow-wrap: anywhere; padding: 12px; background: var(--canvas); }
+        #update-status { padding: 12px 16px; background: var(--tint); border-radius: 6px; }
+        #update-status.error { background: var(--danger-bg); }
+    </style>
+    <script id="update-i18n" type="application/json">{{ update_languages|tojson }}</script>
+    <script defer src="{{ url_for('static', filename='updates.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='management.js') }}"></script>
+</head>
+<body class="management" data-management-page="updates" data-initial-panel="updates">
+    {% include 'management_nav.html' %}
+    <main id="management-main" class="management-content" tabindex="-1">
+        <section data-management-panel="updates" class="is-current" id="updates" data-api-url="{{ update_api_url }}">
+            <div class="page-heading"><div>
+                <h1 data-update-text="title">{{ update_text.title }}</h1>
+                <p class="page-description" data-update-text="hint">{{ update_text.hint }}</p>
+            </div></div>
+            <p id="update-status" role="status" aria-live="polite" data-update-text="loading">{{ update_text.loading }}</p>
+            <section id="update-reconnect-help" class="panel" hidden>
+                <p data-update-text="reconnect_help">{{ update_text.reconnect_help }}</p>
+                <code>systemctl status webclock webclock-updater</code>
+            </section>
+            <section id="update-enable" class="panel" hidden>
+                <h2 data-update-text="enable_title">{{ update_text.enable_title }}</h2>
+                <p data-update-text="enable_hint">{{ update_text.enable_hint }}</p>
+                <code>sudo bash scripts/enable_updates.sh</code>
+            </section>
+            <section class="panel" aria-labelledby="update-version-title">
+                <h2 id="update-version-title" data-update-text="versions">{{ update_text.versions }}</h2>
+                <dl class="update-versions">
+                    <div><dt data-update-text="current">{{ update_text.current }}</dt><dd id="update-current">—</dd></div>
+                    <div><dt data-update-text="latest">{{ update_text.latest }}</dt><dd id="update-latest">—</dd></div>
+                </dl>
+                <p class="help"><span data-update-text="last_checked">{{ update_text.last_checked }}</span> <span id="update-last-checked">—</span></p>
+                <p class="help"><span data-update-text="next_check">{{ update_text.next_check }}</span> <span id="update-next-check">—</span></p>
+                <div class="actions">
+                    <button id="update-check" type="button" disabled data-update-text="check">{{ update_text.check }}</button>
+                    <button id="update-install" type="button" class="primary" disabled data-update-text="install">{{ update_text.install }}</button>
+                </div>
+                <p class="help" data-update-text="restart_hint">{{ update_text.restart_hint }}</p>
+            </section>
+            <section class="panel" aria-labelledby="update-settings-title">
+                <h2 id="update-settings-title" data-update-text="settings">{{ update_text.settings }}</h2>
+                <div class="field">
+                    <label for="update-channel" data-update-text="channel">{{ update_text.channel }}</label>
+                    <select id="update-channel" disabled aria-describedby="update-channel-hint">
+                        <option value="stable" data-update-text="stable">{{ update_text.stable }}</option>
+                        <option value="beta" data-update-text="beta">{{ update_text.beta }}</option>
+                    </select>
+                    <p id="update-channel-hint" class="help" data-update-text="stable_hint">{{ update_text.stable_hint }}</p>
+                </div>
+                <label class="check"><input id="update-auto" type="checkbox" disabled aria-describedby="update-auto-hint">
+                    <span data-update-text="auto_update">{{ update_text.auto_update }}</span></label>
+                <p id="update-auto-hint" class="help" data-update-text="auto_hint">{{ update_text.auto_hint }}</p>
+                <p id="update-auto-paused" class="error" hidden data-update-text="auto_paused">{{ update_text.auto_paused }}</p>
+                <p class="help" data-update-text="preserve_hint">{{ update_text.preserve_hint }}</p>
+            </section>
+            <section id="update-release" class="panel" hidden aria-labelledby="update-release-title">
+                <h2 id="update-release-title" data-update-text="release_notes">{{ update_text.release_notes }}</h2>
+                <p><a id="update-release-link" target="_blank" rel="noopener noreferrer" data-update-text="view_release">{{ update_text.view_release }}</a></p>
+                <div id="update-notes"></div>
+            </section>
+        </section>
+    </main>
+</body>
+</html>

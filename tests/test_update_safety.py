@@ -347,6 +347,23 @@ class UpdaterTest(unittest.TestCase):
         self.assert_data_preserved()
         self.assertEqual(len(list(self.project.glob('.webclock-update-*'))), 1)
 
+    def test_failing_progress_callback_does_not_block_update_or_rollback(self):
+        self.fail_pip = True
+        phases = []
+
+        def failing_progress(phase):
+            phases.append(phase)
+            raise OSError('disk full during progress callback')
+
+        with patch.object(updater, 'wait_healthy'):
+            with self.assertRaises(subprocess.CalledProcessError):
+                updater.update(self.project, progress=failing_progress)
+        self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
+        self.assertEqual((self.project / 'venv/package').read_text(), 'old package')
+        self.assertEqual(self.state, 'active')
+        self.assert_data_preserved()
+        self.assertIn('rolling_back', phases)
+
     def test_https_verification_context_survives_update_failure_and_rollback(self):
         handler = object()
         current = dict(self.settings)

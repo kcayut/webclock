@@ -12,6 +12,7 @@
 {% elif name == 'alarms' %}<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
 {% elif name == 'devices' %}<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8m-8 5h.01m4 0h.01"/>
 {% elif name == 'backup' %}<path d="M4 8v11c0 3 16 3 16 0V8M4 13c0 3 16 3 16 0"/><ellipse cx="12" cy="6" rx="8" ry="3"/>
+{% elif name == 'updates' %}<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M18 18A8 8 0 0 1 5 15"/>
 {% elif name == 'about' %}<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>
 {% elif name == 'sun' %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
 {% elif name == 'moon' %}<path d="M20.8 13A9 9 0 0 1 11 3.2 9 9 0 1 0 20.8 13Z"/>
@@ -27,6 +28,7 @@
         {% for panel, path, key in [('display', url_for('admin', _anchor='display'), 'management_display'), ('calendar', url_for('admin', _anchor='calendar-title'), 'management_calendar'), ('alarms', url_for('server_api.management.management', _anchor='alarms'), 'management_alarms'), ('devices', url_for('server_api.management.management', _anchor='devices'), 'management_devices'), ('backup', url_for('admin', _anchor='backup'), 'management_backup'), ('about', url_for('admin', _anchor='about'), 'management_about')] %}
         <a href="{{ path }}" data-management-link="{{ panel }}">{{ nav_icon(panel) }}<span data-i18n="{{ key }}">{{ m[key] }}</span></a>
         {% endfor %}
+        <a href="{{ url_for('updates.page') }}" data-management-link="updates">{{ nav_icon('updates') }}<span data-i18n="management_updates">{{ m.management_updates }}</span></a>
         <a href="{{ url_for('control_management.integrations') }}" data-management-link="integrations">{{ nav_icon('devices') }}<span data-i18n="management_integrations">{{ m.management_integrations }}</span></a>
         {% if mode_management_available %}<a href="{{ url_for('mode.page') }}" data-management-link="mode">{{ nav_icon('devices') }}<span data-i18n="management_mode">{{ m.management_mode }}</span></a>{% endif %}
     </nav>

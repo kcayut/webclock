@@ -11,6 +11,11 @@ import tarfile
 import time
 import zipfile
 
+try:
+    from scripts.release_versions import release_version
+except ModuleNotFoundError:
+    from release_versions import release_version
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_FILES = frozenset((
@@ -32,8 +37,7 @@ PRIVATE_NAMES = frozenset(('manual_notes.json', 'auth.json', 'auth-required',
 
 def check_versions(read_text, tag=None):
     version = read_text('VERSION').strip()
-    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
-        raise ValueError('VERSION must contain a stable X.Y.Z version')
+    release_version(version)
     if tag is not None and tag != 'v' + version:
         raise ValueError('Release tag must match VERSION: v' + version)
     if json.loads(read_text('custom_components/webclock/manifest.json'))['version'] != version:
