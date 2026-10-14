@@ -258,6 +258,29 @@ class UpdaterServiceTest(unittest.TestCase):
         self.assertGreater(self.updater.data['next_check'], service.time.time() + 3500)
         self.assertEqual(self.updater.status()['state'], 'idle')
 
+    def test_update_failure_with_disk_full_preserves_failed_state_and_auto_update_paused(self):
+        self.update.side_effect = RuntimeError('Update failed during pip install')
+        real_save = self.updater._save
+
+        def fail_subsequent_saves():
+            if self.update.called:
+                raise OSError('Disk full after update started')
+            return real_save()
+
+        with patch.object(self.updater, '_save', side_effect=fail_subsequent_saves):
+            self.updater._install('1.2.0')
+
+        status = self.updater.status()
+        self.assertEqual(status['state'], 'failed')
+        self.assertEqual(status['error'], 'update_failed')
+        self.assertTrue(status['auto_update_paused'])
+        self.assertGreater(status['next_check'], service.time.time() + 3500)
+
+        # Subsequent check must NOT trigger update again because auto_update_paused is True
+        self.update.reset_mock()
+        self.updater._check(automatic=True)
+        self.update.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

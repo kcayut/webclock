@@ -185,11 +185,8 @@ class Updater:
         except Exception as error:
             # Command output may contain private URLs; web-visible status uses fixed codes.
             print('WebClock release check failed: ' + type(error).__name__, flush=True)
-            try:
-                self._change(state='failed', phase='', error='release_check_failed',
-                             next_check=time.time() + RETRY_INTERVAL)
-            except OSError:
-                pass
+            self._change(allow_failure=True, state='failed', phase='', error='release_check_failed',
+                         next_check=time.time() + RETRY_INTERVAL)
 
     def _install(self, expected):
         self._change(state='updating', phase='checking', error=None, result=None)
@@ -214,12 +211,10 @@ class Updater:
             print('WebClock update failed: ' + type(error).__name__, flush=True)
             recovered = getattr(error, 'rollback_succeeded', None)
             result = 'rolled_back' if recovered is True else ('manual_recovery' if recovered is False else 'failed')
-            try:
-                self._change(state='failed', phase='', error='update_failed' if started else 'release_check_failed',
-                             result=result, auto_update_paused=True,
-                             next_check=time.time() + RETRY_INTERVAL)
-            except OSError as save_error:
-                print('WebClock updater could not persist state: ' + type(save_error).__name__, flush=True)
+            self._change(allow_failure=True, state='failed', phase='',
+                         error='update_failed' if started else 'release_check_failed',
+                         result=result, auto_update_paused=True,
+                         next_check=time.time() + RETRY_INTERVAL)
 
     def _git_channel(self):
         try:
