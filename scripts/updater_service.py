@@ -89,11 +89,16 @@ class Updater:
 
     def _change(self, allow_failure=False, **values):
         with self.lock:
+            previous = {key: self.data[key] for key in values if key in self.data}
             self.data.update(values)
             try:
                 self._save()
             except OSError as error:
                 if not allow_failure:
+                    self.data.update(previous)
+                    for key in values:
+                        if key not in previous:
+                            self.data.pop(key, None)
                     raise
                 print('WebClock updater could not persist state: ' + type(error).__name__, flush=True)
 
@@ -128,13 +133,13 @@ class Updater:
                 except ValueError:
                     return {'ok': False, 'error': 'invalid_settings', 'status': self.status()}
                 changed_channel = request['channel'] != self.data['channel']
-                self.data.update(channel=request['channel'], auto_update=request['auto_update'])
+                updates = {'channel': request['channel'], 'auto_update': request['auto_update']}
                 if changed_channel:
-                    self.data.update(latest_version=None, update_available=False,
-                                     release_url='', release_notes='', last_checked=None,
-                                     next_check=time.time() + STARTUP_DELAY)
+                    updates.update(latest_version=None, update_available=False,
+                                   release_url='', release_notes='', last_checked=None,
+                                   next_check=time.time() + STARTUP_DELAY)
                 try:
-                    self._save()
+                    self._change(**updates)
                 except OSError:
                     return {'ok': False, 'error': 'state_save_failed', 'status': self.status()}
                 if changed_channel:
@@ -245,10 +250,20 @@ class Updater:
             print('WebClock could not record the release channel in Git.', flush=True)
 
     def scheduler(self):
-        while not self.stopped.wait(1):
+        while not self.stopped.is_set():
             with self.lock:
                 if not self._busy() and time.time() >= self.data['next_check']:
-                    self._start(self._check, True)
+                    try:
+                        self._start(self._check, True)
+                    except Exception as error:
+                        print('WebClock scheduled check failed to start: ' + type(error).__name__, flush=True)
+                        self.data['next_check'] = time.time() + RETRY_INTERVAL
+                        try:
+                            self._save()
+                        except OSError:
+                            pass
+            if self.stopped.wait(1):
+                break
 
 
 class ControlHandler(socketserver.StreamRequestHandler):

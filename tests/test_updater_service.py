@@ -217,6 +217,7 @@ class UpdaterServiceTest(unittest.TestCase):
         with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
             with self.assertRaises(OSError):
                 self.updater._change(state='updating')
+        self.assertEqual(self.updater.status()['state'], 'idle')
 
     def test_updating_state_saved_on_disk_preserves_auto_update_paused_after_restart(self):
         self.updater._change(state='updating', phase='checking')
@@ -227,11 +228,35 @@ class UpdaterServiceTest(unittest.TestCase):
     def test_dispatch_install_fails_cleanly_if_saving_updating_state_fails(self):
         self.updater.data['update_available'] = True
         self.updater.data['latest_version'] = '1.3.0'
+        self.updater.data['state'] = 'available'
         with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
             result = self.updater.dispatch({'action': 'install', 'expected_version': '1.3.0'})
             self.assertFalse(result['ok'])
             self.assertEqual(result['error'], 'state_save_failed')
             self.assertIsNone(self.updater.worker)
+        self.assertEqual(self.updater.status()['state'], 'available')
+        self.assertEqual(result['status']['state'], 'available')
+
+    def test_configure_reverts_in_memory_state_if_save_fails(self):
+        self.assertEqual(self.updater.status()['channel'], 'stable')
+        with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
+            result = self.updater.dispatch({'action': 'configure', 'channel': 'beta', 'auto_update': False})
+            self.assertFalse(result['ok'])
+            self.assertEqual(result['error'], 'state_save_failed')
+        self.assertEqual(self.updater.status()['channel'], 'stable')
+        self.assertTrue(self.updater.status()['auto_update'])
+
+    def test_scheduler_survives_save_failure_and_postpones_retry(self):
+        self.updater.data['next_check'] = service.time.time() - 10
+        with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
+            thread = threading.Thread(target=self.updater.scheduler, daemon=True)
+            thread.start()
+            service.time.sleep(0.05)
+            self.updater.stopped.set()
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+        self.assertGreater(self.updater.data['next_check'], service.time.time() + 3500)
+        self.assertEqual(self.updater.status()['state'], 'idle')
 
 
 if __name__ == '__main__':
