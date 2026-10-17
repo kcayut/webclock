@@ -49,6 +49,8 @@ curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.s
 
 **[インストールガイドへ →](doc/installation.md)**（繁体字中国語）：3 種類の手順、前提条件、self／managed の有効化、HTTPS 設定をまとめています。
 
+詳しい手順（繁体字中国語）：[ソースからのビルド](doc/installation.md#source-install)、[Python で手動実行](doc/installation.md#manual-python)、[インストール引数](doc/installation.md#install-options)、[初回設定](doc/installation.md#first-run)、[トラブルシューティング](doc/installation.md#install-troubleshooting)。
+
 **[端末を時計として使う →](doc/display-devices.md)**（繁体字中国語）：iPad／iPhone、Android、Windows、Mac のホーム画面アイコン、全画面表示、スリープ防止をバージョン別に説明。初代 iPad mini／iOS 9 も含みます。
 
 Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` と TLS 証明書のオプションを追加します。HA App は HA ログインで管理画面を保護し、managed 完全バックアップを読み込んだ場合は元の WebClock アカウントでもログインします。HA OS、ARM、旧 iPad の実機検証は[リリース状況](doc/ha-release.md)で別途記録しています。開発用のローカルビルドも利用できます。

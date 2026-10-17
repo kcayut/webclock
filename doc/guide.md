@@ -1,6 +1,6 @@
 # WebClock 繁體中文使用指南
 
-三種安裝方式與 self／managed 啟用步驟，統一見[安裝指南](installation.md)。
+線上／離線、Linux、Docker、Home Assistant、原始碼與手動執行，以及 self／managed 啟用步驟，統一見[安裝指南](installation.md)。新安裝請接著完成[首次設定與確認](installation.md#first-run)。
 
 平板與電腦的主畫面捷徑、全螢幕、螢幕恆亮，見[裝置顯示設定](display-devices.md)；iPad mini 1 請直接看 [iOS 9 完整步驟](display-devices.md#ipad-ios9)。
 

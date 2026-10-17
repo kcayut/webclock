@@ -47,7 +47,7 @@ curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.s
 
 **[安裝 HA App](doc/installation.md#home-assistant)** · **[安裝 HA 整合與卡片](doc/home-assistant.md#安裝整合)**
 
-**[前往完整安裝指南 →](doc/installation.md)**：三種方式的快速指令、必要條件、self／managed 啟用方式與 HTTPS 設定。
+**[前往完整安裝指南 →](doc/installation.md)**：線上／離線時鐘、Linux、Docker、HA 商店／本機 App，以及整合、卡片與 ESP 原型入口。另有[原始碼建置](doc/installation.md#source-install)、[手動 Python 執行](doc/installation.md#manual-python)、[安裝參數](doc/installation.md#install-options)、[首次設定](doc/installation.md#first-run)及[失敗排查](doc/installation.md#install-troubleshooting)；self／managed 與 HTTPS 也有完整步驟。
 
 已有帳號可在「模式與帳號」(`/mode`) [切換 self／managed、選定主要使用者及管理成員](doc/installation.md#mode-switch)；[多帳號備份與復原](doc/installation.md#owner-data)、[裝置／群組設定](doc/guide.md#群組設定與裝置加入)及[共用公告](doc/guide.md#指定群組或裝置的公告)都有操作步驟。本次測試與待驗收範圍見[第二／四階段驗收](doc/phase2-acceptance.md)。
 

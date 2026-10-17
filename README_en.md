@@ -49,6 +49,8 @@ The first public version is **1.1.0**, retaining the existing HA version. Server
 
 **[Open the installation guide →](doc/installation.md)** (Traditional Chinese): quick commands, prerequisites, self/managed activation and HTTPS setup for all three methods.
 
+Source and troubleshooting details (Traditional Chinese): [source builds](doc/installation.md#source-install), [manual Python](doc/installation.md#manual-python), [installer options](doc/installation.md#install-options), [first run](doc/installation.md#first-run), and [installation troubleshooting](doc/installation.md#install-troubleshooting).
+
 With an existing administrator, use `/mode` to [switch self/managed, choose the primary user, and manage members](doc/installation.md#mode-switch). See [multi-account backup and recovery](doc/installation.md#owner-data), [device/group settings](doc/guide.md#群組設定與裝置加入), [shared announcements](doc/guide.md#指定群組或裝置的公告), and [phase 2/4 acceptance](doc/phase2-acceptance.md) for steps, test results, and pending checks (Traditional Chinese).
 
 **[Set up a clock display →](doc/display-devices.md)** (Traditional Chinese): home-screen shortcuts, fullscreen and keeping the screen awake on iPad/iPhone, Android, Windows and Mac, with version-specific steps including iPad mini 1/iOS 9.
