@@ -25,3 +25,6 @@ TODO.md
 .webclock-mode-backups-*/
 .webclock-install.json
 .webclock-bootstrap
+.docker-update*
+webclock_updater_run/
+.docker-migration.json

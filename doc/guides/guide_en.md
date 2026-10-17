@@ -1,6 +1,6 @@
 # WebClock English Guide
 
-See the [installation guide](installation.md) (Traditional Chinese) for all three installation methods and self/managed activation.
+See the [installation guide](../installation.md) (Traditional Chinese) for all three installation methods and self/managed activation.
 
 For home-screen shortcuts, fullscreen and keeping the screen awake, see [display device setup](display-devices.md), including [iPad mini 1/iOS 9](display-devices.md#ipad-ios9) (Traditional Chinese).
 
@@ -8,7 +8,7 @@ For home-screen shortcuts, fullscreen and keeping the screen awake, see [display
 
 Existing installations remain in self mode. To enable per-device isolation, stop all writers and make a host backup using the steps below, then run `./venv/bin/python scripts/manage_auth.py --state-dir /path/to/webclock_state setup --username admin --enable-managed` as the service user. Enter a password of at least 12 characters interactively. Use the actual state path, restart, and sign in at `/admin` over HTTPS. The old `--enable-managed-test` flag remains compatible; no mode change occurs without an explicit flag. Existing names, capabilities, ACKs and content remain, but self-reported IDs/shared tokens do not become device credentials: displays must enroll with a six-character code. `reset-password` uses the same state path and revokes all admin sessions. Sessions last at most 8 hours; signing out does not revoke independent device credentials.
 
-Unenrolled managed clocks still display time/date but receive no private events or alarms. An admin session does not grant device access, and an invitation cannot sign in as an administrator. See the [B0–B1 contract](b0-b1-contract.md) for storage and authorization boundaries and the [device API](server-api_en.md) for current endpoints.
+Unenrolled managed clocks still display time/date but receive no private events or alarms. An admin session does not grant device access, and an invitation cannot sign in as an administrator. See the [B0–B1 contract](../development/b0-b1-contract.md) for storage and authorization boundaries and the [device API](../api/server-api_en.md) for current endpoints.
 
 Full host backups contain unencrypted credentials. Historical restore rotates session/invitation secrets, clears sessions/attempts, closes invitations and invalidates device credentials while retaining groups/content and observation records. A managed target cannot become anonymous through an old backup. Immediate update rollback preserves current authorization data; unsupported older code stays stopped for host recovery. The management version-1 export remains settings and notes only.
 
@@ -33,7 +33,7 @@ Shared display settings, group settings, per-item group assignments and device c
 
 An enrolled clock receives display settings resolved as device > group > shared defaults; each content category uses its explicit device selection or its group assignment. During a short outage, private data loaded in this session may remain until its authorization lease expires, at most 5 minutes. Confirmed authorization failure or lease expiry clears private events, announcements, and queued alarms and stops current browser ringing; time/date and browser-local reminders remain available. This does not guarantee offline reopening or background/lock-screen alarms. First-generation iPad mini/iOS 9 and the new identity flow in ESP firmware require separate acceptance.
 
-[README](../README_en.md) · [繁體中文](guide.md) · [日本語](guide_jp.md) · [Device API](server-api_en.md)
+[README](../../README_en.md) · [繁體中文](guide.md) · [日本語](guide_jp.md) · [Device API](../api/server-api_en.md)
 
 ## Public clock
 
@@ -41,7 +41,7 @@ Open the [WebClock public clock](https://kcayut.github.io/webclock/) directly. N
 
 WebClock was originally designed for the first-generation iPad mini and keeps the clock page simple for old tablets. Adjust Auto-Lock and screen brightness in the device settings when using it as a persistent display.
 
-For a server-free offline copy on a computer, [download and extract the ZIP, then open its top-level `index.html`](installation.md#offline-download), keeping the adjacent `static` folder. On tablets, wait for “已可離線開啟” at the bottom of the public clock, then test reopening the same URL or home-screen icon without a connection. Cache removal requires online setup again. iPad mini 1/iOS 9 can keep an already loaded foreground page ticking, but cannot use this cache to reopen offline. See [download and offline instructions](installation.md#no-server) for the full steps and device limits (Traditional Chinese).
+For a server-free offline copy on a computer, [download and extract the ZIP, then open its top-level `index.html`](../installation.md#offline-download), keeping the adjacent `static` folder. On tablets, wait for “已可離線開啟” at the bottom of the public clock, then test reopening the same URL or home-screen icon without a connection. Cache removal requires online setup again. iPad mini 1/iOS 9 can keep an already loaded foreground page ticking, but cannot use this cache to reopen offline. See [download and offline instructions](../installation.md#no-server) for the full steps and device limits (Traditional Chinese).
 
 ## Self-hosting
 
@@ -51,7 +51,7 @@ The self-hosted version provides these routes:
 - `/admin`: display settings, calendars, text reminders, backup, and restore.
 - `/schedules`: browser alarms and device sync status.
 
-Docker uses host port `80` by default. The Linux installer and manual run default to port `5000`. See the [installation guide](installation.md) for commands. Basic `.env` settings are:
+Docker uses host port `80` by default. The Linux installer and manual run default to port `5000`. See the [installation guide](../installation.md) for commands. Basic `.env` settings are:
 
 ```env
 PORT=5000
@@ -145,7 +145,7 @@ Open `/schedules#devices` to see devices. Managed mode lists current authorizati
 
 **Request sync** only queues a server command. The device polls by reporting its status, receives `sync`, downloads, validates, and saves data, then sends an ACK. The page distinguishes no request, waiting for confirmation, device-confirmed, and confirmation timeout, with request and acknowledgement times. After 300 seconds without ACK it shows a timeout, but the command remains and a matching late ACK can still confirm it. Repeated requests reuse the same command and original request time; an offline device cannot complete immediately.
 
-If refresh fails, the page keeps the last successful list and marks it as not updated. Automatic list updates every 15 seconds and in-page language changes preserve unsaved name drafts, input focus, and text selection; reloading or reopening the page does not preserve drafts. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing or display updates. See the [device contract](server-api_en.md#status-and-command-acknowledgement).
+If refresh fails, the page keeps the last successful list and marks it as not updated. Automatic list updates every 15 seconds and in-page language changes preserve unsaved name drafts, input focus, and text selection; reloading or reopening the page does not preserve drafts. `online` only means a report arrived within 120 seconds. Neither ACK nor reported revisions prove successful ringing or display updates. See the [device contract](../api/server-api_en.md#status-and-command-acknowledgement).
 
 Schema 3 devices enrolled with a code authenticate with individual credentials. Their cards offer **Revoke access**; before the first report, naming and sync are unavailable but revocation remains available. Legacy self-mode devices use self-reported IDs and the shared `DEVICE_API_TOKEN`; their observations appear in the initially collapsed **Legacy devices / history** section at the bottom, without individual revocation. Its open/closed state survives automatic refresh and language changes within the page. Existing residual observations without a source marker are not automatically deleted based on guesses. Observations do not establish authorization. Opening the clock page alone does not enroll a device. Disabling retains credentials and observations; resuming allows the original credential to reconnect. Moving preserves device ID, name, capabilities and ACK without consuming another invitation slot. Invalid or restored credentials marked for re-enrollment cannot be resumed: remove access and enroll again. A disabled group still blocks private content.
 
@@ -201,7 +201,7 @@ Target data paths come only from the target host's effective environment, `.env`
 
 ### Updating the application
 
-See the [installation guide](installation.md#update) for update options. The Linux updater supports HTTP and native HTTPS. Follow that guide to set the verification hostname or private CA when needed.
+See the [installation guide](../installation.md#update) for update options. The Linux updater supports HTTP and native HTTPS. Follow that guide to set the verification hostname or private CA when needed.
 
 Before updating a Docker release installation, back up your data and set `WEBCLOCK_VERSION` in `.env` to the desired official Release version (without `v`), then run:
 
@@ -229,4 +229,4 @@ git show origin/main:update_clock.py > "$updater_file" &&
 
 This entry point loads the new updater and switches source only after validation and backup. Do not run the old update script, `git pull`, or overwrite the installation first. A non-Git installation cannot automatically recover overwritten source, and automatic recovery after power loss is not guaranteed.
 
-See the [phase-one acceptance record](phase1-acceptance.md) for local verification, pending iPad mini 1 / iOS 9 checks, and Taiwan calendar maintenance after 2027 (Traditional Chinese).
+See the [phase-one acceptance record](../acceptance/phase1-acceptance.md) for local verification, pending iPad mini 1 / iOS 9 checks, and Taiwan calendar maintenance after 2027 (Traditional Chinese).

@@ -30,7 +30,7 @@
 | 新版啟動失敗 | 僅在測試副本加入會修改資料後退出的故障版本；更新器自動回復原 Git revision、venv 與資料，保留 `failed-data/`、`failed-venv/` 和 manifest；服務再次重啟及 API 讀寫成功 |
 | API 與回歸 | 121 項 Python、8 份 JavaScript 測試通過；裝置 schema 2、ETag／304、缺少 CSRF 時拒絕、GET 刪除回傳 405，以及有效管理寫入重啟後保留均通過 |
 
-可重現入口：[workflow](../.github/workflows/linux-rehearsal.yml) 與[演練腳本](../tests/rehearse_linux.py)。演練只使用一次性 runner、合成資料及本地測試 Git remote；腳本限制在 GitHub hosted Linux runner 執行，並拒絕覆蓋既有 `webclock.service`。公開 repository 的標準 runner [免費](https://docs.github.com/en/billing/concepts/product-billing/github-actions)；此 workflow 限制公開 repository，未使用大型 runner、artifact 或 cache 上傳。
+可重現入口：[workflow](../../.github/workflows/linux-rehearsal.yml) 與[演練腳本](../../tests/rehearsal/rehearse_linux.py)。演練只使用一次性 runner、合成資料及本地測試 Git remote；腳本限制在 GitHub hosted Linux runner 執行，並拒絕覆蓋既有 `webclock.service`。公開 repository 的標準 runner [免費](https://docs.github.com/en/billing/concepts/product-billing/github-actions)；此 workflow 限制公開 repository，未使用大型 runner、artifact 或 cache 上傳。
 
 此紀錄未涵蓋 Raspberry Pi／ARM 實機、主機重新開機、斷電、Docker 或 iOS 9 音訊驗收；下方目標主機與裝置清單仍保留待驗收。
 
@@ -71,8 +71,8 @@ git diff --check
 ## 主機與同步驗收
 
 - [ ] **安裝與自動啟動：**在確認的目標主機以實際部署方式安裝，重啟服務及主機，確認設定／提醒／排程保留、服務自動啟動，記錄主機與服務狀態。
-- [ ] **更新及失敗回復：**先保留獨立完整備份；在可回復的測試副本照[使用指南](guide.md#備份資料與更新)升級，確認健康檢查、狀態保存與成功啟動。受控製造更新失敗後確認程式、環境、資料回復；失敗副本／manifest 保留。未跑真實主機時不勾選。
-- [ ] **要求同步 → 輪詢 → ACK：**依[API 範例](server-api.md#狀態與同步確認)註冊測試 ID，管理頁要求同步，裝置輪詢取得指令，未 ACK 再輪詢仍是同 ID；同步成功後附 revision 與 ACK，重新載入管理頁確認指令消失。另測斷線、Server 重啟、ACK 重送；只確認契約，不把 ACK 當成實際響鈴證明。
+- [ ] **更新及失敗回復：**先保留獨立完整備份；在可回復的測試副本照[使用指南](../guides/guide.md#備份資料與更新)升級，確認健康檢查、狀態保存與成功啟動。受控製造更新失敗後確認程式、環境、資料回復；失敗副本／manifest 保留。未跑真實主機時不勾選。
+- [ ] **要求同步 → 輪詢 → ACK：**依[API 範例](../api/server-api.md#狀態與同步確認)註冊測試 ID，管理頁要求同步，裝置輪詢取得指令，未 ACK 再輪詢仍是同 ID；同步成功後附 revision 與 ACK，重新載入管理頁確認指令消失。另測斷線、Server 重啟、ACK 重送；只確認契約，不把 ACK 當成實際響鈴證明。
 
 ## 2027 年之後的台灣工作日資料
 

@@ -10,8 +10,8 @@ from webclock import __version__
 from webclock.csrf import same_origin
 
 
-SOCKET_PATH = '/run/webclock-updater/control.sock'
-CONFIG_PATH = '/etc/webclock-updater.json'
+SOCKET_PATH = os.getenv('WEBCLOCK_UPDATER_SOCKET', '/run/webclock-updater/control.sock')
+CONFIG_PATH = os.getenv('WEBCLOCK_UPDATER_CONFIG', '/etc/webclock-updater.json')
 
 
 def updater_request(action, **values):
@@ -30,9 +30,30 @@ def updater_request(action, **values):
     return result
 
 
+def platform_info():
+    """Identify the installation platform and native update provider."""
+    if os.getenv('WEBCLOCK_HA_APP') == '1':
+        return {
+            'installation_type': 'ha_app',
+            'update_provider': 'supervisor',
+            'management_url': '/config/updates',
+        }
+    if Path('/.dockerenv').exists() or os.getenv('WEBCLOCK_DOCKER') == '1':
+        return {
+            'installation_type': 'docker',
+            'update_provider': 'docker',
+            'management_url': None,
+        }
+    return {
+        'installation_type': 'bare_metal',
+        'update_provider': 'systemd',
+        'management_url': None,
+    }
+
+
 def platform_managed():
-    """Docker and the HA App update through their own platforms, never the host helper."""
-    return os.getenv('WEBCLOCK_HA_APP') == '1' or Path('/.dockerenv').exists()
+    """True when the host platform manages updates without a local update helper."""
+    return platform_info()['update_provider'] == 'supervisor'
 
 
 def register_updates(app, auth, context):
@@ -61,14 +82,27 @@ def register_updates(app, auth, context):
 
     def status_view(state):
         state = dict(state)
+        info = platform_info()
+        if info['installation_type'] == 'docker':
+            if state.get('update_provider') != 'docker':
+                state.update(supported=False, reason='provider_mismatch')
+            # Report the running image, never the host checkout or a staged .env value.
+            state['current_version'] = __version__
+        state.update(info)
         state['writable'] = admin() and state.get('supported', False)
+        if not admin() or not state.get('supported'):
+            state.pop('project_path', None)
         if not admin() and state.get('supported'):
             state['reason'] = 'managed_required'
         return state
 
     def unavailable(reason):
+        info = platform_info()
         return status_view(dict(supported=False, reason=reason, state='idle', current_version=__version__,
-                                channel='stable', auto_update=False, update_available=False))
+                                channel='stable', auto_update=False, update_available=False,
+                                installation_type=info['installation_type'],
+                                update_provider=info['update_provider'],
+                                management_url=info['management_url']))
 
     @api.route('/updates')
     def page():
@@ -86,7 +120,7 @@ def register_updates(app, auth, context):
             result = updater_request('status')
             return jsonify(status_view(result['status']))
         except (OSError, ValueError):
-            if Path(CONFIG_PATH).exists():
+            if Path(CONFIG_PATH).exists() or Path(SOCKET_PATH).with_name('configured').exists():
                 return failure('updater_unavailable', 503)
             return jsonify(unavailable('not_configured'))
 
@@ -101,6 +135,10 @@ def register_updates(app, auth, context):
                                     or len(data['expected_version']) > 100):
             return failure('invalid_request', 400)
         try:
+            if platform_info()['installation_type'] == 'docker':
+                observed = updater_request('status')['status']
+                if observed.get('update_provider') != 'docker' or not observed.get('supported'):
+                    return failure('provider_mismatch', 409)
             result = updater_request(action, **data)
         except (OSError, ValueError):
             return failure('updater_unavailable', 503)

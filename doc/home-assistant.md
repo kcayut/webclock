@@ -16,7 +16,7 @@ WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；�
 
 新安裝預設為 self，管理頁透過 HA 登入與 Ingress 使用。匯入 managed 完整備份後，保留原本 WebClock 帳號與模式，Ingress 內仍須登入原 WebClock 帳號；HA 登入不會略過 WebClock 授權。選用的 `8100` 區網連接埠提供時鐘、六碼加入、裝置同步，以及必須另帶程式憑證的內容 API；管理頁仍由 Ingress 保護。所有可變資料保存在 `/data`，由 HA 冷備份保存。
 
-要用 iPad／Android／電腦持續顯示時鐘，請把外部時鐘入口建立成主畫面圖示，再從圖示完成六碼加入；全螢幕與恆亮步驟見[裝置顯示設定](display-devices.md#clock-url)。
+要用 iPad／Android／電腦持續顯示時鐘，請把外部時鐘入口建立成主畫面圖示，再從圖示完成六碼加入；全螢幕與恆亮步驟見[裝置顯示設定](guides/display-devices.md#clock-url)。
 
 同機整合的 Server 位址：App 啟動後，到 App「日誌」複製 `Home Assistant integration URL:` 後面的完整網址。也可在 App「資訊」頁查看「主機名稱」，組成 `http://主機名稱:8100`；例如本機 App 為 `http://local-webclock:8100`，商店 App 的名稱會帶儲存庫前綴。不要使用 Ingress 管理頁網址或自行省略前綴。同機連線不需開放主機連接埠。
 
@@ -30,7 +30,7 @@ WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；�
 
 完整檔包含所有帳號的私人 iCal 網址（含舊 `ICAL_URL`）、顯示設定、提醒、鬧鐘、原生行事曆事件、群組、裝置與程式授權。未加密檔可被持有者直接讀取；選擇未加密不會略過管理員驗證。只有尚無資料的全新目標會保留裝置與程式憑證；已有資料的目標會撤銷這兩類憑證，需重新加入或建立。所有登入 session、待加入嘗試與舊邀請皆不延續，HA App options 不會被覆寫。
 
-要讓原瀏覽器裝置直接接續，須沿用相同 HTTPS 來源（網域、協定、連接埠）及 Cookie；換成 HA IP 或其他來源仍需更新連線或重新加入。檔案不包含 TLS／DNS、系統服務或瀏覽器本機資料。HA 整合改 Server 位址時走下方「重新設定」，無需重建實體與卡片。完整保護與失敗復原見[備份指南](guide.md#完整備份與搬家)；HA OS 實機搬移仍待驗收。
+要讓原瀏覽器裝置直接接續，須沿用相同 HTTPS 來源（網域、協定、連接埠）及 Cookie；換成 HA IP 或其他來源仍需更新連線或重新加入。檔案不包含 TLS／DNS、系統服務或瀏覽器本機資料。HA 整合改 Server 位址時走下方「重新設定」，無需重建實體與卡片。完整保護與失敗復原見[備份指南](guides/guide.md#完整備份與搬家)；HA OS 實機搬移仍待驗收。
 
 ## 自訂整合安裝前準備
 
@@ -97,7 +97,7 @@ cards:
     entity: sensor.webclock_alarms
 ```
 
-三種卡片支援繁體中文、English、日文，跟隨 Server 群組的顯示語言、時區與 12／24 小時制。HA 的整合設定頁則跟隨 HA 介面語言。卡片是唯讀顯示；需要從 HA 建立、修改或指派行事曆與鬧鐘，可設定獨立程式憑證並使用 [WebClock actions](control-api.md#home-assistant-操作)，或在 WebClock 管理頁操作。
+三種卡片支援繁體中文、English、日文，跟隨 Server 群組的顯示語言、時區與 12／24 小時制。HA 的整合設定頁則跟隨 HA 介面語言。卡片是唯讀顯示；需要從 HA 建立、修改或指派行事曆與鬧鐘，可設定獨立程式憑證並使用 [WebClock actions](api/control-api.md#home-assistant-操作)，或在 WebClock 管理頁操作。
 
 ## 卡片與同步
 
@@ -130,6 +130,8 @@ actions: []
 同一實例的同次鬧鐘在發事件前先記錄，不因重啟或重複快照再次發送；錯過時間不補發。若恰在保存後、發送前當機，該次可能漏發，採「最多一次」而非宣稱保證送達。鬧鐘只在有效租約內排程，撤權／租約到期／卸載會取消待發事件；暫時斷線仍可能在有效租約內發事件。實際通知、揚聲器播放及播放完成由 HA 自動化負責驗收。
 
 ## 管理、更新與移除
+
+新版感測器屬性提供 `integration_version`、`server_version` 與 `version_alignment`；舊 Server 未回報時為 `unknown`，不同版本為 `mixed`。這是執行中的版本資訊，不代表跨版本驗收通過。HACS 更新後仍須重啟 HA；卡片與執行中的整合不同版時，會提示重新載入瀏覽器。完整順序及完成判定見[更新維護流程](operations/update-operations.md#ha-的完成判定)。
 
 - **改名、移組、停用、恢復、要求同步**：在 WebClock 裝置管理頁操作。HA 最多約 15 秒後取得更新；要求同步的 ACK 代表資料已取得，不代表通知或揚聲器已實際執行。
 - **憑證撤銷**：WebClock 撤銷裝置後，HA 會要求重新授權。請在 WebClock 產生新的加入碼，再從 HA 的修復提示輸入；原裝置憑證不會恢復。

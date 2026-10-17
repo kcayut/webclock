@@ -2,11 +2,11 @@
 
 プログラムからの書き込み：管理画面「プログラムアクセス」(`/integrations`) で個別の認証情報を発行し、`/api/v1/control/*` からアラーム、ローカル予定、表示期間、グループ／端末への割り当てを編集できます。self でもプログラム認証が必要です。managed では管理者による発行と HTTPS が必要で、表示用の参加コードに書き込み権限はありません。[契約と使用例（繁體中文）](control-api.md)を参照してください。音声ファイルのアップロードは含みません。
 
-Home Assistant のネイティブ参加: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](home-assistant.md).
+Home Assistant のネイティブ参加: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](../home-assistant.md).
 
 ## B0–B4 管理・グループ・受管端末（2026-10-06）
 
-管理者session、owner別グループ、招待、原子的な参加、認証に基づく表示・アラーム、グループ管理に対応します。既存環境は `self` を維持し、`managed` はホスト側で明示的に有効化します。端末の退出と、管理者による個別移動・無効化／再開・取り消しが可能です。操作は[ガイド](guide_jp.md)、保存と更新・復元は [B0–B1 契約](b0-b1-contract.md)を参照してください。
+管理者session、owner別グループ、招待、原子的な参加、認証に基づく表示・アラーム、グループ管理に対応します。既存環境は `self` を維持し、`managed` はホスト側で明示的に有効化します。端末の退出と、管理者による個別移動・無効化／再開・取り消しが可能です。操作は[ガイド](../guides/guide_jp.md)、保存と更新・復元は [B0–B1 契約](../development/b0-b1-contract.md)を参照してください。
 
 公開 `GET /api/time` は時刻のみを返します。managed の `/api/status` は時刻と空の予定、旧 `/api/v1/device/*` は 403、`/api/v1/browser-alarms` は 401 を返します。管理 session は端末認証を代替しません。非公開情報を含まない `/api/health` の `managed_device_schema: 3` と `managed_devices_ready: true` は endpoint の実装を示し、本番移行や実機検収の完了ではありません。以下の旧 schema 2 API は self が前提です。旧 ESP codec が自動的に schema 3 に対応するわけではありません。
 
@@ -52,13 +52,13 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 
 非公開キャッシュは端末認証の範囲で分離します。401・403、認証の変更、期限切れで非公開予定・お知らせ・ブラウザーアラームを消去し、通信エラー時はその実行中の期限内データだけを維持できます。アラームはグループの表示タイムゾーンと独立して `Asia/Taipei` で計算します。連動参照元が欠ける場合は該当アラームを除外し、毎日発音へ戻しません。ESP の 7 日間オフライン発生一覧や、旧 iPad・ロック画面音声・実機検収を意味する機能ではありません。
 
-[繁體中文](server-api.md) · [English](server-api_en.md) · **日本語** · [README](../README_jp.md)
+[繁體中文](server-api.md) · [English](server-api_en.md) · **日本語** · [README](../../README_jp.md)
 
 このプロジェクトは、予定、台湾の勤務日データ、端末登録、同期リビジョン、端末状態を管理します。self モードのセルフホスト時計ではブラウザーアラームも実行します。`/schedules` でアラームを編集・プレビューし、`/` で内蔵音と赤い枠の通知を表示します。`/admin` は表示設定、購読カレンダー、文字リマインダーを別に管理します。参加済みの schema 3 時計は所属グループの非公開内容だけを取得します。
 
-端末での実行はファームウェアが担当します。[`firmware/`](../firmware/README.md) にはクロスコンパイル済みの ESP32-S3／ESPHome 試作版があり、OLED、固定ルールのアラーム同期、永続キャッシュ、圧電ブザー、停止ボタンを実装しています。実機は未検証です。カレンダー連動、ブラウザー音色の忠実な再現／音声ファイル、スヌーズ、電池バックアップ RTC、OTA、汎用の公開ファームウェアは未提供です。端末は HTTP/JSON API を使用し、このプロジェクトの Python モジュールを読み込む必要はありません。
+端末での実行はファームウェアが担当します。[`firmware/`](../../firmware/README.md) にはクロスコンパイル済みの ESP32-S3／ESPHome 試作版があり、OLED、固定ルールのアラーム同期、永続キャッシュ、圧電ブザー、停止ボタンを実装しています。実機は未検証です。カレンダー連動、ブラウザー音色の忠実な再現／音声ファイル、スヌーズ、電池バックアップ RTC、OTA、汎用の公開ファームウェアは未提供です。端末は HTTP/JSON API を使用し、このプロジェクトの Python モジュールを読み込む必要はありません。
 
-現在の試作版の使用手順と制限は [ESPHome 端末ガイド](esp-home.md)、完全な応答例は [API 詳細](server-api.md#裝置-api)を参照してください。どちらも繁体字中国語です。起動のたびに時刻の取得と Server 設定の検証が成功してからアラームを有効にします。その後の通信断ではキャッシュで動作しますが、オフライン再起動時に自動で有効にはしません。
+現在の試作版の使用手順と制限は [ESPHome 端末ガイド](../guides/esp-home.md)、完全な応答例は [API 詳細](server-api.md#裝置-api)を参照してください。どちらも繁体字中国語です。起動のたびに時刻の取得と Server 設定の検証が成功してからアラームを有効にします。その後の通信断ではキャッシュで動作しますが、オフライン再起動時に自動で有効にはしません。
 
 現在の管理領域は 1 owner 分です。**旧 self モードの端末は同じ予定とカレンダーを使用します**。schema 3 は認証済み端末に端末指定とグループを解決した内容を配信します。複数ユーザーアカウントとマルチテナントは未実装です。
 
@@ -83,7 +83,7 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 
 `GET /api/v2/device/display` に `announcements: [{id, text, visible_until}]` を追加します。`visible_until` は Unix ミリ秒で、現在のスナップショットの最長 300 秒、絶対期限、現在の表示区間終了の最も早い値です。display／アラーム全体のリースは短縮しません。`events`、`next_event`、サーバー側 local カレンダー、browser-alarms には混ぜず、`schedules.type=announcement` も使いません。旧 schema 1／2 の契約は維持します。匿名 self 状態のお知らせは空で、登録済みの self 端末は v2 から対象のお知らせを取得できます。ブラウザーには永続保存せず、認可喪失、認証・範囲変更、リース期限、個別期限で消去します。
 
-フォームは空の対象を配信なしで保存できますが、存在しない対象や他 owner の対象は拒否します。version 1 `/api/backup` は `notes` のお知らせ欄を保持し、読み込み時に構造と存在する対象の所有者を検証します。存在しない過去の ID は保持できますが、認可や対象の新規作成は行いません。完全ホストバックアップはデータを保持し、履歴復元時は端末資格情報を無効化します。操作は[お知らせガイド](guide_jp.md#グループ端末を指定するお知らせ)を参照してください。
+フォームは空の対象を配信なしで保存できますが、存在しない対象や他 owner の対象は拒否します。version 1 `/api/backup` は `notes` のお知らせ欄を保持し、読み込み時に構造と存在する対象の所有者を検証します。存在しない過去の ID は保持できますが、認可や対象の新規作成は行いません。完全ホストバックアップはデータを保持し、履歴復元時は端末資格情報を無効化します。操作は[お知らせガイド](../guides/guide_jp.md#グループ端末を指定するお知らせ)を参照してください。
 
 ## 起動と構成
 
@@ -227,7 +227,7 @@ API 遅延で直前のアラームを飛ばさないよう、現在の分から�
 
 ## 端末 API
 
-端末 API は `/api/v1/device/*` を使用し、設定応答の **`schema_version` は 2** です。旧ハードウェアの再生項目は公開しません。`browser_sound` と `browser_volume` はブラウザー再生を表し、汎用のハードウェア指令ではありません。ESPHome 試作版では、無音以外の音色を同じビープ音に変換し、端末の上限値で音量を調整します。[ハードウェア側の対応](esp-home.md#顯示聲音與按鍵)を参照してください。schema 1 の試作 client は更新が必要です。
+端末 API は `/api/v1/device/*` を使用し、設定応答の **`schema_version` は 2** です。旧ハードウェアの再生項目は公開しません。`browser_sound` と `browser_volume` はブラウザー再生を表し、汎用のハードウェア指令ではありません。ESPHome 試作版では、無音以外の音色を同じビープ音に変換し、端末の上限値で音量を調整します。[ハードウェア側の対応](../guides/esp-home.md#顯示聲音與按鍵)を参照してください。schema 1 の試作 client は更新が必要です。
 
 | パス | メソッドと用途 |
 | --- | --- |
@@ -316,7 +316,7 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 
 ### 今後の拡張
 
-有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B2–B4 はブラウザー参加、端末別の認証情報、グループ表示、個別の認可ライフサイクル操作を提供します。ホストで `--enable-managed` を指定して明示的に切り替えられ、旧 `--enable-managed-test` は互換エイリアスです。ESP の新契約への対応は今後の対象です。開発段階と実機検収は [ESPHome ガイド](esp-home.md)（繁体字中国語）を参照してください。
+有効期限付きの今後 7 日分などの発生一覧は提案段階で、対応 endpoint や schema はありません。`/api/v1/browser-alarms` はそのオフライン一覧ではありません。新契約では、参照元変更、設定が同じ場合の期間補充、削除、容量、権限範囲を扱い、既存 schema 2 の意味を変えない必要があります。B2–B4 はブラウザー参加、端末別の認証情報、グループ表示、個別の認可ライフサイクル操作を提供します。ホストで `--enable-managed` を指定して明示的に切り替えられ、旧 `--enable-managed-test` は互換エイリアスです。ESP の新契約への対応は今後の対象です。開発段階と実機検収は [ESPHome ガイド](../guides/esp-home.md)（繁体字中国語）を参照してください。
 
 ## 旧データと保存
 
@@ -325,7 +325,7 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 - `webclock_state/sounds/` や `webclock_state/fake-device/` の既存ユーザーデータは削除しませんが、Server は読みません。
 - 旧ルートの `manual_notes.json` は状態ディレクトリへ一度だけコピーします。`NOTES_FILE` と `WEBCLOCK_STATE_DIR` の上書きは引き続き利用できます。
 
-状態ディレクトリ全体、リマインダー、`.env` をバックアップしてください。`/admin` の JSON 出力は表示設定と手動リマインダーだけで、予定や端末は含みません。更新と移行は[日本語ガイド](guide_jp.md#バックアップデータ更新)を参照してください。
+状態ディレクトリ全体、リマインダー、`.env` をバックアップしてください。`/admin` の JSON 出力は表示設定と手動リマインダーだけで、予定や端末は含みません。更新と移行は[日本語ガイド](../guides/guide_jp.md#バックアップデータ更新)を参照してください。
 
 JSON を書き込む Server process は 1 つで、上限は予定 1000 件、端末 100 台です。複数 worker を追加する前に、プロセス間 transaction に対応する保存方式へ移行してください。
 
@@ -348,4 +348,4 @@ bash -n setup.sh scripts/setup.sh update_clock.sh
 
 テストは管理 CRUD、勤務日、振替出勤日、スキップ、revision、アクセス検査、端末報告・確認、旧データ保持を対象にします。更新統合テストは実際の旧／新 Server process と Git・データの復元を検査しますが、systemd、pip、Linux サービス照会は模擬です。対象ホストへの導入や実機ハードウェアの検収を証明するものではありません。
 
-本機検証、iPad mini 1／iOS 9 の未実施検収と 2027 年以降の勤務日データ更新は[第 1 段階の検収記録](phase1-acceptance.md)を参照してください（繁体字中国語）。
+本機検証、iPad mini 1／iOS 9 の未実施検収と 2027 年以降の勤務日データ更新は[第 1 段階の検収記録](../acceptance/phase1-acceptance.md)を参照してください（繁体字中国語）。

@@ -52,6 +52,7 @@ const initial = {supported: true, writable: true, current_version: '1.1.0', late
     const app = setup(), el = app.ids;
     assert.equal(app.requests[0].url, '/api/updates');
     await app.reply(initial);
+    assert.equal(el['update-worker'].hidden, true);
     assert.equal(el['update-install'].disabled, false);
     assert.equal(el['update-notes'].textContent, initial.release_notes, 'Release notes must remain text');
     assert.equal(el['update-release-link'].href, initial.release_url);
@@ -96,7 +97,7 @@ const initial = {supported: true, writable: true, current_version: '1.1.0', late
     assert.equal(el['update-status'].textContent, 'ja:sign_in');
     assert.equal(app.timers.size, 0, 'An expired session must stop repeated unauthorized requests');
 
-    for (const [reason, supported, message] of [['managed_required', true, 'managed_required'],
+        for (const [reason, supported, message] of [['managed_required', true, 'managed_required'],
         ['not_configured', false, 'not_configured'], ['unsupported', false, 'unsupported']]) {
         const other = setup(); await other.reply({...initial, reason, supported, writable: false});
         assert.equal(other.ids['update-status'].textContent, 'en:' + message);
@@ -108,6 +109,33 @@ const initial = {supported: true, writable: true, current_version: '1.1.0', late
         await other.reply({...initial, reason, supported, writable: false});
         assert.equal(other.timers.size, 1);
     }
+
+    const dockerApp = setup();
+    await dockerApp.reply({...initial, installation_type: 'docker', supported: false, reason: 'not_configured', writable: false});
+    assert.equal(dockerApp.ids['update-enable'].hidden, false);
+    assert.equal(dockerApp.ids['update-enable-cmd'].textContent, '', 'Never guess a host path');
+    dockerApp.ids['update-project-path'].value = "/srv/clock's data";
+    dockerApp.ids['update-project-path'].trigger('input');
+    let maintenance = dockerApp.ids['update-enable-cmd'].textContent;
+    assert.ok(maintenance.includes('/releases/download/v1.1.0/portable_docker_update.sh'));
+    assert.ok(maintenance.includes("--project '/srv/clock'\\''s data'"));
+    assert.ok(maintenance.includes("--version '1.1.0' --refresh-worker"));
+    assert.ok(maintenance.includes('mktemp'));
+    assert.ok(!maintenance.includes('/opt/webclock'));
+    dockerApp.ids['update-project-path'].value = '/srv/clock\ncommand';
+    dockerApp.ids['update-project-path'].trigger('input');
+    assert.equal(dockerApp.ids['update-worker-cmd'].textContent, '');
+    const configuredDocker = setup();
+    await configuredDocker.reply({...initial, installation_type: 'docker', project_path: '/srv/custom-clock'});
+    assert.equal(configuredDocker.ids['update-project-path'].value, '/srv/custom-clock');
+    assert.ok(configuredDocker.ids['update-worker-cmd'].textContent.includes("--project '/srv/custom-clock'"));
+    assert.equal(dockerApp.ids['update-enable-title'].textContent, 'en:docker_enable_title');
+
+    const haApp = setup();
+    await haApp.reply({...initial, installation_type: 'ha_app', supported: false, reason: 'unsupported', writable: false, management_url: '/config/updates'});
+    assert.equal(haApp.ids['update-enable'].hidden, true);
+    assert.equal(haApp.ids['update-ha-app'].hidden, false);
+    assert.equal(haApp.ids['update-ha-link'].href, '/config/updates');
 
     const queuedApp = setup(), queuedEl = queuedApp.ids;
     await queuedApp.reply(initial);

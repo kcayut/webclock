@@ -104,6 +104,18 @@ authorityKeyIdentifier = keyid:always
     def test_plain_http_does_not_require_tls_configuration(self):
         self.assertIsNone(updater.update_tls_handler(self.project, {}))
 
+    def test_docker_health_preserves_tls_verification_and_rejects_redirect(self):
+        from scripts.docker_update import DockerUpdater
+        docker = DockerUpdater(self.project)
+        docker.health_url = self.url + '/api/health'
+        docker.tls_handler = self.handler(WEBCLOCK_UPDATE_HOST='webclock.invalid')
+        self.assertEqual(docker._check_health()['status'], 'ok')
+        docker.tls_handler = self.handler(WEBCLOCK_UPDATE_HOST='wrong.invalid')
+        self.assertIsNone(docker._check_health())
+        docker.tls_handler = self.handler()
+        docker.health_url = self.url + '/redirect'
+        self.assertIsNone(docker._check_health())
+
 
 if __name__ == '__main__':
     unittest.main()

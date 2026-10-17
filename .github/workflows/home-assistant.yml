@@ -11,6 +11,7 @@ on:
       - hacs.json
       - repository.yaml
       - scripts/**
+      - tools/**
       - tests/**
       - webclock/**
       - templates/**
@@ -19,6 +20,10 @@ on:
       - sw.js
       - setup.sh
       - install.sh
+      - docker_update.sh
+      - update_clock.py
+      - update_clock.sh
+      - index.html
       - VERSION
       - Dockerfile
       - docker-compose.yml
@@ -33,6 +38,7 @@ on:
       - hacs.json
       - repository.yaml
       - scripts/**
+      - tools/**
       - tests/**
       - webclock/**
       - templates/**
@@ -41,6 +47,10 @@ on:
       - sw.js
       - setup.sh
       - install.sh
+      - docker_update.sh
+      - update_clock.py
+      - update_clock.sh
+      - index.html
       - VERSION
       - Dockerfile
       - docker-compose.yml
@@ -81,7 +91,7 @@ jobs:
         run: |
           args=(--check)
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then args+=(--tag "$GITHUB_REF_NAME"); fi
-          version=$(python scripts/build_release.py "${args[@]}")
+          version=$(python tools/build_release.py "${args[@]}")
           test -f "doc/releases/v$version.md"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install real Home Assistant and server dependencies
@@ -92,7 +102,7 @@ jobs:
           node homeassistant/tests/test_cards.js
           python -m unittest discover -s tests -p 'test_*.py'
           for test in tests/test_*.js; do node "$test"; done
-          bash -n install.sh setup.sh scripts/setup.sh
+          for script in *.sh scripts/*.sh scripts/update/*.sh homeassistant/*.sh tests/rehearsal/*.sh; do bash -n "$script"; done
           git diff --check
 
   app:
@@ -135,11 +145,11 @@ jobs:
           docker network create --subnet 172.30.32.0/24 webclock-test
           docker volume create webclock-data
           docker run -d --name webclock --hostname local-webclock --network-alias local-webclock --platform "$PLATFORM" --network webclock-test --ip 172.30.32.3 -v webclock-data:/data webclock-test:local
-          docker run --rm -i --platform "$PLATFORM" --network webclock-test --ip 172.30.32.2 --entrypoint python webclock-test:local - local-webclock < scripts/check_ha_container.py
+          docker run --rm -i --platform "$PLATFORM" --network webclock-test --ip 172.30.32.2 --entrypoint python webclock-test:local - local-webclock < homeassistant/tests/check_container.py
           docker logs webclock 2>&1 | grep -F 'Home Assistant integration URL: http://local-webclock:8100'
           identity=$(docker exec webclock sha256sum /data/auth.json)
           docker restart webclock
-          docker run --rm -i --platform "$PLATFORM" --network webclock-test --ip 172.30.32.2 --entrypoint python webclock-test:local - local-webclock < scripts/check_ha_container.py
+          docker run --rm -i --platform "$PLATFORM" --network webclock-test --ip 172.30.32.2 --entrypoint python webclock-test:local - local-webclock < homeassistant/tests/check_container.py
           test "$identity" = "$(docker exec webclock sha256sum /data/auth.json)"
       - name: Container diagnostics and cleanup
         if: always()
@@ -192,6 +202,12 @@ jobs:
           docker compose restart
           curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:18500/api/health
           curl --fail --silent --show-error http://127.0.0.1:18500/admin > /dev/null
+      - name: Rehearse image replacement and rollback with disposable data
+        run: sudo python3 tests/rehearsal/rehearse_docker_update.py --source-image "ghcr.io/kcayut/webclock:$WEBCLOCK_VERSION"
+      - name: Rehearse managed HTTPS update and authorization preservation
+        run: sudo python3 tests/rehearsal/rehearse_docker_update.py --source-image "ghcr.io/kcayut/webclock:$WEBCLOCK_VERSION" --managed
+      - name: Rehearse the host worker and recreated control socket
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT bash tests/rehearsal/rehearse_docker_worker.sh
       - name: Container diagnostics and cleanup
         if: always()
         run: |
@@ -207,7 +223,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Rehearse a fresh Linux installation and restart
-        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP bash tests/rehearse_install.sh
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP bash tests/rehearsal/rehearse_install.sh
 
   publish:
     needs: [integration, app, server, systemd]
@@ -290,7 +306,7 @@ jobs:
           EXISTING_DRAFT: ${{ steps.existing.outputs.draft }}
         run: |
           assets="$RUNNER_TEMP/release-assets"
-          python scripts/build_release.py --tag "$RELEASE_TAG" --output "$assets"
+          python tools/build_release.py --tag "$RELEASE_TAG" --output "$assets"
           if [ "$EXISTING_DRAFT" = true ]; then
             gh release upload "$RELEASE_TAG" "$assets"/* --clobber
             gh release edit "$RELEASE_TAG" --title "WebClock $RELEASE_TAG" --notes-file "doc/releases/$RELEASE_TAG.md"

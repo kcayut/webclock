@@ -1,6 +1,6 @@
 # WebClock ESPHome 韌體原型
 
-首版使用 **ESP32-S3-DevKitC-1-N8R8 + SSD1306 OLED**。已提供 [ESPHome YAML](webclock-esp32-s3.yaml) 與 [WebClock 外部元件](components/webclock/)，沿用 Server schema 2，同步固定規則鬧鐘、保存到 flash、運轉中斷網後本機響鈴。無須 VS Code 或 Home Assistant。
+首版使用 **ESP32-S3-DevKitC-1-N8R8 + SSD1306 OLED**。已提供 [ESPHome YAML](webclock-esp32-s3.yaml) 與 [WebClock 外部元件](components/webclock)，沿用 Server schema 2，同步固定規則鬧鐘、保存到 flash、運轉中斷網後本機響鈴。無須 VS Code 或 Home Assistant。
 
 **驗證狀態：ESPHome 2026.9.1／ESP-IDF 5.5.5 交叉編譯與主機端排程／同步解析測試通過；尚未實機燒錄、接線、聲音或長時間運作驗收。** 主機測試使用本次建置的 ArduinoJson，並啟用 AddressSanitizer／UndefinedBehaviorSanitizer。這是原型，不是已驗收的鬧鐘成品；行事曆聯動、帳號隔離、RTC 斷電保時與 OTA 尚未提供。
 
@@ -75,6 +75,6 @@ CLI 燒錄後仍可關閉日誌，回到 ESPHome Web 設定 Wi-Fi。Improv 只�
 - **每次重啟都需取得可信時間，並至少向 Server 成功驗證一次完整 config，才啟用鬧鐘。** 之後持續供電、運轉中斷網可使用快取；離線重開不自動啟用。首版無 RTC，斷電重開仍需 NTP 校時。
 - 超過觸發分鐘起點 5 秒不補響；先保存去重再發聲的斷電邊界可能漏響，不保證恰好一次。
 
-[完整同步、限制與驗收](../doc/esp-home.md) · [Server API](../doc/server-api.md#裝置-api)
+[完整同步、限制與驗收](../doc/guides/esp-home.md) · [Server API](../doc/api/server-api.md#裝置-api)
 
 硬體參考：[Espressif 開發板](https://documentation.espressif.com/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html)、[ESPHome SSD1306](https://esphome.io/components/display/ssd1306/)、[PS1240](https://www.adafruit.com/product/160)。

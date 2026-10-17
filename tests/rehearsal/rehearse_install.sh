@@ -7,7 +7,7 @@ set -euo pipefail
 if systemctl cat webclock.service >/dev/null 2>&1; then
     echo 'Refusing to replace an existing WebClock service.' >&2; exit 1
 fi
-SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEMPORARY="$(mktemp -d "$RUNNER_TEMP/webclock-fresh.XXXXXX")"
 TARGET=""
 cleanup_service() {

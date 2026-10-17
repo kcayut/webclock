@@ -5,6 +5,8 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCKER=false
 MANAGED=false
 BUILD=false
+ENABLE_UPDATES=false
+AUTO_UPDATE=""
 TLS_CERT=""
 TLS_KEY=""
 TLS_HOST=""
@@ -15,6 +17,10 @@ while [ "$#" -gt 0 ]; do
         --docker) DOCKER=true ;;
         --managed) MANAGED=true ;;
         --build) BUILD=true ;;
+        --enable-updates) ENABLE_UPDATES=true ;;
+        --auto-update)
+            [ "$#" -ge 2 ] || { echo 'Missing on/off value' >&2; exit 1; }
+            AUTO_UPDATE="$2"; shift ;;
         --tls-cert|--tls-key|--tls-host|--tls-ca)
             [ "$#" -ge 2 ] || { echo "Missing value for $1" >&2; exit 1; }
             case "$1" in
@@ -28,6 +34,7 @@ while [ "$#" -gt 0 ]; do
             echo "Usage: bash setup.sh [--docker [--build]] [--managed --tls-cert FILE --tls-key FILE --tls-host NAME [--tls-ca FILE]]"
             echo "Fresh install: Linux/systemd by default; Docker pulls the release image. --build is for development."
             echo "Self mode is the default. Managed requires a valid HTTPS certificate before administrator setup."
+            echo "Updates: --enable-updates opts Docker into a Linux host worker; --auto-update on|off explicitly sets automatic installation (default off)."
             echo "Failed new installs: correct the reported problem and repeat the same command; existing credentials are preserved."
             echo "Existing installations: see doc/installation.md for updates and mode changes."
             exit 0 ;;
@@ -47,6 +54,22 @@ set_env() {
     mv "$temporary" .env
 }
 $BUILD && ! $DOCKER && fail "--build requires --docker."
+case "$AUTO_UPDATE" in ''|on|off) ;; *) fail '--auto-update must be on or off.' ;; esac
+if $DOCKER; then
+    [ -z "$AUTO_UPDATE" ] || $ENABLE_UPDATES || fail 'Docker --auto-update requires --enable-updates.'
+    if $ENABLE_UPDATES; then
+        [ "$(uname -s)" = Linux ] && [ "$(id -u)" = 0 ] || fail 'Use sudo on Linux for --enable-updates.'
+        require systemctl
+        require python3
+        /usr/bin/python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' || fail 'The Docker worker requires /usr/bin/python3 version 3.9+.'
+        python3 -E -s - "$PROJECT_DIR" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from scripts.docker_update import root_owned
+root_owned(__import__('pathlib').Path(sys.argv[1]))
+PY
+    fi
+fi
 [ -n "$TLS_CERT" ] && [ -z "$TLS_KEY" ] && fail "Use --tls-cert and --tls-key together."
 [ -n "$TLS_KEY" ] && [ -z "$TLS_CERT" ] && fail "Use --tls-cert and --tls-key together."
 for file in "$TLS_CERT" "$TLS_KEY" "$TLS_CA"; do
@@ -100,7 +123,7 @@ if $DOCKER; then
     containers="$(docker compose ps -aq)"
     [ -z "$containers" ] || EXISTING=(--existing)
     if [ ! -f .webclock-install.json ] && { [ -n "$containers" ] || { [ -d webclock_state ] && [ -n "$(ls -A webclock_state)" ]; }; }; then
-        fail "Existing installation/data found. Use docker compose pull && docker compose up -d --no-build for updates; see doc/installation.md for mode changes."
+        fail "Existing installation/data found. Use docker_update.sh (older releases: portable_docker_update.sh); see doc/installation.md."
     fi
     # Compose gives shell variables priority; persist the selected port for checks and retries.
     [ -z "${WEBCLOCK_HTTP_PORT:-}" ] || set_env WEBCLOCK_HTTP_PORT "$WEBCLOCK_HTTP_PORT"
@@ -156,7 +179,7 @@ if $DOCKER; then
     fi
     [ -e manual_notes.json ] || (umask 077; printf '[]\n' > manual_notes.json)
     [ -f manual_notes.json ] && [ ! -L manual_notes.json ] || fail "manual_notes.json must be a regular file."
-    (umask 077; mkdir -p webclock_state tls .webclock-mode-backups-webclock_state)
+    (umask 077; mkdir -p webclock_state tls .webclock-mode-backups-webclock_state webclock_updater_run)
     if $MANAGED && [ "$("${CHECK[@]}" auth-needed)" = yes ]; then
         docker compose run --rm --no-deps --no-build webclock python scripts/manage_auth.py setup --username admin --enable-managed
     fi
@@ -204,6 +227,11 @@ fi
 "${CHECK[@]}" wait
 if ! $DOCKER; then
     bash "$PROJECT_DIR/scripts/enable_updates.sh"
+elif $ENABLE_UPDATES; then
+    bash "$PROJECT_DIR/scripts/enable_docker_updates.sh"
+fi
+if [ -n "$AUTO_UPDATE" ]; then
+    /usr/bin/python3 "$PROJECT_DIR/scripts/update_settings.py" --kind "$KIND" --project "$PROJECT_DIR" --auto-update "$AUTO_UPDATE"
 fi
 "${CHECK[@]}" complete
 trap - ERR

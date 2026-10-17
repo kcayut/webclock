@@ -17,6 +17,7 @@ services:
       # Keep pre-switch backups when the container is rebuilt or replaced.
       - ./.webclock-mode-backups-webclock_state:/app/.webclock-mode-backups-webclock_state
       - ./tls:/app/tls:ro
+      - ./webclock_updater_run:/run/webclock-updater:ro
     environment:
       - PORT=5000
       - HOST=0.0.0.0

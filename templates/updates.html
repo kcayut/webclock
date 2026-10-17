@@ -29,13 +29,31 @@
             </div></div>
             <p id="update-status" role="status" aria-live="polite" data-update-text="loading">{{ update_text.loading }}</p>
             <section id="update-reconnect-help" class="panel" hidden>
-                <p data-update-text="reconnect_help">{{ update_text.reconnect_help }}</p>
-                <code>systemctl status webclock webclock-updater</code>
+                <p id="update-reconnect-text" data-update-text="reconnect_help">{{ update_text.reconnect_help }}</p>
+                <code id="update-reconnect-cmd">systemctl status webclock webclock-updater</code>
             </section>
             <section id="update-enable" class="panel" hidden>
-                <h2 data-update-text="enable_title">{{ update_text.enable_title }}</h2>
-                <p data-update-text="enable_hint">{{ update_text.enable_hint }}</p>
-                <code>sudo bash scripts/enable_updates.sh</code>
+                <h2 id="update-enable-title" data-update-text="enable_title">{{ update_text.enable_title }}</h2>
+                <p id="update-enable-hint" data-update-text="enable_hint">{{ update_text.enable_hint }}</p>
+                <code id="update-enable-cmd">sudo bash scripts/enable_updates.sh</code>
+            </section>
+            <section id="update-ha-app" class="panel" hidden>
+                <h2 data-update-text="ha_managed_title">{{ update_text.ha_managed_title }}</h2>
+                <p data-update-text="ha_managed_hint">{{ update_text.ha_managed_hint }}</p>
+                <p data-update-text="ha_sequence">{{ update_text.ha_sequence }}</p>
+                <p><a id="update-ha-link" class="button primary" target="_top" data-update-text="ha_open_updates">{{ update_text.ha_open_updates }}</a></p>
+            </section>
+            <section id="update-worker" class="panel" hidden>
+                <p><span data-update-text="worker_version">{{ update_text.worker_version }}</span> <span id="update-worker-version">—</span></p>
+                <label for="update-project-path" data-update-text="project_path">{{ update_text.project_path }}</label>
+                <input id="update-project-path" type="text" autocomplete="off" aria-describedby="update-project-hint">
+                <p id="update-project-hint" data-update-text="project_hint">{{ update_text.project_hint }}</p>
+                <p id="update-worker-hint" data-update-text="worker_hint">{{ update_text.worker_hint }}</p>
+                <code id="update-worker-cmd" style="white-space: pre-wrap; overflow-wrap: anywhere;"></code>
+            </section>
+            <section id="update-host-settings" class="panel" hidden>
+                <p data-update-text="host_settings">{{ update_text.host_settings }}</p>
+                <code id="update-host-settings-cmd"></code>
             </section>
             <section class="panel" aria-labelledby="update-version-title">
                 <h2 id="update-version-title" data-update-text="versions">{{ update_text.versions }}</h2>

@@ -5,7 +5,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, VERSION
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -47,9 +47,15 @@ class WebClockSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         data = self.coordinator.data
-        attrs = {"webclock_kind": self.key, "entry_id": self.coordinator.entry.entry_id}
+        attrs = {"webclock_kind": self.key, "entry_id": self.coordinator.entry.entry_id,
+                 "integration_version": VERSION, "server_version": None,
+                 "version_alignment": "unknown"}
         if not data:
             return attrs
+        version = data.get('status', {}).get('server_version')
+        if isinstance(version, str) and len(version) <= 128:
+            attrs['server_version'] = version
+            attrs['version_alignment'] = 'matched' if version == VERSION else 'mixed'
         settings = data["display"]["settings"]
         attrs.update({key: settings[key] for key in ("timezone_offset", "time_format", "language")})
         if self.key == "time":

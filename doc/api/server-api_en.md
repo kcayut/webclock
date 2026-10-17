@@ -2,11 +2,11 @@
 
 Program writes: issue individual credentials at `/integrations` (Program access), then use `/api/v1/control/*` to edit alarms and native events, display windows and group/device assignments. Self mode keeps LAN management but still requires a program credential; managed mode requires administrator issuance and HTTPS. Display pairing never grants write access. See the [write API contract and examples (Traditional Chinese)](control-api.md). Audio uploads are not included.
 
-Home Assistant native enrollment: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](home-assistant.md).
+Home Assistant native enrollment: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](../home-assistant.md).
 
 ## B0–B4 administration, groups and managed devices (2026-10-06)
 
-Administrator sessions, owner-scoped groups, invitations, atomic enrollment, authenticated group display/alarms, and group management UI are implemented. Existing installations remain in `self`; `managed` requires explicit host-side activation. Devices may leave, and administrators may move, disable/resume, or revoke individual device access. See the [guide](guide_en.md) and the [B0–B1 contract](b0-b1-contract.md) for storage and update/restore boundaries.
+Administrator sessions, owner-scoped groups, invitations, atomic enrollment, authenticated group display/alarms, and group management UI are implemented. Existing installations remain in `self`; `managed` requires explicit host-side activation. Devices may leave, and administrators may move, disable/resume, or revoke individual device access. See the [guide](../guides/guide_en.md) and the [B0–B1 contract](../development/b0-b1-contract.md) for storage and update/restore boundaries.
 
 Public `GET /api/time` returns only time. Managed `/api/status` returns time and empty events; old `/api/v1/device/*` returns 403 and `/api/v1/browser-alarms` returns 401. An admin session cannot grant device access. Non-private `/api/health` reports `managed_device_schema: 3` and `managed_devices_ready: true`: the endpoints exist; this flag does not certify deployment-mode migration or physical hardware acceptance. The legacy schema 2 descriptions below assume self mode. Existing ESP codecs do not automatically support schema 3.
 
@@ -52,13 +52,13 @@ Display and alarms return `schema_version: 3`, `identity`, config/schedule/holid
 
 Private caches are scoped to device identity. A 401/403, identity change or expired lease clears private events, announcements, and browser alarms; network failures may retain only unexpired data from the current run. Alarms use `Asia/Taipei`, independently from the group's display timezone. Missing linked sources suppress the affected alarm rather than falling back to daily ringing. This is not an ESP seven-day offline trigger list or proof of old-iPad, lock-screen audio or hardware acceptance.
 
-[繁體中文](server-api.md) · **English** · [日本語](server-api_jp.md) · [README](../README_en.md)
+[繁體中文](server-api.md) · **English** · [日本語](server-api_jp.md) · [README](../../README_en.md)
 
 This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Enrolled schema 3 clocks receive private content from their effective device/group assignments.
 
-Device execution remains a firmware responsibility. [`firmware/`](../firmware/README.md) now contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
+Device execution remains a firmware responsibility. [`firmware/`](../../firmware/README.md) now contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
 
-See the [ESPHome device guide](esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
+See the [ESPHome device guide](../guides/esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
 
 There is currently one owner's management space. **Legacy self-mode devices use the same schedules and calendars**. Schema 3 resolves device overrides and group assignments for authenticated devices. Multiple user accounts and multi-tenancy are not implemented.
 
@@ -83,7 +83,7 @@ A stored note may include `announcement_targets: {group_ids: [], device_ids: []}
 
 `GET /api/v2/device/display` adds `announcements: [{id, text, visible_until}]`. The Unix-millisecond `visible_until` is the earliest of the current snapshot's 300-second limit, absolute expiry, and the end of the current display window; it does not shorten the overall display/alarm lease. Announcements are excluded from `events`, `next_event`, the server-local calendar source, and browser alarms, and do not use `schedules.type=announcement`. Legacy schemas 1/2 keep their contracts. Anonymous self-mode status returns no announcements; enrolled self-mode devices can use v2 to receive matching announcements. Browsers do not persist announcements and clear them on authorization loss, identity/scope changes, lease expiry, or individual expiry.
 
-Forms allow saving empty targets without delivery, but reject missing or foreign-owner targets. Version 1 `/api/backup` retains announcement fields in `notes`; import validates structure and the ownership of existing recipients. Missing historical IDs may remain without granting access or creating recipients. Full host backups preserve the data, and historical restoration still revokes device credentials. See the [announcement guide](guide_en.md#announcements-for-selected-groups-or-devices) for management steps.
+Forms allow saving empty targets without delivery, but reject missing or foreign-owner targets. Version 1 `/api/backup` retains announcement fields in `notes`; import validates structure and the ownership of existing recipients. Missing historical IDs may remain without granting access or creating recipients. Full host backups preserve the data, and historical restoration still revokes device credentials. See the [announcement guide](../guides/guide_en.md#announcements-for-selected-groups-or-devices) for management steps.
 
 ## Startup and layout
 
@@ -227,7 +227,7 @@ The visual alert pulses the red border every two seconds. Users may disable flas
 
 ## Device API
 
-Device paths remain under `/api/v1/device/*`; configuration responses use **`schema_version: 2`**. The device API does not expose old hardware playback fields. `browser_sound` and `browser_volume` describe browser playback, not portable hardware commands. The ESPHome prototype explicitly maps all non-silent tones to one beep and scales volume by a device limit; see its [hardware mapping](esp-home.md#顯示聲音與按鍵). Schema 1 prototypes must be updated.
+Device paths remain under `/api/v1/device/*`; configuration responses use **`schema_version: 2`**. The device API does not expose old hardware playback fields. `browser_sound` and `browser_volume` describe browser playback, not portable hardware commands. The ESPHome prototype explicitly maps all non-silent tones to one beep and scales volume by a device limit; see its [hardware mapping](../guides/esp-home.md#顯示聲音與按鍵). Schema 1 prototypes must be updated.
 
 | Path | Method and purpose |
 | --- | --- |
@@ -316,7 +316,7 @@ The UI's “sync requested,” `online`, matching revisions, or an absent pendin
 
 ### Planned extensions
 
-A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. B2–B4 provides browser enrollment, per-device credentials, group display, and individual authorization lifecycle controls. Hosts can explicitly switch with `--enable-managed`; `--enable-managed-test` remains a compatible alias. ESP integration with the new contract remains future work. See the [ESPHome guide](esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
+A rolling multi-day trigger list, such as seven days with an expiry, is a proposal with no current endpoint or schema. `/api/v1/browser-alarms` is not such an offline snapshot. New support must cover calendar-source changes, renewal even when settings do not change, deletion, capacity, and authorization scope without changing schema 2 semantics. B2–B4 provides browser enrollment, per-device credentials, group display, and individual authorization lifecycle controls. Hosts can explicitly switch with `--enable-managed`; `--enable-managed-test` remains a compatible alias. ESP integration with the new contract remains future work. See the [ESPHome guide](../guides/esp-home.md) (Traditional Chinese) for development stages and physical acceptance checks.
 
 ## Legacy data and storage
 
@@ -325,7 +325,7 @@ A rolling multi-day trigger list, such as seven days with an expiry, is a propos
 - Existing user data under `webclock_state/sounds/` or `webclock_state/fake-device/` is not deleted, but the server no longer reads it.
 - Legacy root `manual_notes.json` is copied once to the state directory. `NOTES_FILE` and `WEBCLOCK_STATE_DIR` remain supported overrides.
 
-Back up the complete state directory, reminders, and `.env`. The `/admin` JSON export contains only display settings and manual reminders, not schedules or devices. See the [English guide](guide_en.md#backups-data-and-updates) for update and migration steps.
+Back up the complete state directory, reminders, and `.env`. The `/admin` JSON export contains only display settings and manual reminders, not schedules or devices. See the [English guide](../guides/guide_en.md#backups-data-and-updates) for update and migration steps.
 
 One server process writes JSON, with limits of 1000 schedules and 100 devices. Move to transactional cross-process storage before adding multiple workers.
 
@@ -348,4 +348,4 @@ bash -n setup.sh scripts/setup.sh update_clock.sh
 
 Tests cover management CRUD, workdays, make-up workdays, skips, revisions, access checks, device reporting, acknowledgements, and legacy-data preservation. Update integration tests exercise real old/new server processes and Git/data rollback, but systemd, pip, and Linux service queries are mocked. They do not prove deployment on a target host or physical hardware acceptance.
 
-See the [phase-one acceptance record](phase1-acceptance.md) for local verification, pending iPad mini 1 / iOS 9 checks, and Taiwan calendar maintenance after 2027 (Traditional Chinese).
+See the [phase-one acceptance record](../acceptance/phase1-acceptance.md) for local verification, pending iPad mini 1 / iOS 9 checks, and Taiwan calendar maintenance after 2027 (Traditional Chinese).

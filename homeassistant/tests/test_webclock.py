@@ -79,6 +79,18 @@ class WebClockHATest(unittest.IsolatedAsyncioTestCase):
         self.coordinator.data = await self.coordinator._async_update_data()
         self.coordinator.last_update_success = True
 
+    async def test_running_versions_keep_legacy_servers_unknown_and_report_mixed_versions(self):
+        await self.update()
+        sensor = WebClockSensor(self.coordinator, 'time')
+        attrs = sensor.extra_state_attributes
+        self.assertIsNone(attrs['server_version'])
+        self.assertEqual(attrs['version_alignment'], 'unknown')
+        self.coordinator.data['status']['server_version'] = attrs['integration_version']
+        self.assertEqual(sensor.extra_state_attributes['version_alignment'], 'matched')
+        self.coordinator.data['status']['server_version'] = '99.0.0'
+        self.assertEqual(sensor.extra_state_attributes['version_alignment'], 'mixed')
+        self.assertTrue(sensor.available)
+
     async def test_real_ha_sensors_clock_lease_and_authorization_lifecycle(self):
         await self.update()
         sensors = {key: WebClockSensor(self.coordinator, key) for key in ('time', 'calendar', 'alarms')}

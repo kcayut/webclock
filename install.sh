@@ -5,17 +5,20 @@ RELEASE_VERSION=""
 REPOSITORY="https://github.com/kcayut/webclock"
 DESTINATION="$PWD/webclock"
 DOCKER=false
+ENABLE_UPDATES=false
+EXPLICIT_DIR=false
 SETUP_ARGS=()
 
 fail() { echo "WebClock: $*" >&2; exit 1; }
 while (( $# )); do
     case "$1" in
         --docker) DOCKER=true; SETUP_ARGS+=(--docker); shift ;;
+        --enable-updates) ENABLE_UPDATES=true; SETUP_ARGS+=(--enable-updates); shift ;;
         --managed) SETUP_ARGS+=(--managed); shift ;;
-        --dir|--version|--tls-cert|--tls-key|--tls-host|--tls-ca)
+        --dir|--version|--tls-cert|--tls-key|--tls-host|--tls-ca|--auto-update)
             (( $# >= 2 )) || fail "Missing value for $1"
             case "$1" in
-                --dir) DESTINATION="$2" ;;
+                --dir) DESTINATION="$2"; EXPLICIT_DIR=true ;;
                 --version) RELEASE_VERSION="${2#v}" ;;
                 *) SETUP_ARGS+=("$1" "$2") ;;
             esac
@@ -23,11 +26,21 @@ while (( $# )); do
         -h|--help)
             echo 'Usage: bash install.sh [--docker] [--dir DIRECTORY] [--version X.Y.Z[-beta.N]]'
             echo 'Managed: add --managed --tls-cert FILE --tls-key FILE --tls-host HOST [--tls-ca FILE]'
+            echo 'Docker host worker: sudo bash install.sh --docker --enable-updates (defaults to /opt/webclock; requires Python 3.9+ and systemd).'
+            echo 'Automatic installation is off by default; explicitly select --auto-update on|off.'
             echo 'Installs an official GitHub release; existing installations are never replaced.'
             exit 0 ;;
         *) fail "Unknown option: $1 (see --help)" ;;
     esac
 done
+
+if $ENABLE_UPDATES && $DOCKER; then
+    $EXPLICIT_DIR || DESTINATION=/opt/webclock
+    [[ "$EUID" = 0 && "$(uname -s)" = Linux ]] || fail 'Docker host updates require sudo on Linux.'
+    command -v systemctl >/dev/null || fail 'systemd is required for the Docker host worker.'
+    command -v python3 >/dev/null || fail 'Install Python 3.9+ first (Debian/Ubuntu: sudo apt-get install python3).'
+    /usr/bin/python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' || fail 'The Docker worker requires /usr/bin/python3 version 3.9+.'
+fi
 
 if [[ -e "$DESTINATION" || -L "$DESTINATION" ]]; then
     if [[ -d "$DESTINATION" && ! -L "$DESTINATION" && -f "$DESTINATION/.webclock-bootstrap" && ! -L "$DESTINATION/.webclock-bootstrap" ]]; then

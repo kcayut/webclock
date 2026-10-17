@@ -59,7 +59,7 @@ import sys
 import tempfile
 
 path = Path('/etc/webclock-updater.json')
-value = {'project': sys.argv[1], 'channel': sys.argv[2], 'auto_update': True}
+value = {'project': sys.argv[1], 'channel': sys.argv[2], 'auto_update': False}
 if path.exists():
     previous = json.loads(path.read_text())
     if previous.get('project') != value['project']:

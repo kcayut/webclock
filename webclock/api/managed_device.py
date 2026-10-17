@@ -2,6 +2,7 @@
 import time
 
 from flask import Blueprint, g, jsonify, request
+from webclock import __version__
 
 from webclock.auth import client_transport_allowed
 from webclock.csrf import same_origin
@@ -240,6 +241,6 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
                                        'capabilities_reported_at', 'registered_at', 'last_seen', 'online', 'sync_status'}
             safe = {key: val for key, val in report['device'].items() if key in allowed}
             return jsonify(schema_version=3, identity=identity, device=safe, commands=report['commands'],
-                           server_timestamp=int(time.time() * 1000))
+                           server_timestamp=int(time.time() * 1000), server_version=__version__)
 
     return api

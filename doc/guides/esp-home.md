@@ -1,6 +1,6 @@
 # ESP 鬧鐘：ESPHome 原型使用與同步契約
 
-[回到 README](../README.md) · [Server API 契約](server-api.md) · [硬體、接線與燒錄](../firmware/README.md)
+[回到 README](../../README.md) · [Server API 契約](../api/server-api.md) · [硬體、接線與燒錄](../../firmware/README.md)
 
 已提供第一版 ESPHome YAML 與 WebClock 外部元件，選定 **ESP32-S3-DevKitC-1-N8R8 + SSD1306 128×64 I²C OLED + PS1240 無源壓電蜂鳴器 + 停止按鈕**。裝置使用現有 schema 2 API，同步固定規則鬧鐘，保存後在本機執行，不需要 Home Assistant 或 MQTT。
 
@@ -8,7 +8,7 @@
 
 ## 安裝與操作
 
-依 [韌體 README](../firmware/README.md) 接線，使用 Python 3.12 安裝釘選的 ESPHome 2026.9.1，複製 `secrets.example.yaml`（保留已存在的 `secrets.yaml`），填入 Server 位址、共用 token 與裝置名稱，再執行 `esphome config`／`compile`。
+依 [韌體 README](../../firmware/README.md) 接線，使用 Python 3.12 安裝釘選的 ESPHome 2026.9.1，複製 `secrets.example.yaml`（保留已存在的 `secrets.yaml`），填入 Server 位址、共用 token 與裝置名稱，再執行 `esphome config`／`compile`。
 
 目前提供的是 **YAML + 元件原始碼 + USB 燒錄方法**，尚無通用的公開預編譯下載、專案專用一鍵安裝頁或 OTA 服務：
 
@@ -46,7 +46,7 @@ PWM 百分比不是音壓百分比，不同蜂鳴器、頻率及外殼都影響�
 
 ## 現有 Server API 與範圍
 
-完整 HTTP 格式、欄位限制與錯誤碼以 [Server API 契約](server-api.md#裝置-api) 為準。
+完整 HTTP 格式、欄位限制與錯誤碼以 [Server API 契約](../api/server-api.md#裝置-api) 為準。
 
 | 能力 | 目前原型使用方式 |
 | --- | --- |
@@ -64,7 +64,7 @@ PWM 百分比不是音壓百分比，不同蜂鳴器、頻率及外殼都影響�
 
 ## 已實作的同步流程
 
-元件位於 [firmware/components/webclock](../firmware/components/webclock/)，使用獨立網路 worker 執行 HTTP 與解析，主迴圈負責顯示、按鍵及響鈴。第一版直接使用 ESP-IDF HTTP client，不依賴 ESPHome `http_request` 的預設 1 KB 捕捉緩衝區。
+元件位於 [firmware/components/webclock](../../firmware/components/webclock)，使用獨立網路 worker 執行 HTTP 與解析，主迴圈負責顯示、按鍵及響鈴。第一版直接使用 ESP-IDF HTTP client，不依賴 ESPHome `http_request` 的預設 1 KB 捕捉緩衝區。
 
 1. 啟動主畫面及獨立 NTP 校時，讀取本機快取作為同步候選。快取的網址／token 範圍必須與目前設定相同，且沒有已知撤銷標記。**每次重啟仍須至少向 Server 成功驗證一次完整 config 才啟用鬧鐘；不會僅靠磁碟快取離線啟用。**
 2. 向 Server 註冊，取得並驗證 `config`。運轉中已有有效快取時以 **config 的 HTTP ETag** 條件檢查；收到 304 才沿用已持有本文。`config_revision` 不是 config 的 HTTP ETag，不能互換。

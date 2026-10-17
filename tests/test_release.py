@@ -8,10 +8,15 @@ import tempfile
 import unittest
 import zipfile
 
-from scripts.build_release import CLOCK_FILES, build_release, check_versions
+from tools.build_release import CLOCK_FILES, build_release, check_versions, is_public
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_docker_updater_private_files_are_never_public_assets(self):
+        for path in ('.docker-update-backups/op/state.json', 'scripts/.docker-update-journal.json',
+                     'webclock_updater_run/control.sock', 'scripts/webclock_updater_run/configured'):
+            self.assertFalse(is_public(path), path)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -22,11 +27,21 @@ class ReleaseTest(unittest.TestCase):
             'VERSION': '1.1.0\n',
             'custom_components/webclock/manifest.json': json.dumps({'version': '1.1.0'}),
             'custom_components/webclock/const.py': 'VERSION = "1.1.0"\n',
+            'custom_components/webclock/www/webclock-cards.js': "  const VERSION = '1.1.0';\n",
             'homeassistant/addon/config.yaml': 'version: "1.1.0"\nimage: ghcr.io/kcayut/webclock-addon\n',
             'docker-compose.yml': 'image: ghcr.io/kcayut/webclock:${WEBCLOCK_VERSION:-1.1.0}\n',
             'Dockerfile': 'LABEL org.opencontainers.image.version="${BUILD_VERSION}"\n',
             'homeassistant/addon/Dockerfile': 'LABEL org.opencontainers.image.version="${BUILD_VERSION}"\n',
             'install.sh': '#!/bin/sh\nRELEASE_VERSION=""\necho install\n', 'setup.sh': '#!/bin/sh\n',
+            'scripts/update/portable_docker_update.sh': '#!/bin/bash\nRELEASE_VERSION=""\n',
+            'scripts/update/portable_update_clock.sh': '#!/bin/bash\n',
+            'scripts/update/update_clock.sh': '#!/bin/bash\n',
+            'scripts/update/docker_update.sh': '#!/bin/bash\n',
+            'docker_update.sh': '#!/bin/bash\n',
+            'scripts/docker_update.py': '# updater\n',
+            'scripts/docker_update_install.py': '# enrollment\n',
+            'scripts/docker_update_migrate.py': '# migration\n',
+            'scripts/update_settings.py': '# host settings\n',
             'scripts/setup.sh': '#!/bin/sh\n', 'app.py': '# committed application\n',
             'webclock/app.py': '# committed server\n', '.env.example': 'EXAMPLE=1\n',
             '.dockerignore': '.env\n', '.gitignore': '.env\n', 'CHANGELOG.md': '# Release history\n',
@@ -35,6 +50,12 @@ class ReleaseTest(unittest.TestCase):
             'webclock/auth.json': 'secret', 'static/tls/private.key': 'secret',
             'scripts/__pycache__/private.pyc': 'secret', 'doc/.webclock-backup-secret/data': 'secret',
             'manual_notes.json': 'secret',
+            'tools/build_release.py': '# development only\n',
+            'tests/rehearsal/rehearse_linux.py': '# disposable host only\n',
+            'homeassistant/tests/check_container.py': '# CI only\n',
+            'homeassistant/prepare_local_app.sh': '#!/bin/bash\n',
+            'doc/README.md': '# Documentation\n',
+            'doc/operations/update-operations.md': '# Upgrade and recovery\n',
         })
 
     def git(self, *args):
@@ -93,6 +114,13 @@ class ReleaseTest(unittest.TestCase):
             self.assertFalse(any('secret' in name or 'auth.json' in name or '__pycache__' in name for name in names), names)
             self.assertNotIn(prefix + '.env', names)
             self.assertNotIn(prefix + 'manual_notes.json', names)
+            for name in ('portable_update_clock.sh', 'portable_docker_update.sh'):
+                self.assertEqual(server.extractfile(prefix + name).read(),
+                                 server.extractfile(prefix + 'scripts/update/' + name).read())
+            self.assertIn(prefix + 'homeassistant/prepare_local_app.sh', names)
+            self.assertIn(prefix + 'doc/operations/update-operations.md', names)
+            self.assertFalse(any(name.startswith(prefix + folder) for name in names
+                                 for folder in ('tools/', 'tests/', 'homeassistant/tests/')), names)
         with zipfile.ZipFile(output / 'webclock-clock-1.1.0.zip') as clock:
             names = {name.removeprefix('webclock-clock-1.1.0/') for name in clock.namelist()}
             self.assertEqual(names, CLOCK_FILES | {'static/brand/logo.svg'})

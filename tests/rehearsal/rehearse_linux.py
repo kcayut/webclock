@@ -21,7 +21,7 @@ from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, HTTPSHandler, ProxyHandler, Request, build_opener
 
 
-SOURCE = Path(__file__).resolve().parents[1]
+SOURCE = Path(__file__).resolve().parents[2]
 BASELINE = '1ad7868ff7b51e581421f85fefccfef4e7520ddd'
 UNIT = Path('/run/systemd/system/webclock.service')
 FAKE_TOKEN = 'rehearsal-only-not-a-real-secret'

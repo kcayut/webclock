@@ -1,10 +1,10 @@
 # 把平板或電腦變成 WebClock 時鐘
 
-[回到 README](../README.md) · [安裝 Server](installation.md) · [使用指南](guide.md)
+[回到 README](../../README.md) · [安裝 Server](../installation.md) · [使用指南](guide.md)
 
 **先開啟時鐘 → 建立主畫面／桌面入口 → 設定全螢幕 → 關閉自動休眠。** 顯示端不用安裝 WebClock Server；只看時間，直接使用[線上時鐘](https://kcayut.github.io/webclock/)即可。
 
-沒有網路也想用：電腦可[下載 ZIP，解壓縮後開啟時鐘檔案](installation.md#offline-download)；平板請照[瀏覽器離線快取步驟](installation.md#offline-cache)準備。iPad mini 1／iOS 9 不支援這個快取的離線重開方式。
+沒有網路也想用：電腦可[下載 ZIP，解壓縮後開啟時鐘檔案](../installation.md#offline-download)；平板請照[瀏覽器離線快取步驟](../installation.md#offline-cache)準備。iPad mini 1／iOS 9 不支援這個快取的離線重開方式。
 
 本頁依約 **2011–2026 年**的常見系統分類，包含 **iPad mini 1／iOS 9**。版本表是操作設定對照，並非所有機型的相容性認證；選單會隨語言、廠牌與更新改名。文件核對日期：2026-10-08。
 
@@ -33,7 +33,7 @@
 | managed | 實際設定好的 `https://你的主機名稱/`，保留必要的連接埠 |
 | Home Assistant App 的外部顯示 | 開放 App 的 `8100` 網路連接埠後，使用 `http://HA主機IP:8100/` |
 
-把「主機IP」換成執行 Server 的電腦位址，不是平板自己的位址。另一台裝置不能使用 `localhost` 連到 Server。自架入口詳見[安裝指南](installation.md)。
+把「主機IP」換成執行 Server 的電腦位址，不是平板自己的位址。另一台裝置不能使用 `localhost` 連到 Server。自架入口詳見[安裝指南](../installation.md)。
 
 請先確認頁面已顯示大字時間與日期，再建立圖示；不要儲存 `/admin`、`/schedules` 或 HA 的管理側邊欄網址。managed／HA 顯示端若要加入群組，**先建立圖示，從圖示打開後再輸入六碼**，操作見[裝置加入](guide.md#群組設定與裝置加入)。不同瀏覽器、Safari 分頁與獨立網頁 App 可能使用不同的儲存空間，不能假定原本的配對會一起帶過去。圖示網址不需放入密碼、Token 或加入碼。
 
@@ -193,7 +193,7 @@ GNOME 若仍自動鎖定，另檢查隱私／螢幕鎖定設定。Chromebook 保
 | 舊 iPad 無法建立安全連線 | 先確認日期時間正確，再請 Server 管理者確認完整憑證鏈與舊 Safari 的 TLS 相容性。managed 必須維持 HTTPS，不能用忽略憑證錯誤代替 |
 | 畫面還亮，但時間不走或內容不更新 | 確認時鐘在前景、未進入系統鎖定；重新整理並檢查網路與 Server。只關閉睡眠不能修復網頁載入問題 |
 | 想用網頁鬧鐘叫醒鎖定中的裝置 | 網頁不能保證背景或鎖定狀態響鈴；需保持前景、亮屏，並先依[鬧鐘指南](guide.md#在-ipad-使用網頁鬧鐘)測試音訊 |
-| 加入主畫面後，希望斷網也能重新開啟 | 依[離線快取步驟](installation.md#offline-cache)，先從該圖示連線開啟，等待頁底「已可離線開啟」，再實際斷網重開。iOS 9 不支援此方式；電腦可改用[下載 ZIP 的離線時鐘](installation.md#offline-download) |
+| 加入主畫面後，希望斷網也能重新開啟 | 依[離線快取步驟](../installation.md#offline-cache)，先從該圖示連線開啟，等待頁底「已可離線開啟」，再實際斷網重開。iOS 9 不支援此方式；電腦可改用[下載 ZIP 的離線時鐘](../installation.md#offline-download) |
 | 重新開機後沒有自動顯示時鐘 | 本頁設定的是「點圖示即開啟」。裝置重開機後通常仍要解鎖並點開圖示；自動開機展示需另做裝置的 kiosk／啟動設定 |
 
 <a id="check"></a>
@@ -204,4 +204,4 @@ GNOME 若仍自動鎖定，另檢查隱私／螢幕鎖定設定。Chromebook 保
 3. managed／HA 裝置再關閉並從同一圖示重開，確認群組與顯示內容仍正確；順便練習退出全螢幕。
 4. 若要長期當時鐘，另外做跨午夜、網路斷線後恢復與裝置重開機檢查。降低不必要的亮度、保持散熱；OLED 裝置避免長期高亮度固定畫面。
 
-這是使用者的基本確認，不等於專案完整實機驗收。iPad mini 1／iOS 9 的正式紀錄還需保留系統版本、網址／HTTPS 環境、程式版本、測試時段與結果，見[實機驗收清單](phase-b-acceptance.md)。
+這是使用者的基本確認，不等於專案完整實機驗收。iPad mini 1／iOS 9 的正式紀錄還需保留系統版本、網址／HTTPS 環境、程式版本、測試時段與結果，見[實機驗收清單](../acceptance/phase-b-acceptance.md)。

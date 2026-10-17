@@ -39,7 +39,7 @@ Python 回歸涵蓋最後名額競態、成功回應遺失後重送、保存失�
 
 ## Linux 演練
 
-[現有 workflow](../.github/workflows/linux-rehearsal.yml) 使用標準 ubuntu-24.04 一次性 runner 與 [rehearse_linux.py](../tests/rehearse_linux.py)。保留既有 self／schema 2 Git、pip、systemd 正常更新、完整備份／還原與故障回復，再延伸以下 managed 流程：
+[現有 workflow](../../.github/workflows/linux-rehearsal.yml) 使用標準 ubuntu-24.04 一次性 runner 與 [rehearse_linux.py](../../tests/rehearsal/rehearse_linux.py)。保留既有 self／schema 2 Git、pip、systemd 正常更新、完整備份／還原與故障回復，再延伸以下 managed 流程：
 
 1. 同一舊安裝先停機完整備份，以真實互動 CLI 明確切換，確認舊資料原樣保留。
 2. 同一應用程序提供本機 TLS 與 HTTP health；真實 HTTPS 登入、六碼加入、Secure／HttpOnly cookie、ETag／304，拒絕匿名與 shared-token 私人讀取。
@@ -75,7 +75,7 @@ Python 回歸涵蓋最後名額競態、成功回應遺失後重送、保存失�
 
 - 278 項 Python、11 組 JavaScript 與差異檢查通過。涵蓋 0／false、上層更新、恢復繼承、同群組隔離、移組、跨 owner 拒絕、儲存失敗、歷史還原、請求途中變更及 config revision／ETag。
 - Browser plugin not available；改以 Playwright CLI／Chromium 154.0.8037.98 在隔離本機 self 伺服器操作，桌面 1365×1000、手機 390×844 截圖視讀通過，無水平溢出。實際保存、15 秒輪詢保留草稿／焦點、三語切換、恢復繼承與移組通過；雙管理頁衝突保留草稿，重新載入確認可取消或接受。主控台只有刻意觸發的 HTTP 409，沒有其他頁面錯誤。
-- 本次結果屬未提交工作目錄；尚未執行此批次 CI、部署、iOS 9／實體裝置驗收，不沿用上方舊 SHA 的 Linux 結果作為本次證明。操作與 API 見 [指南](guide.md#群組設定與裝置加入)及 [管理 API](server-api.md#管理-api)。
+- 本次結果屬未提交工作目錄；尚未執行此批次 CI、部署、iOS 9／實體裝置驗收，不沿用上方舊 SHA 的 Linux 結果作為本次證明。操作與 API 見 [指南](../guides/guide.md#群組設定與裝置加入)及 [管理 API](../api/server-api.md#管理-api)。
 
 ## 單台內容、共用設定衝突與公告（2026-10-07 本機工作目錄）
 
@@ -90,7 +90,7 @@ Python 回歸涵蓋最後名額競態、成功回應遺失後重送、保存失�
 
 Browser plugin not available；改用既有 Playwright CLI／Chromium 154 在隔離本機 HTTPS `127.0.0.1:5127` 及臨時合成資料驗證。管理頁桌面 1365×1000、手機 390×844 通過單台自訂保存／預覽、同群隔離、兩頁單台內容及群組 409 草稿保留、全體夜間設定衝突與重新載入取消／確認。公告以桌面 1365×900、手機 390×844 驗證指定對象可見、匿名不可見、黑畫面、亮度 0、獨立區域與無水平溢出；在載入前安裝模擬時鐘，斷線後推進 301 秒，公告按期限清除且時間繼續。截圖已視讀，公告頁未捕捉到例外；管理頁刻意產生的 409 不當作未預期錯誤。
 
-這一批仍是本機未提交工作目錄，未執行本批次 CI、映像發布、正式部署或 iPad mini 1／iOS 9、ESP 實機驗收。上方舊 SHA 的 Linux／CI 紀錄不適用於本批次。實機待辦保留於 [TODO](../TODO.md)，操作及欄位見[三語指南](guide.md)與[裝置 API](server-api.md)。臨時 QA 截圖與資料未加入儲存庫。
+這一批仍是本機未提交工作目錄，未執行本批次 CI、映像發布、正式部署或 iPad mini 1／iOS 9、ESP 實機驗收。上方舊 SHA 的 Linux／CI 紀錄不適用於本批次。實機待辦保留於 [TODO](../../TODO.md)，操作及欄位見[三語指南](../guides/guide.md)與[裝置 API](../api/server-api.md)。臨時 QA 截圖與資料未加入儲存庫。
 
 ## 重現命令
 

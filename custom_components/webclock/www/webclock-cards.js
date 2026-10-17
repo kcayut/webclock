@@ -1,6 +1,7 @@
 /* WebClock cards: HA transports data; device credentials never enter this file. */
 (() => {
   'use strict';
+  const VERSION = '1.1.0';
   const labels = {
     'zh-TW': {time: '時間', calendar: '行事曆', alarms: '鬧鐘', empty: '目前沒有項目', unavailable: '尚無有效授權資料', enabled: '個已啟用鬧鐘', allDay: '全天'},
     en: {time: 'Time', calendar: 'Calendar', alarms: 'Alarms', empty: 'No items', unavailable: 'No authorized data available', enabled: 'enabled alarms', allDay: 'All day'},
@@ -21,7 +22,7 @@
         li{padding:12px 0;border-bottom:1px solid var(--divider-color);display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}
         li:last-child{border:0}time{font-variant-numeric:tabular-nums;color:var(--secondary-text-color);font-size:14px}
         .text{overflow-wrap:anywhere;white-space:pre-wrap}.summary{margin-bottom:8px}
-      </style><ha-card><h2></h2><div class="body"></div></ha-card>`;
+      </style><ha-card><h2></h2><p class="update-notice" role="status" hidden></p><div class="body"></div></ha-card>`;
       this._generation = 0;
       this._lastSync = -Infinity;
     }
@@ -106,6 +107,13 @@
       const kind = this.constructor.kind;
       this.shadowRoot.querySelector('h2').textContent = this._config.title || text[kind];
       const body = this.shadowRoot.querySelector('.body');
+      const notice = this.shadowRoot.querySelector('.update-notice');
+      const stale = attrs.integration_version && attrs.integration_version !== VERSION;
+      notice.hidden = !stale;
+      notice.textContent = !stale ? '' : ({'zh-TW': '整合已更新，請重新載入瀏覽器以更新卡片。',
+        en: 'The integration was updated. Reload the browser to update the cards.',
+        ja: '統合が更新されました。カードを更新するにはブラウザーを再読み込みしてください。'}[attrs.language] ||
+        'The integration was updated. Reload the browser to update the cards.');
       const now = this._now();
       if (kind === 'time') {
         if (!body.querySelector('.clock')) body.innerHTML = '<div class="clock"></div><div class="date"></div>';

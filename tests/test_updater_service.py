@@ -25,7 +25,7 @@ class UpdaterServiceTest(unittest.TestCase):
         self.project = Path(temporary.name)
         (self.project / 'VERSION').write_text('1.1.0\n')
         self.state = self.project / 'updater-state' / 'state.json'
-        self.updater = service.Updater(self.project, self.state)
+        self.updater = service.Updater(self.project, self.state, auto_update=True)
         self.release = {
             'latest_version': '1.2.0', 'update_available': True,
             'html_url': 'https://github.com/kcayut/webclock/releases/tag/v1.2.0',
@@ -61,6 +61,15 @@ class UpdaterServiceTest(unittest.TestCase):
         self.updater._check(automatic=True)
         self.assertEqual(self.update.call_args.kwargs['channel'], 'beta')
         self.assertEqual(self.update.call_args.kwargs['expected_version'], '2.3.4-beta.2')
+
+    def test_new_workers_only_check_until_explicitly_enabled_and_keep_existing_choice(self):
+        for kind in ('systemd', 'docker'):
+            worker = service.Updater(self.project, self.project / (kind + '.json'), kind=kind)
+            self.assertFalse(worker.status()['auto_update'])
+            self.assertIn('worker_version', worker.status())
+            worker.dispatch({'action': 'configure', 'channel': 'stable', 'auto_update': True})
+            restored = service.Updater(self.project, self.project / (kind + '.json'), kind=kind)
+            self.assertTrue(restored.status()['auto_update'])
 
     def test_disable_auto_still_checks_but_never_installs(self):
         self.updater.dispatch({'action': 'configure', 'channel': 'stable', 'auto_update': False})
@@ -280,6 +289,31 @@ class UpdaterServiceTest(unittest.TestCase):
         self.update.reset_mock()
         self.updater._check(automatic=True)
         self.update.assert_not_called()
+
+    def test_docker_kind_status_and_install(self):
+        docker_updater = service.Updater(self.project, self.project / 'docker-state.json', kind='docker')
+        status = docker_updater.status()
+        self.assertEqual(status['installation_type'], 'docker')
+        self.assertEqual(status['update_provider'], 'docker')
+        self.assertIsNone(status['current_version'])
+        self.assertFalse(status['auto_update'])
+
+        with patch.object(service.docker_update.DockerUpdater, 'preflight', return_value={'source_version': '1.1.0'}), \
+             patch.object(service.docker_update, 'update', return_value='updated') as mock_docker_up:
+            docker_updater._install('1.2.0')
+            mock_docker_up.assert_called_once()
+        self.assertEqual(docker_updater.status()['result'], 'updated')
+
+    def test_docker_version_is_observed_and_channel_never_writes_git(self):
+        (self.project / '.env').write_text('WEBCLOCK_VERSION=99.0.0\n')
+        updater = service.Updater(self.project, self.project / 'docker-state.json', kind='docker')
+        with patch.object(service.docker_update.DockerUpdater, 'preflight', return_value={'source_version': '1.2.0'}):
+            updater._discover()
+        self.discover.assert_called_with('stable', '1.2.0')
+        self.assertEqual(updater.status()['current_version'], '1.2.0')
+        with patch.object(updater, '_sync_channel') as sync:
+            updater.dispatch({'action': 'configure', 'channel': 'beta', 'auto_update': False})
+            sync.assert_not_called()
 
 
 if __name__ == '__main__':

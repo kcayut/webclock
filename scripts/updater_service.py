@@ -14,12 +14,16 @@ import threading
 import time
 
 try:
-    from scripts import release_versions, update_clock
+    from scripts import docker_update, release_versions, update_clock
 except ModuleNotFoundError as error:
     if error.name != 'scripts':
         raise
     import release_versions
     import update_clock
+    try:
+        import docker_update
+    except ModuleNotFoundError:
+        docker_update = None
 
 
 CHECK_INTERVAL = 24 * 60 * 60
@@ -30,10 +34,16 @@ STATE_PATH = Path('/var/lib/webclock-updater/state.json')
 
 
 class Updater:
-    def __init__(self, project, state_path=STATE_PATH, *, channel='stable', auto_update=True, on_updated=None):
+    def __init__(self, project, state_path=STATE_PATH, *, channel='stable', auto_update=None, on_updated=None, kind='systemd'):
         self.project = Path(project).resolve(strict=True)
         self.state_path = Path(state_path)
         self.on_updated = on_updated
+        self.kind = kind
+        if kind not in ('systemd', 'docker'):
+            raise ValueError('Unsupported updater kind.')
+        self.current_version = None
+        if auto_update is None:
+            auto_update = False
         self.lock = threading.RLock()
         self.worker = None
         self.stopped = threading.Event()
@@ -51,7 +61,7 @@ class Updater:
             if not isinstance(saved, dict):
                 raise ValueError('Invalid updater state.')
             self.data.update({key: value for key, value in saved.items() if key in self.data})
-        recorded = self._git_channel()
+        recorded = self._git_channel() if kind == 'systemd' else ''
         if recorded in ('stable', 'beta') and recorded != self.data['channel']:
             self.data.update(channel=recorded, latest_version=None, update_available=False,
                              release_url='', release_notes='', last_checked=None)
@@ -105,7 +115,19 @@ class Updater:
     def status(self):
         with self.lock:
             result = dict(self.data)
-            result['current_version'] = (self.project / 'VERSION').read_text().strip()
+            version_file = Path(__file__).with_name('VERSION')
+            if not version_file.exists():
+                version_file = Path(__file__).resolve().parents[1] / 'VERSION'
+            result['worker_version'] = version_file.read_text().strip() if version_file.is_file() else None
+            result['project_path'] = str(self.project)
+            if self.kind == 'docker':
+                result['current_version'] = self.current_version
+                result['installation_type'] = 'docker'
+                result['update_provider'] = 'docker'
+            else:
+                result['current_version'] = (self.project / 'VERSION').read_text().strip()
+                result['installation_type'] = 'bare_metal'
+                result['update_provider'] = 'systemd'
             return result
 
     def _busy(self):
@@ -142,7 +164,7 @@ class Updater:
                     self._change(**updates)
                 except OSError:
                     return {'ok': False, 'error': 'state_save_failed', 'status': self.status()}
-                if changed_channel:
+                if changed_channel and self.kind == 'systemd':
                     self._sync_channel(request['channel'])
             elif action == 'check':
                 try:
@@ -165,6 +187,9 @@ class Updater:
         self.worker.start()
 
     def _discover(self):
+        if self.kind == 'docker':
+            observed = docker_update.DockerUpdater(self.project).preflight()
+            self.current_version = observed['source_version']
         return release_versions.discover_release(self.data['channel'], self.status()['current_version'])
 
     def _record_release(self, release):
@@ -199,12 +224,20 @@ class Updater:
                              phase='', error='release_changed')
                 return
             started = True
-            result = update_clock.update(self.project, channel=self.data['channel'],
-                                        expected_version=expected,
-                                        progress=lambda phase: self._change(allow_failure=True, phase=phase))
+            if self.kind == 'docker':
+                if docker_update is None:
+                    raise RuntimeError('docker_update module is not available.')
+                result = docker_update.update(self.project, channel=self.data['channel'],
+                                             expected_version=expected,
+                                             progress=lambda phase: self._change(allow_failure=True, phase=phase))
+                self.current_version = docker_update.DockerUpdater(self.project).preflight()['source_version']
+            else:
+                result = update_clock.update(self.project, channel=self.data['channel'],
+                                            expected_version=expected,
+                                            progress=lambda phase: self._change(allow_failure=True, phase=phase))
             self._change(state='idle', phase='', error=None, result=result or 'updated',
                          update_available=False, auto_update_paused=False)
-            if result == 'updated' and self.on_updated is not None:
+            if result == 'updated' and self.on_updated is not None and self.kind == 'systemd':
                 # The project now contains the released updater; reload it instead of keeping old code.
                 self.on_updated()
         except Exception as error:
@@ -299,12 +332,26 @@ def main():
         if server is not None:
             threading.Thread(target=server.shutdown, daemon=True).start()
 
-    updater = Updater(config['project'], channel=config.get('channel', 'stable'),
-                      auto_update=config.get('auto_update', True), on_updated=reload_after_update)
+    kind = config.get('kind', 'systemd')
+    socket_path = Path(config.get('socket_path', SOCKET_PATH))
+    state_path = Path(config.get('state_path', STATE_PATH))
+    if kind == 'docker':
+        docker_update.root_owned(Path(config['project']))
+        for path in (Path(config['project']) / 'docker-compose.yml', Path(config['project']) / '.env',
+                     Path(__file__).resolve(), socket_path.parent):
+            docker_update.root_owned(path)
+
+    updater = Updater(config['project'], state_path=state_path, channel=config.get('channel', 'stable'),
+                      auto_update=config.get('auto_update', False), on_updated=reload_after_update,
+                      kind=kind)
     os.umask(0o077)
-    SOCKET_PATH.parent.mkdir(mode=0o700, exist_ok=True)
-    SOCKET_PATH.unlink(missing_ok=True)
-    with ControlServer(str(SOCKET_PATH), ControlHandler) as server:
+    socket_path.parent.mkdir(mode=0o700, exist_ok=True)
+    if socket_path.is_symlink():
+        raise RuntimeError('Updater socket must not be a symlink.')
+    socket_path.unlink(missing_ok=True)
+    with ControlServer(str(socket_path), ControlHandler) as server:
+        if kind == 'docker':
+            os.chmod(socket_path, 0o600)
         server.updater = updater
         scheduler = threading.Thread(target=updater.scheduler, daemon=True)
         scheduler.start()
@@ -312,7 +359,7 @@ def main():
             server.serve_forever()
         finally:
             updater.stopped.set()
-            SOCKET_PATH.unlink(missing_ok=True)
+            socket_path.unlink(missing_ok=True)
     if restart.is_set():
         print('WebClock updater reloading the released updater code.', flush=True)
 

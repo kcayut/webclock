@@ -7,6 +7,7 @@
     var automatic = document.getElementById('update-auto');
     var check = document.getElementById('update-check');
     var install = document.getElementById('update-install');
+    var projectPath = document.getElementById('update-project-path');
     var snapshot = null, pending = false, disconnected = false, disconnectedSince = 0, stopped = false, timer = null, notice = '';
     function text(key) { return labels[document.documentElement.lang][key] || labels.en[key] || key; }
     function localized(node, key) {
@@ -18,12 +19,23 @@
         return isNaN(parsed.getTime()) ? text('never') : parsed.toLocaleString(document.documentElement.lang);
     }
     function busy() { return snapshot && (snapshot.state === 'updating' || snapshot.state === 'checking'); }
+    function shellQuote(value) { return "'" + value.replace(/'/g, "'\\''") + "'"; }
+    function maintenanceCommand() {
+        var project = projectPath.value || '', version = snapshot && snapshot.current_version || '';
+        if (project.charAt(0) !== '/' || /[\x00-\x1f\x7f]/.test(project) ||
+            !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version)) return '';
+        var url = 'https://github.com/kcayut/webclock/releases/download/v' + version + '/portable_docker_update.sh';
+        return 'webclock_tool="$(mktemp)" &&\n' +
+            'curl --proto \'=https\' --proto-redir \'=https\' -fsSL ' + shellQuote(url) + ' -o "$webclock_tool" &&\n' +
+            'sudo bash "$webclock_tool" --project ' + shellQuote(project) + ' --version ' + shellQuote(version) + ' --refresh-worker';
+    }
     function message() {
         if (disconnected && Date.now() - disconnectedSince >= 120000) return 'reconnect_long';
         if (disconnected) return snapshot && snapshot.state === 'updating' ? 'reconnecting' : 'connection_lost';
         if (pending) return 'saving';
         if (notice) return notice;
         if (!snapshot) return 'loading';
+        if (snapshot.installation_type === 'ha_app') return 'ha_managed_hint';
         if (!snapshot.supported) return snapshot.reason === 'not_configured' ? 'not_configured' : 'unsupported';
         if (!snapshot.writable) return 'managed_required';
         if (snapshot.state === 'checking') return 'checking';
@@ -44,8 +56,46 @@
         var enabled = !!(snapshot && snapshot.supported && snapshot.writable && !pending && !busy() && !disconnected);
         check.disabled = !enabled; channel.disabled = !enabled; automatic.disabled = !enabled;
         install.disabled = !enabled || !snapshot.update_available;
-        document.getElementById('update-enable').hidden = !snapshot || snapshot.reason !== 'not_configured';
-        document.getElementById('update-reconnect-help').hidden = !(disconnected && Date.now() - disconnectedSince >= 120000);
+        var isDocker = snapshot && snapshot.installation_type === 'docker';
+        var isHa = snapshot && snapshot.installation_type === 'ha_app';
+        if (!projectPath.value && snapshot && typeof snapshot.project_path === 'string') projectPath.value = snapshot.project_path;
+        var maintenance = isDocker ? maintenanceCommand() : '';
+        document.getElementById('update-worker-cmd').textContent = maintenance;
+        document.getElementById('update-worker').hidden = !isDocker;
+        document.getElementById('update-worker-version').textContent = snapshot && snapshot.worker_version || '—';
+        document.getElementById('update-worker-hint').hidden = !isDocker ||
+            (snapshot.worker_version && snapshot.worker_version === snapshot.current_version);
+        document.getElementById('update-host-settings').hidden = !snapshot || isHa || snapshot.writable || !snapshot.supported;
+        document.getElementById('update-host-settings-cmd').textContent =
+            'sudo python3 ' + (isDocker ? '/usr/local/lib/webclock-docker-updater/update_settings.py --kind docker' : 'scripts/update_settings.py') + ' --auto-update off';
+        var enablePanel = document.getElementById('update-enable');
+        enablePanel.hidden = !snapshot || snapshot.reason !== 'not_configured' || isHa;
+        var enableTitle = document.getElementById('update-enable-title');
+        var enableHint = document.getElementById('update-enable-hint');
+        var enableCmd = document.getElementById('update-enable-cmd');
+        if (enableTitle) localized(enableTitle, isDocker ? 'docker_enable_title' : 'enable_title');
+        if (enableHint) localized(enableHint, isDocker ? 'docker_enable_hint' : 'enable_hint');
+        if (enableCmd) {
+            enableCmd.textContent = isDocker ? maintenance : 'sudo bash scripts/enable_updates.sh';
+            enableCmd.style && (enableCmd.style.whiteSpace = 'pre-wrap');
+        }
+
+        var haPanel = document.getElementById('update-ha-app');
+        if (haPanel) {
+            haPanel.hidden = !isHa;
+            var haLink = document.getElementById('update-ha-link');
+            if (haLink && snapshot) {
+                haLink.href = '/config/updates';
+            }
+        }
+
+        var reconnectHelp = document.getElementById('update-reconnect-help');
+        reconnectHelp.hidden = !(disconnected && Date.now() - disconnectedSince >= 120000);
+        var reconnectText = document.getElementById('update-reconnect-text');
+        var reconnectCmd = document.getElementById('update-reconnect-cmd');
+        if (reconnectText) localized(reconnectText, isDocker ? 'docker_reconnect_help' : 'reconnect_help');
+        if (reconnectCmd) reconnectCmd.textContent = isDocker ? 'docker compose logs --tail 50 && systemctl status webclock-docker-updater' : 'systemctl status webclock webclock-updater';
+
         document.getElementById('update-auto-paused').hidden = !snapshot || !snapshot.auto_update_paused;
         if (!snapshot) return;
         document.getElementById('update-current').textContent = snapshot.current_version || '—';
@@ -126,6 +176,7 @@
         });
     }
     check.addEventListener('click', function () { change('/check', {}); });
+    projectPath.addEventListener('input', render);
     install.addEventListener('click', function () {
         if (snapshot && snapshot.update_available) change('/install', {expected_version: snapshot.latest_version});
     });

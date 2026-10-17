@@ -1,10 +1,10 @@
 # 安裝 WebClock
 
-[回到 README](../README.md) · [使用指南](guide.md) · [裝置顯示設定](display-devices.md) · [Home Assistant 卡片與整合](home-assistant.md)
+[回到 README](../README.md) · [使用指南](guides/guide.md) · [裝置顯示設定](guides/display-devices.md) · [Home Assistant 卡片與整合](home-assistant.md)
 
 **只看時間，不用安裝 Server：**直接開啟 [GitHub 線上時鐘](https://kcayut.github.io/webclock/)，或照下方[下載與離線使用](#no-server)操作。需要行事曆、提醒與管理功能，再選擇自架方式與授權模式。
 
-安裝完成後，要讓平板／電腦點圖示就顯示時鐘，請照[裝置顯示設定](display-devices.md)建立主畫面入口、開啟全螢幕與螢幕恆亮；包含 iPad mini 1／iOS 9。
+安裝完成後，要讓平板／電腦點圖示就顯示時鐘，請照[裝置顯示設定](guides/display-devices.md)建立主畫面入口、開啟全螢幕與螢幕恆亮；包含 iPad mini 1／iOS 9。
 
 ## 一眼選擇
 
@@ -25,10 +25,10 @@ Linux、Docker、Home Assistant 三種方式只決定 **Server 跑在哪裡**，
 | 不用 systemd，在終端機執行 Server | [手動 Python 執行](#manual-python) | 適合開發／測試，沒有開機啟動或背景更新服務 |
 | 在 HA 建置本機 App | [HA 本機建置](#ha-local) | 需要 `/addons` 存取權；與商店 App 是不同安裝 |
 | HA 儀表板整合與三種卡片 | [HACS 或手動複製安裝](home-assistant.md#安裝整合) | 必須先有 Server；不會替你安裝 Server |
-| 平板／電腦作為顯示端 | [裝置顯示設定](display-devices.md) | 開啟 Server 網址，不需在每台顯示端安裝 Server |
+| 平板／電腦作為顯示端 | [裝置顯示設定](guides/display-devices.md) | 開啟 Server 網址，不需在每台顯示端安裝 Server |
 | ESP32-S3 鬧鐘原型 | [接線、編譯與 USB 燒錄](../firmware/README.md) | 另需 Server；目前原型使用 self 裝置 API，不能當作 managed 六碼裝置使用 |
 
-安裝完成後依[首次設定與確認](#first-run)檢查；中途失敗先看[排查與重試](#install-troubleshooting)。已經有資料時，使用[更新流程](#update)或[備份搬家](guide.md#完整備份與搬家)，不要重新安裝覆蓋。
+安裝完成後依[首次設定與確認](#first-run)檢查；中途失敗先看[排查與重試](#install-troubleshooting)。已經有資料時，使用[更新流程](#update)或[備份搬家](guides/guide.md#完整備份與搬家)，不要重新安裝覆蓋。
 
 以下授權模式只適用自行架設；公開版與下載的靜態時鐘不需選擇 self／managed。
 
@@ -63,7 +63,7 @@ Linux、Docker、Home Assistant 三種方式只決定 **Server 跑在哪裡**，
 2. **先解壓縮整個 ZIP**：Windows 按右鍵選「解壓縮全部」，Mac 雙擊 ZIP，Linux 使用系統壓縮檔工具。不要直接在壓縮檔預覽裡開 HTML。
 3. 打開解壓後的 `webclock-clock-版本` 資料夾，用 Chrome、Edge、Firefox 或電腦版 Safari 開啟**最外層的 `index.html`**。通常雙擊即可；若被文字編輯器開啟，改用右鍵「開啟方式」選瀏覽器。不要開 `templates/index.html`。
 4. **保留整個資料夾**，尤其是同一層的 `static`；不能只把 `index.html` 單獨移到桌面。想快速開啟時，替它建立桌面捷徑／替身即可。
-5. 中斷網路，關閉時鐘分頁，再從該檔案重新開啟，確認時間與日期出現；接著依[裝置指南](display-devices.md)設定全螢幕與恆亮。
+5. 中斷網路，關閉時鐘分頁，再從該檔案重新開啟，確認時間與日期出現；接著依[裝置指南](guides/display-devices.md)設定全螢幕與恆亮。
 
 離線 ZIP 只包含靜態時鐘與所需顯示檔案，**不用執行任何安裝腳本**。同一個 Release 提供 `SHA256SUMS` 供核對下載完整性。若換電腦，複製整個解壓資料夾；要更新時另下載新版並解壓到新資料夾。
 
@@ -76,7 +76,7 @@ Linux、Docker、Home Assistant 三種方式只決定 **Server 跑在哪裡**，
 ### 平板／瀏覽器：讓同一網址可以離線重開
 
 1. 先保持網路連線，以一般瀏覽模式開啟 [GitHub 線上時鐘](https://kcayut.github.io/webclock/)，不要使用私密／無痕模式。
-2. 要使用主畫面圖示時，先依[裝置指南](display-devices.md)加入主畫面，再**從該圖示重新開啟**。後續準備與測試都在同一個入口進行。
+2. 要使用主畫面圖示時，先依[裝置指南](guides/display-devices.md)加入主畫面，再**從該圖示重新開啟**。後續準備與測試都在同一個入口進行。
 3. 等時鐘頁底部顯示 **「已可離線開啟」**。若仍顯示不支援或準備失敗，先不要斷線；更新瀏覽器或檢查連線後再試。
 4. 關閉 Wi-Fi／行動網路，關閉時鐘分頁或網頁 App，再開啟同一個網址／圖示，確認仍可顯示並持續計時。**只讓原本分頁留著走時，不算通過離線重開測試。**
 
@@ -89,7 +89,7 @@ Linux、Docker、Home Assistant 三種方式只決定 **Server 跑在哪裡**，
 
 Safari 從 iOS 11.3 才加入 Service Worker 與 Cache API；這只是瀏覽器功能的起點，**不是 WebClock 全功能的最低支援版本或實機認證**。請以本機的準備結果與斷網重開測試為準。[WebKit 官方版本說明](https://webkit.org/blog/8216/new-webkit-features-in-safari-11-1/)
 
-網站快取由瀏覽器管理，清除網站資料、儲存空間不足或系統回收後可能消失；之後需重新連線準備。加入主畫面、書籤或 Safari 閱讀列表本身，都不能代替上述檢查。下載與快取也不會自動防止螢幕休眠，仍需設定[全螢幕與恆亮](display-devices.md)。
+網站快取由瀏覽器管理，清除網站資料、儲存空間不足或系統回收後可能消失；之後需重新連線準備。加入主畫面、書籤或 Safari 閱讀列表本身，都不能代替上述檢查。下載與快取也不會自動防止螢幕休眠，仍需設定[全螢幕與恆亮](guides/display-devices.md)。
 
 以下快速指令用於**全新 Server 安裝**，預設安裝到目前位置的 `webclock` 子目錄；可加 `--dir /安裝路徑`。安裝器先查 GitHub 最新正式 Release，再固定使用該版本的程式與映像，不會安裝開發中的 `main`。要指定版本，加 `--version 1.1.0`。已安裝者請看[更新](#update)或[既有安裝啟用 managed](#enable-managed)。
 
@@ -159,7 +159,7 @@ managed 安裝請加上 `--managed` 與[完整 TLS 參數](#https)。不要改�
 2. 新 App「開啟網頁介面」→「備份與還原」，選檔，加密檔才須輸入備份密碼，再預覽資料數量。
 3. 停止舊 Server，確認是最後匯出的檔案，再確認取代並還原。managed 使用原 WebClock 帳密登入，所有帳號及私人行事曆一併保留。
 
-未加密檔內的私人 iCal、帳號與授權資料可被持有者直接讀取；管理員驗證仍保留。全新目標保留裝置與程式憑證；已有資料的目標會撤銷兩者，須重新加入／建立。原瀏覽器裝置要接續，須沿用相同 HTTPS 網域、協定與連接埠；備份不設定 TLS／DNS、不搬移瀏覽器本機資料，也不覆寫 App options。範圍與失敗復原見[完整備份指南](guide.md#完整備份與搬家)。
+未加密檔內的私人 iCal、帳號與授權資料可被持有者直接讀取；管理員驗證仍保留。全新目標保留裝置與程式憑證；已有資料的目標會撤銷兩者，須重新加入／建立。原瀏覽器裝置要接續，須沿用相同 HTTPS 網域、協定與連接埠；備份不設定 TLS／DNS、不搬移瀏覽器本機資料，也不覆寫 App options。範圍與失敗復原見[完整備份指南](guides/guide.md#完整備份與搬家)。
 
 App 支援匯入 managed 備份，HA 登入不會替代原 WebClock 帳號。新 App 仍預設 self，不提供 `/mode` 切換或首次 managed 啟用；不要自行修改 `/data/auth.json`。HA 專用顯示通道維持管理路徑隔離與逐台憑證檢查，普通 bare metal／Docker 的 managed HTTPS 要求不變。
 
@@ -171,12 +171,12 @@ App 支援匯入 managed 備份，HA 登入不會替代原 WebClock 帳號。新
 從可讀寫 `/addons` 的 Terminal／SSH App 執行，需有 Git 與 Bash：
 
 ```bash
-git clone https://github.com/kcayut/webclock.git && cd webclock && bash scripts/prepare_ha_app.sh
+git clone https://github.com/kcayut/webclock.git && cd webclock && bash homeassistant/prepare_local_app.sh
 ```
 
 接著在 App 商店「檢查更新」→ **Local apps → WebClock → 安裝 → 啟動**。腳本只準備檔案，不會啟動 Server；會移除產物的 `image` 設定，讓 HA 自行建置。
 
-也可在另一台電腦的專案根目錄執行 `bash scripts/prepare_ha_app.sh /tmp/webclock-ha-app`，再透過 Samba 把產物複製為 HA 的 `addons/webclock`。目的地已存在時會停止，不會覆蓋。Local App 和商店 App 是不同安裝，資料不會自動搬移；可用上述完整備份搬到新 App，確認新 App 正常後才退役舊安裝。只更新既有 Local App 者依下方本機更新流程操作。
+也可在另一台電腦的專案根目錄執行 `bash homeassistant/prepare_local_app.sh /tmp/webclock-ha-app`，再透過 Samba 把產物複製為 HA 的 `addons/webclock`。目的地已存在時會停止，不會覆蓋。Local App 和商店 App 是不同安裝，資料不會自動搬移；可用上述完整備份搬到新 App，確認新 App 正常後才退役舊安裝。只更新既有 Local App 者依下方本機更新流程操作。
 
 </details>
 
@@ -283,7 +283,7 @@ docker compose up -d --force-recreate
 <a id="enable-managed"></a>
 ## 既有 self 安裝啟用 managed
 
-不要重新執行全新安裝指令。先配置上述 HTTPS、停止所有寫入者，並依[完整備份流程](guide.md#主機端完整資料備份與還原)保存現有資料。舊資料會保留，但舊顯示裝置須用六碼重新加入。
+不要重新執行全新安裝指令。先配置上述 HTTPS、停止所有寫入者，並依[完整備份流程](guides/guide.md#主機端完整資料備份與還原)保存現有資料。舊資料會保留，但舊顯示裝置須用六碼重新加入。
 
 **Bare metal：**在實際安裝目錄執行。下例採預設資料目錄；自訂路徑時改成服務實際使用的 state 位置。
 
@@ -302,7 +302,7 @@ docker compose stop
 docker compose run --rm --no-deps webclock python scripts/manage_auth.py --state-dir /app/webclock_state setup --username admin --enable-managed && docker compose up -d
 ```
 
-初始化失敗時保持停止，先排除問題。首次登入 `/admin` 後，前往「裝置」建立群組、指派內容、產生六位加入碼；在每台時鐘首頁選「加入顯示群組」。完整操作見[群組設定與裝置加入](guide.md#群組設定與裝置加入)。
+初始化失敗時保持停止，先排除問題。首次登入 `/admin` 後，前往「裝置」建立群組、指派內容、產生六位加入碼；在每台時鐘首頁選「加入顯示群組」。完整操作見[群組設定與裝置加入](guides/guide.md#群組設定與裝置加入)。
 
 <a id="web-setup"></a>
 ## 用一次性設定碼建立第一位管理員
@@ -360,7 +360,7 @@ sudo ./venv/bin/python scripts/backup_clock.py verify "$PWD/.webclock-mode-backu
 sudo ./venv/bin/python scripts/backup_clock.py restore "$PWD/.webclock-mode-backups-webclock_state/<備份ID>" --project "$PWD" --stopped --yes --rollback-dir "$HOME/private-webclock-backups/before-mode-restore-001"
 ```
 
-自訂資料位置須另外傳 `--state-dir`／`--notes-file`，保持原包含關係；Docker 先停容器，使用已安裝相依套件的主機 Python 與主機掛載路徑執行。完整步驟見[主機備份與還原](guide.md#主機端完整資料備份與還原)。
+自訂資料位置須另外傳 `--state-dir`／`--notes-file`，保持原包含關係；Docker 先停容器，使用已安裝相依套件的主機 Python 與主機掛載路徑執行。完整步驟見[主機備份與還原](guides/guide.md#主機端完整資料備份與還原)。
 
 還原保留帳密、角色與內容，但會使歷史登入 session、程式 token、裝置憑證、加入碼及首次設定碼失效；顯示裝置須重新授權。已有帳號的 self 仍是受保護安裝，不能被沒有帳號的舊備份覆蓋；不支援多帳號的舊程式也不能啟動這份資料。成功後檢查路徑、擁有者與資料，再手動啟動服務。失敗或中斷時保持停止，保留還原前副本與 `.webclock-restore-*`；實際斷電恢復仍須在部署環境驗收。
 
@@ -403,10 +403,10 @@ HOST=127.0.0.1 ./venv/bin/python app.py
 ## 安裝完成後：首次設定與確認
 
 1. 開啟安裝器提供的管理網址：Linux 預設 `http://主機IP:5000/admin`、Docker 預設 `http://主機IP/admin`；HA App 按「開啟網頁介面」。managed 使用憑證對應的 HTTPS 網址與管理員帳密。
-2. 在管理頁設定時區／顯示語言、行事曆來源與提醒；先儲存一項設定並重載，確認資料有保留。行事曆與鬧鐘詳見[使用指南](guide.md)。
+2. 在管理頁設定時區／顯示語言、行事曆來源與提醒；先儲存一項設定並重載，確認資料有保留。行事曆與鬧鐘詳見[使用指南](guides/guide.md)。
 3. 要用群組授權時，在「裝置」建立群組、指派內容、產生六碼；在實際顯示裝置開啟 Server 時鐘網址加入。HA App 外部裝置需先開放 `8100`；HA 整合使用 App 日誌的整合網址。新空群組沒有行事曆或鬧鐘是正常的。
-4. 平板／電腦依[裝置顯示設定](display-devices.md)建立入口、設定全螢幕及恆亮；要使用網頁鬧鐘，必須保持前景，並在實際裝置測試聲音。
-5. 到管理頁下載完整 `.webclock` 備份並保存密碼。系統服務、TLS 與主機設定另行保存；範圍見[備份指南](guide.md#完整備份與搬家)。
+4. 平板／電腦依[裝置顯示設定](guides/display-devices.md)建立入口、設定全螢幕及恆亮；要使用網頁鬧鐘，必須保持前景，並在實際裝置測試聲音。
+5. 到管理頁下載完整 `.webclock` 備份並保存密碼。系統服務、TLS 與主機設定另行保存；範圍見[備份指南](guides/guide.md#完整備份與搬家)。
 
 | 安裝方式 | 查看狀態／日誌 | 暫停／再次啟動 |
 | --- | --- | --- |
@@ -437,18 +437,63 @@ HOST=127.0.0.1 ./venv/bin/python app.py
 <a id="update"></a>
 ## 更新與確認
 
+新版的首次啟用、明確選擇自動安裝、受保護目錄遷移、worker 更新與失敗復原，見[完整操作流程](operations/update-operations.md)。這些新增入口尚待新版正式發布。
+
 | 環境 | 更新／確認 |
 | --- | --- |
-| Bare metal（HTTP／HTTPS） | 網頁端於「更新」頁面（`/updates`）點擊一鍵升級；或在安裝目錄執行 `sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`（首次從 v1.1.0 升級時會一併啟用背景更新服務；亦可執行[新版獨立入口](guide.md#更新程式) `sudo bash portable_update_clock.sh`）。正式版安裝自動選最新正式 Release；`systemctl status webclock` 查看服務 |
-| Docker | 備份後在 `.env` 將 `WEBCLOCK_VERSION` 改為[最新 Release](https://github.com/kcayut/webclock/releases/latest)的 `X.Y.Z`，執行 `docker compose pull && docker compose up -d --no-build`，再確認 `/api/health` 的版本 |
-| HA 商店 App | HA 顯示新版後，在 App 頁先建立備份，再按「更新」；不要移除 App |
+| Bare metal（HTTP／HTTPS） | managed 管理員可於「更新」頁面（`/updates`）點擊一鍵升級；self 使用宿主機指令；或在安裝目錄執行 `sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`（首次從 v1.1.0 升級時會一併啟用背景更新服務；亦可執行[新版獨立入口](guides/guide.md#更新程式) `bash scripts/update/portable_update_clock.sh /實際安裝路徑`）。正式版安裝自動選最新正式 Release；`systemctl status webclock` 查看服務 |
+| Docker（Compose） | **尚未發布的新更新器：**在相容的本機 Docker 安裝使用 `bash docker_update.sh`；Linux＋systemd 可明確啟用網頁控制，見下節。遇到自訂 Compose、遠端／rootless daemon 或未完成交易時會停止，不能直接套用到所有 NAS／Docker Desktop。v1.1.0 公開包尚不包含這些入口。 |
+| HA 商店 App | HA 顯示新版後，在 App 頁先建立備份，再按「更新」；WebClock 更新頁會提供前往 HA 更新頁的直接入口；不要移除 App |
 | HA 本機 App | 先做 HA 備份；用新版原始碼產生至新的暫存目錄，核對後替換 `/addons/webclock` 的程式檔，再於 App 頁重建／啟動；不要移除 App 或 `/data` |
+
+### Docker 更新器（開發中、尚未公開發行）
+
+目前支援官方單一服務 Compose、本機 `/var/run/docker.sock`、Linux amd64／arm64 映像。客製 override、多服務、非預設資料掛載、遠端 Docker、rootless／user namespace remapping 會拒絕自動接管。Docker Desktop／NAS 不在已驗收範圍；不能將 CLI 視為所有平台的替代保證。
+
+在包含新版更新器的宿主機安裝目錄執行：
+
+```bash
+bash docker_update.sh --check
+bash docker_update.sh
+# beta 是明確選擇，切回 stable 不會降版：
+bash docker_update.sh --channel beta
+# 查看最近交易；--version 只能確認目前管道提供的目標，不能任選舊版：
+bash docker_update.sh --status
+```
+
+CLI 需要可操作本機 Docker 及讀寫安裝資料的帳號。一般升級依序確認運行中版本、映像與 Compose 身分，先拉映像，再停機、冷備份、固定不可變 image ID、重建及確認健康。更新會保存 `.env` 的其他設定與權限，並把安裝目錄的 Compose `image` 固定為實際 image ID；後續更新繼續使用此 CLI，不能只改 `.env` 的版號或執行 `compose pull`。
+
+完整冷備份位於 `.docker-update-backups/<operation ID>/`，含 state、模式備份、legacy notes、`.env`、Compose 與 TLS。備份包含私人資料及私鑰，**未加密**，以目錄權限限制存取；不要公開上傳。正常更新不改寫宿主機程式碼的 `VERSION`，運行版本以映像與 `/api/health` 為準。
+
+**失敗回退：**如果新版尚未改寫任何持久資料，可固定原 image ID 回退，且重新確認健康。若新版已改寫資料、憑證或 schema，保留目前資料與冷備份、停止容器並回報 `manual_recovery`；不會直接覆蓋整包舊 state，也不會復活已撤銷憑證。交易紀錄損壞或中斷也會阻止下一次自動更新。
+
+**網頁控制需另外明確啟用：**Linux＋systemd 宿主機可執行：
+
+```bash
+sudo bash scripts/enable_docker_updates.sh
+```
+
+背景模式要求安裝目錄、Compose、`.env` 及祖先目錄由 root 擁有且不可由其他帳號寫入，建議使用獨立受保護的 `/opt/webclock` 安裝。使用者家目錄可用新版獨立入口的 `--migrate-to /opt/webclock` 明確遷移，詳見[完整操作流程](operations/update-operations.md)。客製安裝仍需先核對；勿直接對整個家目錄遞迴變更權限。
+
+啟用器把 worker 程式複製到 root 保護的 `/usr/local/lib/webclock-docker-updater/`，不以 root 執行應用程式可修改的原始碼。WebClock 只掛載專用的唯讀 socket 目錄，socket 權限為 `0600`；容器不掛載 Docker socket。更新頁會顯示 worker 版本，可用已驗證公開入口 `--refresh-worker` 更新與運行服務同版的 worker，保留上一份程式與偏好；不會自動更新宿主機 worker。
+
+新註冊的**自動安裝預設關閉**，既有偏好保留；managed 管理員可於 `/updates` 啟用，self 的匿名頁面無法觸發主機更新。首次補 socket 掛載可能重建容器並短暫中斷服務。Docker 全新安裝不會偷偷註冊 root worker。
+
+原生 HTTPS 使用容器的 TLS 設定，保留憑證與主機名稱驗證。若使用私人 CA，將 CA 放入宿主機 `tls/` 並設定容器路徑，例如 `WEBCLOCK_UPDATE_CA=/app/tls/ca.pem`；`WEBCLOCK_UPDATE_HOST` 填憑證名稱。健康檢查連到本機映射連接埠，不跟隨 redirect，也不略過驗證。
+
+遇到 `manual_recovery`：
+
+1. 先停用背景更新服務：`sudo systemctl stop webclock-docker-updater`，保留 `.docker-update-journal.json`、冷備份及現有資料。
+2. 使用 `sudo bash docker_update.sh --diagnose` 查看交易。舊版沒有此檔時，可用獨立入口加 `--project /實際安裝路徑 --diagnose`；不要刪除 journal 來強迫重試，不要移除 App／volume 或 prune 映像。
+3. 先用 `--diagnose` 查看交易 ID，再依[復原流程](operations/update-operations.md#docker-復原)明確選擇 `--recover current` 或 `--recover previous`。工具會驗證、封存原 journal 並確認健康；資料已變更者不能回退舊 image。
+
+這些是目前程式行為，**尚未代表公開 Release、Linux Docker／systemd、HA OS 或 HACS 實機已驗收**。具體證據與缺口見 [Docker／HA 更新驗證](acceptance/docker-ha-update-acceptance.md)。舊 v1.1.0 的一次性 bootstrap 已實作並納入發行打包，公開資產仍待發布與驗收，不要為了取得更新器重新執行新安裝指令覆蓋原目錄。
 
 ### Bare Metal 自動升級與發行管道
 
 Bare metal 安裝由獨立的背景服務 `webclock-updater.service` 定期檢查 GitHub Releases，支援自動無人值守升級或由受管模式管理員在「更新」（`/updates`）頁面手動一鍵升級：
 
-- **自動升級與自我維護**：`webclock-updater.service` 預設啟用，每日檢查一次版本。若開啟自動升級，偵測到新版本時會自動建立備份、升級程式與套件、重啟並執行健康檢查；升級成功後更新服務會自動重新載入使用新版代碼，無須人工額外維護更新器。若升級檢查或健康檢查失敗，會自動復原先前版本並暫停自動升級，避免反覆失敗重試。
+- **自動升級與自我維護**：`webclock-updater.service` 預設每日檢查一次版本，新啟用的自動安裝預設關閉，既有選擇保留。安裝可明確加 `--auto-update on`，self 可用 `sudo python3 scripts/update_settings.py --auto-update on|off` 設定。若開啟自動升級，偵測到新版本時會自動建立備份、升級程式與套件、重啟並執行健康檢查；升級成功後更新服務會自動重新載入使用新版代碼，無須人工額外維護更新器。若升級檢查或健康檢查失敗，會自動復原先前版本並暫停自動升級，避免反覆失敗重試。
 - **發行管道（Release Channels）**：
   - **正式版（`stable`，建議）**：僅安裝正式發布的 Release，忽略預先發行版（prerelease）。
   - **測試版（`beta`）**：可接收正式版與 `-beta.N` 等測試版 Release。若從測試版切換回正式版，系統不會自動降級，而是保留目前版本並等待版本號更高的正式發布版。
@@ -456,10 +501,10 @@ Bare metal 安裝由獨立的背景服務 `webclock-updater.service` 定期檢�
   - 網頁介面：受管模式管理員在「更新」分頁可直接切換 Release 管道與設定自動升級。
   - 命令列：在安裝目錄執行 `sudo bash update_clock.sh --channel stable && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh` 或 `sudo bash update_clock.sh --channel beta && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`，亦會同步更新 Git 配置與背景服務管道。
 
-正式版 Linux 安裝以 Git 的 `webclock.releaseChannel=stable` 記錄更新來源；更新器從 GitHub 解析正式 Release，再固定更新至該 tag。既有開發 checkout 保留原本 upstream，不會被安裝器悄悄改成別的來源。Docker 固定 `.env` 中的版本，不因容器重啟自動更新；更新前先備份資料。
+正式版 Linux 安裝以 Git 的 `webclock.releaseChannel=stable` 記錄更新來源；更新器從 GitHub 解析正式 Release，再固定更新至該 tag。既有開發 checkout 保留原本 upstream，不會被安裝器悄悄改成別的來源。Docker 初始映像由 `.env` 選定；使用新更新器後 Compose 固定為實際 image ID，後續繼續使用更新入口，不因容器重啟自動更新。
 
 原生 HTTPS 同樣可用安全更新器。若憑證只包含網域名稱，在 `.env` 加上 `WEBCLOCK_UPDATE_HOST=clock.example`，換成憑證上的名稱；使用私有 CA 時另設 `WEBCLOCK_UPDATE_CA=/絕對路徑/ca.pem`。更新器仍連本機服務位址，只用該名稱驗證 TLS；不會略過憑證驗證或跟隨重新導向。憑證已包含本機檢查 IP 時無須加主機名。更新前、更新後及失敗還原都使用相同設定；不要為更新刪除授權資料或切回 self。
 
-舊版更新器若顯示「Native HTTPS is not supported」，先備份並使用新版的[獨立更新入口](guide.md#更新程式)：將入口存到安裝目錄外，從已 fetch 的上游載入新版更新器。不要直接覆蓋安裝目錄中的更新器，或先 `git pull` 改動整套程式；安全更新需要保留原版本供失敗還原。
+舊版更新器若顯示「Native HTTPS is not supported」，先備份並使用新版的[獨立更新入口](guides/guide.md#更新程式)：將入口存到安裝目錄外，從已 fetch 的上游載入新版更新器。不要直接覆蓋安裝目錄中的更新器，或先 `git pull` 改動整套程式；安全更新需要保留原版本供失敗還原。
 
 開啟 `/api/health` 可確認 `version`、服務與授權模式；managed 安裝應回報 `deployment_mode: managed`。HA App 新安裝為 self；匯入 managed 備份後應回報 managed，管理入口仍經 HA Ingress 並要求原 WebClock 登入。程序啟動不代表容器、Raspberry Pi、HA OS 或 iPad mini 1／iOS 9 已完成實機驗收。

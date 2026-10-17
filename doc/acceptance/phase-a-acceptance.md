@@ -65,7 +65,7 @@ ES5 解析涵蓋 `static/clock.js`、`time-format.js`、`time-inputs.js`、`offl
 
 ## Linux CI 與真實 systemd 演練
 
-既有 [workflow](../.github/workflows/linux-rehearsal.yml) 在 `ubuntu-24.04` 執行 Python／JavaScript／shell 回歸，再用 [rehearse_linux.py](../tests/rehearse_linux.py) 驗證真實 systemd 升級、完整備份／還原與注入故障後回復。演練取 Git HEAD，未提交的修改不會自動納入。
+既有 [workflow](../../.github/workflows/linux-rehearsal.yml) 在 `ubuntu-24.04` 執行 Python／JavaScript／shell 回歸，再用 [rehearse_linux.py](../../tests/rehearsal/rehearse_linux.py) 驗證真實 systemd 升級、完整備份／還原與注入故障後回復。演練取 Git HEAD，未提交的修改不會自動納入。
 
 2026-10-05 20:59:59–21:01:58（Asia/Taipei），[執行 37313452583](https://github.com/kcayut/webclock/actions/runs/37313452583) **成功**，測試提交為 `60b239878cd788b5774d42b2fc3f9f28674cc9d0`。環境為標準 `ubuntu-24.04` runner、systemd 255；演練由 `1ad7868ff7b51e581421f85fefccfef4e7520ddd` 升級至本次提交。舊 `c1c3e6d` 的成功紀錄不再代替本批次證據。
 

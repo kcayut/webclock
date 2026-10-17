@@ -7,6 +7,7 @@ on:
       - .github/workflows/linux-rehearsal.yml
       - tests/**
       - scripts/**
+      - tools/**
       - webclock/**
       - templates/**
       - static/**
@@ -48,9 +49,9 @@ jobs:
         run: |
           "$RUNNER_TEMP/rehearsal-tools/bin/python" -m unittest discover -s tests -p 'test_*.py'
           for test in tests/test_*.js; do node "$test"; done
-          bash -n setup.sh scripts/setup.sh update_clock.sh
+          for script in *.sh scripts/*.sh scripts/update/*.sh; do bash -n "$script"; done
           git diff --check
       - name: Rehearse real systemd upgrade, backup, restore and failure recovery
         run: |
           sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_TEMP,GITHUB_STEP_SUMMARY,PYTHONDONTWRITEBYTECODE,PIP_NO_CACHE_DIR \
-            "$RUNNER_TEMP/rehearsal-tools/bin/python" -u tests/rehearse_linux.py
+            "$RUNNER_TEMP/rehearsal-tools/bin/python" -u tests/rehearsal/rehearse_linux.py

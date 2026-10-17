@@ -4,6 +4,8 @@
 
 **繁體中文** · [English](README_en.md) · [日本語](README_jp.md)
 
+[文件索引](doc/README.md) · [目錄分工與維護](doc/development/repository-layout.md)
+
 **[開啟 GitHub 線上時鐘](https://kcayut.github.io/webclock/)** · [下載與離線使用](doc/installation.md#no-server)
 
 把 iPad、平板或閒置螢幕變成大時鐘。公開版開啟網頁即可使用；自行架設版另外提供行事曆、文字提醒、網頁鬧鐘、夜間模式與備份還原。
@@ -17,9 +19,9 @@
 - **下載離線時鐘：**電腦[下載 ZIP 並解壓縮](doc/installation.md#offline-download)，用瀏覽器開啟最外層的 `index.html`，不必安裝 Server。平板請看[離線快取與 iOS 9 限制](doc/installation.md#offline-cache)。
 - **自行架設：**在電腦、NAS 或 Raspberry Pi 執行完整版。`/admin` 管理顯示、行事曆與文字提醒；`/schedules` 管理鬧鐘與裝置狀態。
 
-自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址不會出現在公開時鐘、狀態或舊版 JSON 匯出中；管理頁可下載單一 `.webclock` 完整備份，預設以密碼加密，也可選擇未加密，將帳號、私人行事曆與裝置設定搬到新主機或 HA App，詳見[備份與搬家](doc/guide.md#完整備份與搬家)。
+自行架設版支援繁中、英文、日文介面，可訂閱 Google、Apple iCloud 或其他 ICS 行事曆。行事曆網址不會出現在公開時鐘、狀態或舊版 JSON 匯出中；管理頁可下載單一 `.webclock` 完整備份，預設以密碼加密，也可選擇未加密，將帳號、私人行事曆與裝置設定搬到新主機或 HA App，詳見[備份與搬家](doc/guides/guide.md#完整備份與搬家)。
 
-時鐘會先顯示時間、日期與星期；已載入且在前景執行時，連線、瀏覽器儲存或附加功能失敗不應讓它停住。裝置管理可命名、查看自報能力與同步確認狀態；群組、六碼加入、逐台授權、移組、停用／恢復與刪除授權已提供；managed 模式由主機端明確啟用，既有安裝預設維持 self。操作與限制見[使用指南](doc/guide.md#裝置同步狀態)，目前驗證與待辦見 [A 階段驗收紀錄](doc/phase-a-acceptance.md) / [B 階段群組與授權驗收](doc/phase-b-acceptance.md)；CI 與 iPad mini 1／iOS 9 實機驗收狀態分開記錄。
+時鐘會先顯示時間、日期與星期；已載入且在前景執行時，連線、瀏覽器儲存或附加功能失敗不應讓它停住。裝置管理可命名、查看自報能力與同步確認狀態；群組、六碼加入、逐台授權、移組、停用／恢復與刪除授權已提供；managed 模式由主機端明確啟用，既有安裝預設維持 self。操作與限制見[使用指南](doc/guides/guide.md#裝置同步狀態)，目前驗證與待辦見 [A 階段驗收紀錄](doc/acceptance/phase-a-acceptance.md) / [B 階段群組與授權驗收](doc/acceptance/phase-b-acceptance.md)；CI 與 iPad mini 1／iOS 9 實機驗收狀態分開記錄。
 
 ## 安裝方式
 
@@ -49,13 +51,13 @@ curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.s
 
 **[前往完整安裝指南 →](doc/installation.md)**：線上／離線時鐘、Linux、Docker、HA 商店／本機 App，以及整合、卡片與 ESP 原型入口。另有[原始碼建置](doc/installation.md#source-install)、[手動 Python 執行](doc/installation.md#manual-python)、[安裝參數](doc/installation.md#install-options)、[首次設定](doc/installation.md#first-run)及[失敗排查](doc/installation.md#install-troubleshooting)；self／managed 與 HTTPS 也有完整步驟。
 
-已有帳號可在「模式與帳號」(`/mode`) [切換 self／managed、選定主要使用者及管理成員](doc/installation.md#mode-switch)；[多帳號備份與復原](doc/installation.md#owner-data)、[裝置／群組設定](doc/guide.md#群組設定與裝置加入)及[共用公告](doc/guide.md#指定群組或裝置的公告)都有操作步驟。本次測試與待驗收範圍見[第二／四階段驗收](doc/phase2-acceptance.md)。
+已有帳號可在「模式與帳號」(`/mode`) [切換 self／managed、選定主要使用者及管理成員](doc/installation.md#mode-switch)；[多帳號備份與復原](doc/installation.md#owner-data)、[裝置／群組設定](doc/guides/guide.md#群組設定與裝置加入)及[共用公告](doc/guides/guide.md#指定群組或裝置的公告)都有操作步驟。本次測試與待驗收範圍見[第二／四階段驗收](doc/acceptance/phase2-acceptance.md)。
 
-**[把裝置變成時鐘 →](doc/display-devices.md)**：依 iPad／iPhone、Android、Windows、Mac 分版本整理主畫面圖示、全螢幕與螢幕恆亮，包含 iPad mini 1／iOS 9。
+**[把裝置變成時鐘 →](doc/guides/display-devices.md)**：依 iPad／iPhone、Android、Windows、Mac 分版本整理主畫面圖示、全螢幕與螢幕恆亮，包含 iPad mini 1／iOS 9。
 
 Linux／Docker 預設使用 **self（自用）**；需要獨立管理員登入與逐台授權時，全新安裝加 `--managed` 與 TLS 憑證參數。HA App 由 HA 登入保護管理入口，匯入 managed 完整備份後另用原 WebClock 帳密登入。HA OS、ARM 與舊 iPad 實機驗收狀態另見[發行紀錄](doc/ha-release.md)；開發者仍可用本機建置。
 
-**使用說明：**[繁體中文使用指南](doc/guide.md) · [Home Assistant 整合與卡片](doc/home-assistant.md) · [裝置 API](doc/server-api.md) · [ESPHome 原型指南](doc/esp-home.md) · [ESP32-S3 韌體](firmware/README.md)
+**使用說明：**[繁體中文使用指南](doc/guides/guide.md) · [Home Assistant 整合與卡片](doc/home-assistant.md) · [裝置 API](doc/api/server-api.md) · [ESPHome 原型指南](doc/guides/esp-home.md) · [ESP32-S3 韌體](firmware/README.md)
 
 ESP32-S3 鬧鐘原型已通過交叉編譯，支援 OLED、固定規則鬧鐘同步與運轉中斷網響鈴；尚未實機驗收，行事曆聯動與 RTC 斷電保時仍待開發。
 

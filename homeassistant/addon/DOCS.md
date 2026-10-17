@@ -14,7 +14,7 @@ App 預設只開放 Ingress，不會把 WebClock 連接埠公開到區網。若�
 
 只有全新、尚無資料的 App 會保留裝置與程式憑證；已有資料的 App 會撤銷兩者，需重新加入／建立。所有登入 session 與舊加入碼失效。原瀏覽器裝置要接續，須沿用相同 HTTPS 網域、協定與連接埠；換址仍需更新連線或重新加入。備份不包含 TLS／DNS、系統服務、瀏覽器本機資料，也不覆寫 App options。
 
-完整還原會先保留私人復原紀錄，失敗回復原資料；中斷後啟動先處理復原。詳細範圍與保護見[完整備份指南](https://github.com/kcayut/webclock/blob/main/doc/guide.md#完整備份與搬家)。舊 JSON 部分備份仍在管理頁收合區；HA 冷備份則保存整個 App。HA OS 實機搬家驗收仍待完成。
+完整還原會先保留私人復原紀錄，失敗回復原資料；中斷後啟動先處理復原。詳細範圍與保護見[完整備份指南](https://github.com/kcayut/webclock/blob/main/doc/guides/guide.md#完整備份與搬家)。舊 JSON 部分備份仍在管理頁收合區；HA 冷備份則保存整個 App。HA OS 實機搬家驗收仍待完成。
 
 ## 儀表板卡片
 

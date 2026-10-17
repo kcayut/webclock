@@ -4,6 +4,8 @@
 
 ## 目前狀態
 
+- Docker／HA 更新功能目前另有未發行的工作目錄實作；其截至 2026-10-16 的本機修正與尚待驗收範圍見 [更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。不可將下列既有 v1.1.0 發行證據套用到新更新器。
+
 - 首個公開版本定為 **1.1.0**；Server、Docker、App 與 Integration 使用相同版本。HA App 仍標示 `experimental`。
 - 已補入正式版安裝入口、獨立離線 ZIP、版本與 SHA256 檢查、安裝健康檢查／重試、managed TLS 設定及完整發行流程。App 來源、HACS 標準目錄、整合換址與可選加密的 `.webclock` 完整備份一併交付。
 - [GitHub Release v1.1.0](https://github.com/kcayut/webclock/releases/tag/v1.1.0) 已公開並設為最新正式版，附安裝器、Server 壓縮檔、離線 ZIP 與 `SHA256SUMS`。程式與標籤已同步到 GitHub／Gitea；發行前 CI、兩種映像的匿名讀取，以及公開下載後的 Linux／Docker 安裝演練均通過。
@@ -38,9 +40,10 @@
 | --- | --- |
 | 產品版號與發行紀錄 | 根目錄 `VERSION`、`CHANGELOG.md`、`doc/releases/vX.Y.Z.md` |
 | 一行安裝入口 | Release 的 `install.sh`，固定同一版號；使用者入口為 `releases/latest/download/install.sh` |
+| 舊 Docker 升級／worker 維護入口 | 下一版新增 `portable_docker_update.sh`，固定同一版號並驗證 Server 壓縮檔；操作與限制見 [更新維護](operations/update-operations.md) |
 | Server 原始碼與 Docker 部署檔 | Release 的 `webclock-X.Y.Z.tar.gz`，從已提交的公開檔案打包 |
 | 電腦離線時鐘 | Release 的 `webclock-clock-X.Y.Z.zip`，解壓後開啟最外層 `index.html` |
-| 下載完整性 | Release 的 `SHA256SUMS`，包含安裝器與兩個壓縮檔 |
+| 下載完整性 | Release 的 `SHA256SUMS`，包含安裝器、獨立 Docker 更新入口與兩個壓縮檔；v1.1.0 尚無新更新入口 |
 | 一般 Docker 映像 | 根目錄 `Dockerfile`，發布 `ghcr.io/kcayut/webclock:X.Y.Z` |
 | App 商店來源 | 根目錄 `repository.yaml` 與 `homeassistant/addon/config.yaml` |
 | App 映像 | 從專案根目錄建置 `homeassistant/addon/Dockerfile`，發布 `ghcr.io/kcayut/webclock-addon:版本` |
@@ -51,7 +54,7 @@ HACS 使用自訂儲存庫，無須等待加入預設清單；已有 HACS 的使
 
 ## 版本來源與規則
 
-根目錄 **`VERSION` 是產品版號來源**。Server 的 `webclock.__version__` 與 `/api/health.version` 讀取它；Docker 預設版本、HA App `config.yaml`、整合 `manifest.json` 與卡片 `const.py` 必須一致。`python scripts/build_release.py --check --tag vX.Y.Z` 與 CI 會拒絕不一致的版號，發行包只讀取 Git 已提交內容，不會帶入本機 `.env`、TLS 私鑰或使用者資料。
+根目錄 **`VERSION` 是產品版號來源**。Server 的 `webclock.__version__` 與 `/api/health.version` 讀取它；Docker 預設版本、HA App `config.yaml`、整合 `manifest.json`、`const.py` 與卡片 `www/webclock-cards.js` 的 `VERSION` 必須一致。`python tools/build_release.py --check --tag vX.Y.Z` 與 CI 會拒絕不一致的版號，發行包只讀取 Git 已提交內容，不會帶入本機 `.env`、TLS 私鑰或使用者資料。
 
 採用 `X.Y.Z`：不相容變更增加 `X`，相容功能增加 `Y`，相容修正增加 `Z`；Git tag 使用 `vX.Y.Z`。首次公開使用 **1.1.0**，因 App／整合／卡片此前已標示 1.1.0，沿用可避免既有安裝版號倒退。產品版號與 `auth_schema`、裝置 schema、備份格式等相容性欄位分開管理。
 
@@ -63,7 +66,7 @@ HACS 使用自訂儲存庫，無須等待加入預設清單；已有 HACS 的使
 2. 在同一個已驗證提交建立並推送 `vX.Y.Z` tag，觸發 **Installation tests and release**；不要先建立公開 Release。一般分支 push／PR 只驗證，正式 tag 才能進入發布。
 3. CI 先執行 Linux 新安裝、Server 回歸、真實 HA 2026.9.4／Python 3.14 整合與卡片測試；再驗證普通 Docker 與 HA App 的 `linux/amd64`、`linux/arm64` 映像，包含啟動、健康檢查及適用的入口隔離／資料保存。
 4. 通過後發布 `webclock` 與 `webclock-addon` 固定版號映像，再以**未登入 GHCR** 的環境檢查兩個映像的 manifest 與架構。第一次建立 package 時，如預設為 Private，維護者須在 GitHub Packages 將兩者設成 **Public**，再重跑失敗工作；匿名檢查不通過時不得公開 Release。
-5. 最後才建立公開 GitHub Release，附上同一提交產生的安裝器、Server 壓縮檔、離線 ZIP 與 `SHA256SUMS`，並設為最新正式版。回讀 Release 版號、資產與匿名下載結果，再更新本頁的公開驗證狀態。
+5. 最後才建立公開 GitHub Release，附上同一提交產生的安裝器、獨立 Docker 更新入口、Server 壓縮檔、離線 ZIP 與 `SHA256SUMS`，並設為最新正式版。回讀 Release 版號、資產與匿名下載結果，執行 `release-smoke` 並指定舊 `from_version` 驗證 Docker 跨版本更新，再更新本頁的公開驗證狀態。
 6. 在 HA OS 加入來源並安裝；在 HACS 加入來源、下載、重啟 HA，再用 App 日誌的整合網址＋六碼加入並新增三張卡片。核對網址的主機名稱與 App「資訊」相同、可由 HA 內部 DNS 解析；不要以普通 Docker 的容器名代替 Supervisor 主機名稱驗收。記錄 HA／Supervisor 版本、架構、映像 digest 與結果。
 
 workflow 使用標準公開 GitHub runner；沒有使用付費大型 runner 或保留 build cache／artifact。映像發布僅限原始 `kcayut/webclock` repository，PR 與 fork 不取得發布權限。
@@ -77,6 +80,6 @@ workflow 使用標準公開 GitHub runner；沒有使用付費大型 runner 或�
 - 完整搬家驗收：分別匯出加密及未加密 `.webclock` → 新 App 選檔自動辨識，加密檔才須輸入密碼 → 預覽 → 停止來源並確認還原 → 原 managed 帳密登入。核對所有帳號、iCal（含 `ICAL_URL`）、顯示設定、提醒、鬧鐘、原生事件、群組、裝置與程式授權，確認未加密提示清楚且管理員驗證仍保留。
 - 分別驗證全新目標保留裝置／程式憑證、已有資料目標撤銷兩者、所有 session／舊邀請失效；HA 登入不能越過 managed 帳號登入，managed 管理員可在 `/mode` 管理成員，但模式切換停用，App options 不變。
 - 驗證密碼錯誤、檔案損壞、預覽後資料異動均不覆寫；中斷後重啟先處理 `.portable-restore-pending/`，保留私人的最近一次還原前副本。HA OS 實際斷電／冷備份與瀏覽器 Cookie 接續須另行實測。
-- 本機 App 與商店 App 有不同的安裝身份與資料目錄，可用[完整備份流程](guide.md#完整備份與搬家)搬家；確認新 App 正常後才退役舊 App。只更新既有 Local App 者繼續用[本機更新流程](installation.md#update)，不要移除後重裝來更新。
+- 本機 App 與商店 App 有不同的安裝身份與資料目錄，可用[完整備份流程](guides/guide.md#完整備份與搬家)搬家；確認新 App 正常後才退役舊 App。只更新既有 Local App 者繼續用[本機更新流程](installation.md#update)，不要移除後重裝來更新。
 
 官方依據：[App 發布](https://developers.home-assistant.io/docs/apps/publishing/)、[App 儲存庫](https://developers.home-assistant.io/docs/apps/repository/)、[HACS 整合結構](https://www.hacs.xyz/docs/publish/integration/)、[HACS manifest 與版本](https://www.hacs.xyz/docs/publish/start/)。

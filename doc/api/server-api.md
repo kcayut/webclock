@@ -4,7 +4,7 @@
 
 ## B0–B4 管理、群組與受管裝置（2026-10-06）
 
-已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 由主機端明確啟用。裝置可自行退出，管理員可移組、停用／恢復或刪除個別授權。操作方式見[使用指南](guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](b0-b1-contract.md)。
+已提供管理員登入／登出、owner、群組 CRUD、六碼邀請、原子裝置加入、依身份下發的顯示／鬧鐘，以及後台群組面板。既有安裝仍為 `self`；`managed` 由主機端明確啟用。裝置可自行退出，管理員可移組、停用／恢復或刪除個別授權。操作方式見[使用指南](../guides/guide.md)，持久 schema 與更新／還原邊界見 [B0–B1 契約](../development/b0-b1-contract.md)。
 
 `GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403，`/api/v1/browser-alarms` 回 401。管理登入不能替代裝置憑證。非私人 `/api/health` 提供 `managed_device_schema: 3`、`managed_devices_ready: true`，表示新端點已實作，不表示正式模式切換或實機驗收已完成。以下舊 schema 2 裝置 API 均以 self 模式為前提，現有 ESP codec 不會自動支援 schema 3。
 
@@ -32,7 +32,7 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 
 ### Schema 3 裝置 API
 
-Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](home-assistant.md)。
+Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](../home-assistant.md)。
 
 | 路徑 | 方法與用途 |
 | --- | --- |
@@ -64,12 +64,12 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 
 私人快取依裝置身份隔離；401／403、身份改變或租期到期會清除私人事件、公告與網頁鬧鐘。短暫網路錯誤只能沿用尚未過期的本次資料。鬧鐘依 `Asia/Taipei` 計算，顯示時區另依群組設定；聯動來源缺失會排除相應鬧鐘，不退回每天響鈴。此流程未提供 ESP 的七天離線觸發清單，也不代表舊 iPad、鎖屏音訊或硬體已驗收。
 
-**繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../README.md)
+**繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../../README.md)
 
 本專案負責管理排程、台灣工作日資料、裝置登錄、同步版本及最後回報，並讓自架時鐘頁執行網頁鬧鐘。
 `/schedules` 編輯與預覽鬧鐘排程，時鐘頁 `/` 播放內建音色並顯示紅邊提示；`/admin` 分開管理顯示設定、訂閱行事曆與文字提醒。
 
-獨立硬體由裝置端執行。[`firmware/`](../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
+獨立硬體由裝置端執行。[`firmware/`](../../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](../guides/esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
 自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。新 schema 3 裝置依已認證身份取得單台／群組的有效內容指派；一般成員帳號與多租戶仍未提供。
@@ -95,7 +95,7 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 
 `GET /api/v2/device/display` 增加 `announcements: [{id, text, visible_until}]`，`visible_until` 為 Unix 毫秒，取目前快照最長 300 秒、絕對到期及本次顯示時段結束的最早值；不縮短整份 display／鬧鐘租約。公告不混入 `events`、`next_event`、伺服器 local 行事曆來源或 browser-alarms，也不使用 `schedules.type=announcement`。舊 schema 1／2 維持原契約；匿名 self 狀態的公告為空，已加入的 self 裝置可使用 v2 取得符合目標的公告。瀏覽器不持久化公告，失權、身份／範圍變更、租約或個別期限到期均清除。
 
-表單允許先保存空對象，但不投遞；拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 保留公告欄位，匯入驗證結構及已存在對象的歸屬；已不存在的歷史 ID 可保留，但不授權或建立對象。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。管理頁使用方式見[公告指南](guide.md#指定群組或裝置的公告)。
+表單允許先保存空對象，但不投遞；拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 保留公告欄位，匯入驗證結構及已存在對象的歸屬；已不存在的歷史 ID 可保留，但不授權或建立對象。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。管理頁使用方式見[公告指南](../guides/guide.md#指定群組或裝置的公告)。
 
 ## 啟動與目錄
 
@@ -187,7 +187,7 @@ webclock_state/              私人執行資料，不進 Git
 
 API 接受 JSON，預期錯誤以 `{"error":"..."}` 回應（已匹配的 API 路由）。資料驗證錯誤為 400、不存在為 404、儲存 I/O 失敗為 500；單檔寫入失敗不覆蓋該檔原資料；裝置退出／撤權的跨檔失敗邊界見上文。另有認證、Content-Type、大小及 HTTP 方法錯誤，見下方錯誤表。請求上限 1 MiB。
 
-本文件涵蓋排程、行事曆聯動及裝置同步；舊時鐘的設定／提醒 API 另依[使用指南](guide.md)操作。以下 URL 均相對於自行架設的 Server，不是公開 GitHub Pages 時鐘。
+本文件涵蓋排程、行事曆聯動及裝置同步；舊時鐘的設定／提醒 API 另依[使用指南](../guides/guide.md)操作。以下 URL 均相對於自行架設的 Server，不是公開 GitHub Pages 時鐘。
 
 | 路徑 | 方法與用途 |
 | --- | --- |
@@ -298,7 +298,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 
 ## 裝置 API
 
-路徑保留 `/api/v1/device/*`，設定回應的 **`schema_version` 為 2**。裝置 API 不提供舊硬體 `sound`、`volume`、`repeat`、`snooze_minutes` 播放欄位；`browser_sound` 原本描述網頁音色，不是通用硬體播放指令。ESPHome 原型明確將非靜音音色映射成同一種嗶聲，音量另乘裝置上限，詳見[硬體映射](esp-home.md#顯示聲音與按鍵)。schema 1 的舊 client 需要更新，不能將 schema 2 視為 schema 1 相容。
+路徑保留 `/api/v1/device/*`，設定回應的 **`schema_version` 為 2**。裝置 API 不提供舊硬體 `sound`、`volume`、`repeat`、`snooze_minutes` 播放欄位；`browser_sound` 原本描述網頁音色，不是通用硬體播放指令。ESPHome 原型明確將非靜音音色映射成同一種嗶聲，音量另乘裝置上限，詳見[硬體映射](../guides/esp-home.md#顯示聲音與按鍵)。schema 1 的舊 client 需要更新，不能將 schema 2 視為 schema 1 相容。
 
 | 路徑 | 方法與用途 |
 | --- | --- |
@@ -408,7 +408,7 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 - 所有下載與解析都要設容量／逾時限制；超量、未知 schema、缺欄位、半份 JSON、Flash 寫入失敗均不得當作成功。不可截掉超額排程後回報整份已同步。
 - 網路錯誤時退避重試並保留原有效快取；只在資料變動時寫入 Flash。輪詢不能阻塞本機響鈴。已知認證失效時停止存取受保護資料，不能改用空 token 重試；現有 schema 2 沒有授權有效期／離線撤銷協定。
 
-一般客戶端可每 30 秒檢查 config、每 60 秒回報 status；這是起始建議，不是 Server 主動推送。目前 ESPHome 原型約每 30 秒檢查並回報一次，失敗時退避，詳見[原型同步流程](esp-home.md#已實作的同步流程)。
+一般客戶端可每 30 秒檢查 config、每 60 秒回報 status；這是起始建議，不是 Server 主動推送。目前 ESPHome 原型約每 30 秒檢查並回報一次，失敗時退避，詳見[原型同步流程](../guides/esp-home.md#已實作的同步流程)。
 
 ### 狀態與同步確認
 
@@ -535,13 +535,13 @@ curl -i -H 'Content-Type: application/json' \
 
 先檢查 HTTP 狀態碼，再依 Content-Type 解析；代理登入頁、未預期例外不保證有 `error` JSON。逾時、斷線及 5xx 不 ACK 未完成同步。ACK 成功但回應遺失可重送；格式合法但不屬於該裝置的指令 ID 不會清除其他裝置命令。
 
-韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時不能憑空得知正確日期，詳見 [ESPHome 裝置指南](esp-home.md#時間斷網斷電與認證)。
+韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時不能憑空得知正確日期，詳見 [ESPHome 裝置指南](../guides/esp-home.md#時間斷網斷電與認證)。
 
 ### 後續擴充界線
 
 ESPHome 目標中的「未來七天觸發清單」尚未提供 API，現有 `schema_version=2` 不會回 `valid_until` 或完整行事曆聯動事件。`/api/v1/browser-alarms` 也不是七天離線清單，不能代替這個功能。
 
-實作時需另定能力／版本契約，包含清單有效期限、滾動補充、來源更新與失效、刪除、範圍切換，以及容量上限的完整性處理；沿用目前 Server 排程計算，保留既有 schema 2 語意。B2–B4 已提供瀏覽器的獨立裝置認證、群組顯示與個別授權生命週期；主機可明確使用 `--enable-managed` 切換模式，舊 `--enable-managed-test` 為相容別名。ESP 韌體接入新契約仍待後續，不能在舊 status 任意增加尚未支援的欄位。開發順序與硬體驗收見 [ESPHome 裝置指南](esp-home.md)。
+實作時需另定能力／版本契約，包含清單有效期限、滾動補充、來源更新與失效、刪除、範圍切換，以及容量上限的完整性處理；沿用目前 Server 排程計算，保留既有 schema 2 語意。B2–B4 已提供瀏覽器的獨立裝置認證、群組顯示與個別授權生命週期；主機可明確使用 `--enable-managed` 切換模式，舊 `--enable-managed-test` 為相容別名。ESP 韌體接入新契約仍待後續，不能在舊 status 任意增加尚未支援的欄位。開發順序與硬體驗收見 [ESPHome 裝置指南](../guides/esp-home.md)。
 
 ## 舊原型與資料保存
 
@@ -552,7 +552,7 @@ ESPHome 目標中的「未來七天觸發清單」尚未提供 API，現有 `sch
 - `webclock_state/sounds/`、`webclock_state/fake-device/` 等既有使用者資料不會自動刪除。Server 不再讀取它們。
 - 舊根目錄 `manual_notes.json` 仍會首次複製到狀態目錄，保留原檔。`NOTES_FILE` 和 `WEBCLOCK_STATE_DIR` 仍可覆寫路徑。
 
-請備份整個狀態目錄、提醒檔和 `.env`。`/admin` 的 JSON 匯出仍只包含顯示設定與手動提醒，不含智慧排程或裝置資料。Linux 更新器會備份預設路徑和服務實際設定的 `WEBCLOCK_STATE_DIR`、`NOTES_FILE`，失敗時嘗試一起回復程式、套件與資料。Docker 的自訂路徑仍需自行掛載及備份。操作方式與首次升級步驟見[繁體中文使用指南](guide.md#備份資料與更新)。
+請備份整個狀態目錄、提醒檔和 `.env`。`/admin` 的 JSON 匯出仍只包含顯示設定與手動提醒，不含智慧排程或裝置資料。Linux 更新器會備份預設路徑和服務實際設定的 `WEBCLOCK_STATE_DIR`、`NOTES_FILE`，失敗時嘗試一起回復程式、套件與資料。Docker 的自訂路徑仍需自行掛載及備份。操作方式與首次升級步驟見[繁體中文使用指南](../guides/guide.md#備份資料與更新)。
 
 目前用單一 Server process 寫入 JSON，最多 1000 筆排程、100 台裝置；增加多個 worker 前需改用支援跨程序交易的儲存方式。
 
@@ -575,4 +575,4 @@ bash -n setup.sh scripts/setup.sh update_clock.sh
 
 測試涵蓋管理 CRUD、工作日／補班日、跳過、同步版本、存取檢查、裝置回報／確認及舊資料保存。更新整合測試會啟動真實舊版／新版 Server，驗證 Git 升級、外部資料路徑及新版寫入後的失敗還原；需完整 Git 歷史與舊版使用的 `holidays` 套件，缺少時會明確略過。systemd、pip 與 Linux 服務環境查詢使用替身，不代表目標主機部署或硬體驗收。
 
-本機驗證、iPad mini 1／iOS 9 待驗收步驟，以及 2027 年之後工作日資料維護方式，見[第一階段驗收紀錄](phase1-acceptance.md)。
+本機驗證、iPad mini 1／iOS 9 待驗收步驟，以及 2027 年之後工作日資料維護方式，見[第一階段驗收紀錄](../acceptance/phase1-acceptance.md)。

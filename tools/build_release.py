@@ -7,22 +7,23 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import sys
 import tarfile
 import time
 import zipfile
 
-try:
-    from scripts.release_versions import release_version
-except ModuleNotFoundError:
-    from release_versions import release_version
-
-
 ROOT = Path(__file__).resolve().parents[1]
+if __package__ in (None, ''):
+    sys.path.insert(0, str(ROOT))
+from scripts.release_versions import release_version
+
+
 SERVER_FILES = frozenset((
     'VERSION', '.env.example', '.dockerignore', '.gitignore', 'Dockerfile', 'docker-compose.yml', 'requirements.txt',
     'app.py', 'index.html', 'sw.js', 'setup.sh', 'install.sh', 'update_clock.py',
-    'update_clock.sh', 'portable_update_clock.sh', 'README.md', 'README_en.md',
+    'update_clock.sh', 'docker_update.sh', 'README.md', 'README_en.md',
     'README_jp.md', 'CHANGELOG.md', 'repository.yaml', 'hacs.json',
+    'homeassistant/README.md', 'homeassistant/prepare_local_app.sh',
 ))
 SERVER_DIRS = ('webclock/', 'templates/', 'static/', 'scripts/', 'doc/',
                'custom_components/webclock/', 'homeassistant/addon/')
@@ -44,6 +45,7 @@ def check_versions(read_text, tag=None):
         raise ValueError('Integration manifest version must match VERSION')
     checks = {
         'custom_components/webclock/const.py': r'^VERSION = "' + re.escape(version) + r'"$',
+        'custom_components/webclock/www/webclock-cards.js': r"^  const VERSION = '" + re.escape(version) + r"';$",
         'homeassistant/addon/config.yaml': r'^version: ["\x27]?' + re.escape(version) + r'["\x27]?$',
         'docker-compose.yml': r'ghcr\.io/kcayut/webclock:\$\{WEBCLOCK_VERSION:-' + re.escape(version) + r'\}',
     }
@@ -59,7 +61,8 @@ def check_versions(read_text, tag=None):
 
 
 def is_public(path):
-    return all(part not in PRIVATE_NAMES and not part.startswith('.webclock-')
+    return all(part not in PRIVATE_NAMES and part != 'webclock_updater_run'
+               and not part.startswith(('.webclock-', '.docker-update', '.docker-migration'))
                and (not part.startswith('.env') or part == '.env.example')
                and not part.endswith(('.pyc', '.pyo', '.pem', '.key'))
                for part in PurePosixPath(path).parts)
@@ -80,8 +83,19 @@ def build_release(output, version=None, root=ROOT):
                 raise ValueError('Release files must be regular files: ' + name)
             member.mode = 0o755 if member.mode & 0o111 else 0o644
             files[name] = (member, source.extractfile(member).read())
+    # Keep published archive paths while maintaining portable scripts in one place.
+    for name in ('portable_update_clock.sh', 'portable_docker_update.sh'):
+        source_name = 'scripts/update/' + name
+        if source_name not in files:
+            raise ValueError('Missing release file: ' + source_name)
+        files[name] = files[source_name]
     actual = check_versions(lambda name: files[name][1].decode(), 'v' + version if version else None)
-    for required in ('install.sh', 'setup.sh', 'scripts/setup.sh', 'app.py', 'webclock/app.py', *CLOCK_FILES):
+    for required in ('install.sh', 'setup.sh', 'scripts/setup.sh', 'app.py', 'webclock/app.py',
+                     'homeassistant/prepare_local_app.sh',
+                     'scripts/update/update_clock.sh', 'scripts/update/docker_update.sh',
+                     'portable_docker_update.sh', 'docker_update.sh', 'scripts/docker_update.py',
+                     'scripts/docker_update_install.py', 'scripts/docker_update_migrate.py',
+                     'scripts/update_settings.py', *CLOCK_FILES):
         if required not in files:
             raise ValueError('Missing release file: ' + required)
     output = Path(output)
@@ -110,7 +124,15 @@ def build_release(output, version=None, root=ROOT):
         raise ValueError('install.sh must have exactly one empty RELEASE_VERSION assignment')
     installer.write_bytes(installer_source)
     installer.chmod(0o755)
-    artifacts = (installer, server_path, clock_path)
+    docker_bootstrap = output / 'portable_docker_update.sh'
+    bootstrap_source, replacements = re.subn(
+        rb'^RELEASE_VERSION=""$', ('RELEASE_VERSION="' + actual + '"').encode(),
+        files['portable_docker_update.sh'][1], flags=re.M)
+    if replacements != 1:
+        raise ValueError('portable_docker_update.sh must declare RELEASE_VERSION exactly once')
+    docker_bootstrap.write_bytes(bootstrap_source)
+    docker_bootstrap.chmod(0o755)
+    artifacts = (installer, docker_bootstrap, server_path, clock_path)
     (output / 'SHA256SUMS').write_text(''.join(
         hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in artifacts))
     return actual

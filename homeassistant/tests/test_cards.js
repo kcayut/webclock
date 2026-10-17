@@ -40,6 +40,13 @@ function card(kind, suffix = kind) {
 (async () => {
   assert.equal(registry.size, 3);
   const clock = card('time');
+  hass.states['sensor.time'].attributes.integration_version = '99.0.0';
+  clock._render();
+  assert.equal(clock.shadowRoot.querySelector('.update-notice').hidden, false);
+  assert.match(clock.shadowRoot.querySelector('.update-notice').textContent, /Reload the browser/);
+  delete hass.states['sensor.time'].attributes.integration_version;
+  clock._render();
+  assert.equal(clock.shadowRoot.querySelector('.update-notice').hidden, true);
   const first = clock.shadowRoot.querySelector('.body').querySelector('.clock').textContent;
   now += 3000; clock._render();
   assert.notEqual(clock.shadowRoot.querySelector('.body').querySelector('.clock').textContent, first);

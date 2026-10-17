@@ -69,9 +69,11 @@ class UpdatesApiTest(unittest.TestCase):
         self.helper.assert_not_called()
 
     def test_self_mode_cannot_trigger_machine_changes(self):
+        self.helper.return_value['status']['project_path'] = '/home/private-account/webclock'
         with patch.object(AuthService, 'mode', return_value='self'):
             response = self.call(self.anonymous)
             self.assertFalse(response.json['writable'])
+            self.assertNotIn('project_path', response.json)
             self.assertEqual(response.json['reason'], 'managed_required')
             self.helper.reset_mock()
             response = self.call(self.anonymous, '/api/updates/check', 'POST', {})
@@ -109,6 +111,64 @@ class UpdatesApiTest(unittest.TestCase):
         response = self.call(self.admin, '/api/updates/install', 'POST', dict(expected_version='1.2.0'))
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json['error'], 'busy')
+
+    def test_docker_with_helper_reports_docker_installation_type_and_provider(self):
+        self.helper.return_value['status']['update_provider'] = 'docker'
+        self.helper.return_value['status']['project_path'] = '/srv/custom-clock'
+        with patch.dict('os.environ', {'WEBCLOCK_DOCKER': '1', 'WEBCLOCK_HA_APP': '0'}):
+            response = self.call(self.admin)
+            self.assertEqual(response.status_code, 200)
+            data = response.json
+            self.assertEqual(data['installation_type'], 'docker')
+            self.assertEqual(data['update_provider'], 'docker')
+            self.assertTrue(data['supported'])
+            self.assertTrue(data['writable'])
+            self.assertEqual(data['project_path'], '/srv/custom-clock')
+
+    def test_docker_cannot_send_commands_to_bare_metal_worker(self):
+        self.helper.return_value['status']['update_provider'] = 'systemd'
+        with patch.dict('os.environ', {'WEBCLOCK_DOCKER': '1'}):
+            self.assertFalse(self.call(self.admin).json['writable'])
+            self.helper.reset_mock()
+            response = self.call(self.admin, '/api/updates/install', 'POST', {'expected_version': '1.2.0'})
+            self.assertEqual(response.status_code, 409)
+            self.helper.assert_called_once_with('status')
+
+    def test_docker_returns_running_version_and_temporary_helper_outage(self):
+        self.helper.return_value['status'].update(update_provider='docker', current_version='99.0.0')
+        with patch.dict('os.environ', {'WEBCLOCK_DOCKER': '1'}):
+            self.assertEqual(self.call(self.admin).json['current_version'], updates.__version__)
+            (self.root / 'configured').write_text('docker')
+            self.helper.side_effect = FileNotFoundError()
+            with patch.object(updates, 'SOCKET_PATH', str(self.root / 'control.sock')):
+                self.assertEqual(self.call(self.admin).status_code, 503)
+
+    def test_docker_without_helper_reports_not_configured(self):
+        self.helper.side_effect = FileNotFoundError()
+        with patch.dict('os.environ', {'WEBCLOCK_DOCKER': '1', 'WEBCLOCK_HA_APP': '0'}):
+            with patch.object(updates, 'CONFIG_PATH', str(self.root / 'missing.json')):
+                response = self.call(self.admin)
+                self.assertEqual(response.status_code, 200)
+                data = response.json
+                self.assertEqual(data['installation_type'], 'docker')
+                self.assertEqual(data['update_provider'], 'docker')
+                self.assertFalse(data['supported'])
+                self.assertEqual(data['reason'], 'not_configured')
+
+    def test_ha_app_reports_supervisor_provider_and_management_url(self):
+        with patch.object(updates, 'platform_info', return_value={
+            'installation_type': 'ha_app',
+            'update_provider': 'supervisor',
+            'management_url': '/config/updates',
+        }):
+            response = self.call(self.admin)
+            self.assertEqual(response.status_code, 200)
+            data = response.json
+            self.assertEqual(data['installation_type'], 'ha_app')
+            self.assertEqual(data['update_provider'], 'supervisor')
+            self.assertEqual(data['management_url'], '/config/updates')
+            self.assertFalse(data['supported'])
+            self.assertEqual(data['reason'], 'unsupported')
 
 
 if __name__ == '__main__':

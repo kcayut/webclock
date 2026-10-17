@@ -4,6 +4,8 @@
 
 [繁體中文](README.md) · [English](README_en.md) · **日本語**
 
+[ドキュメント一覧](doc/README.md) · [ディレクトリ構成と保守](doc/development/repository-layout.md)（繁体字中国語）
+
 **[GitHub の公開時計を開く](https://kcayut.github.io/webclock/)** · [ダウンロードとオフライン利用](doc/installation.md#no-server)（繁体字中国語）
 
 iPad、タブレット、使っていない画面を大きな時計にできます。公開版はそのまま利用でき、セルフホスト版ではカレンダー、リマインダー、ブラウザーアラーム、ナイトモード、バックアップを使えます。
@@ -17,9 +19,9 @@ iPad、タブレット、使っていない画面を大きな時計にできま�
 - **オフライン時計をダウンロード：**パソコンで [ZIP をダウンロードして展開](doc/installation.md#offline-download)し、一番外側の `index.html` をブラウザーで開きます。サーバーのインストールは不要です。タブレットは[オフラインキャッシュと iOS 9 の制限](doc/installation.md#offline-cache)を参照してください（繁体字中国語）。
 - **セルフホスト：**パソコン、NAS、Raspberry Pi で完全版を実行します。`/admin` で表示・カレンダー・文字リマインダーを、`/schedules` でアラームと端末状態を管理します。
 
-セルフホスト版の UI は繁体字中国語、英語、日本語に対応し、Google、Apple iCloud、その他の ICS カレンダーを購読できます。非公開 URL は公開時計、状態応答、旧 JSON 出力には含まれません。管理画面から完全バックアップを1つの `.webclock` ファイルとして保存し、アカウント・非公開カレンダー・端末設定を新サーバーや HA App に移行できます。初期設定ではパスワードで暗号化しますが、暗号化せずに保存することもできます。[バックアップと移行](doc/guide.md#完整備份與搬家)（繁体字中国語）を参照してください。
+セルフホスト版の UI は繁体字中国語、英語、日本語に対応し、Google、Apple iCloud、その他の ICS カレンダーを購読できます。非公開 URL は公開時計、状態応答、旧 JSON 出力には含まれません。管理画面から完全バックアップを1つの `.webclock` ファイルとして保存し、アカウント・非公開カレンダー・端末設定を新サーバーや HA App に移行できます。初期設定ではパスワードで暗号化しますが、暗号化せずに保存することもできます。[バックアップと移行](doc/guides/guide.md#完整備份與搬家)（繁体字中国語）を参照してください。
 
-時計は時刻・日付・曜日を先に表示し、読み込み済みで前面実行中のページは通信・保存領域・追加機能の失敗で停止しない設計です。端末管理では名前、自報能力、同期確認状態を扱えます。グループ、6文字の参加コード、端末別認可、移動、無効化・再開、取り消しに対応します。managedモードはホスト側で明示的に有効化し、既存環境は既定でselfを維持します。操作と制限は[ガイド](doc/guide_jp.md#端末同期状態)、現在の検証と未実施項目は [A 段階の検収記録](doc/phase-a-acceptance.md) / [B 段階のグループ・認証検証](doc/phase-b-acceptance.md)（繁体字中国語）を参照してください。CI と iPad mini 1／iOS 9 の実機検収は分けて記録します。
+時計は時刻・日付・曜日を先に表示し、読み込み済みで前面実行中のページは通信・保存領域・追加機能の失敗で停止しない設計です。端末管理では名前、自報能力、同期確認状態を扱えます。グループ、6文字の参加コード、端末別認可、移動、無効化・再開、取り消しに対応します。managedモードはホスト側で明示的に有効化し、既存環境は既定でselfを維持します。操作と制限は[ガイド](doc/guides/guide_jp.md#端末同期状態)、現在の検証と未実施項目は [A 段階の検収記録](doc/acceptance/phase-a-acceptance.md) / [B 段階のグループ・認証検証](doc/acceptance/phase-b-acceptance.md)（繁体字中国語）を参照してください。CI と iPad mini 1／iOS 9 の実機検収は分けて記録します。
 
 ## インストール方法
 
@@ -51,11 +53,11 @@ curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.s
 
 詳しい手順（繁体字中国語）：[ソースからのビルド](doc/installation.md#source-install)、[Python で手動実行](doc/installation.md#manual-python)、[インストール引数](doc/installation.md#install-options)、[初回設定](doc/installation.md#first-run)、[トラブルシューティング](doc/installation.md#install-troubleshooting)。
 
-**[端末を時計として使う →](doc/display-devices.md)**（繁体字中国語）：iPad／iPhone、Android、Windows、Mac のホーム画面アイコン、全画面表示、スリープ防止をバージョン別に説明。初代 iPad mini／iOS 9 も含みます。
+**[端末を時計として使う →](doc/guides/display-devices.md)**（繁体字中国語）：iPad／iPhone、Android、Windows、Mac のホーム画面アイコン、全画面表示、スリープ防止をバージョン別に説明。初代 iPad mini／iOS 9 も含みます。
 
 Linux／Docker は **self（自用）** が既定です。管理者ログインと端末別認可が必要な場合、新規導入に `--managed` と TLS 証明書のオプションを追加します。HA App は HA ログインで管理画面を保護し、managed 完全バックアップを読み込んだ場合は元の WebClock アカウントでもログインします。HA OS、ARM、旧 iPad の実機検証は[リリース状況](doc/ha-release.md)で別途記録しています。開発用のローカルビルドも利用できます。
 
-**詳しい説明：**[日本語ガイド](doc/guide_jp.md) · [Home Assistant 統合とカード](doc/home-assistant.md) · [端末 API](doc/server-api_jp.md) · [ESPHome 開発](doc/esp-home.md) · [ファームウェア](firmware/README.md)（HA・ファームウェア関連は繁体字中国語）。
+**詳しい説明：**[日本語ガイド](doc/guides/guide_jp.md) · [Home Assistant 統合とカード](doc/home-assistant.md) · [端末 API](doc/api/server-api_jp.md) · [ESPHome 開発](doc/guides/esp-home.md) · [ファームウェア](firmware/README.md)（HA・ファームウェア関連は繁体字中国語）。
 
 ## 開発支援
 

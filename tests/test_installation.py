@@ -184,7 +184,7 @@ exec "$REAL_PYTHON" "$@"
 
     def test_ha_package_is_complete_and_does_not_replace_or_include_private_state(self):
         destination = self.root / 'local-app'
-        script = ROOT / 'scripts/prepare_ha_app.sh'
+        script = ROOT / 'homeassistant/prepare_local_app.sh'
         result = subprocess.run(['bash', str(script), str(destination)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         for name in ('config.yaml', 'Dockerfile', 'DOCS.md', 'CHANGELOG.md', 'icon.png', 'app.py', 'sw.js', 'VERSION', 'requirements.txt',

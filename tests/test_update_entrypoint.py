@@ -57,6 +57,8 @@ class UpdateEntrypointTest(unittest.TestCase):
         (self.remote / 'scripts/update_clock.py').write_text(SAMPLE_UPDATER)
         shutil.copy2(ROOT / 'update_clock.py', self.remote / 'update_clock.py')
         shutil.copy2(ROOT / 'update_clock.sh', self.remote / 'update_clock.sh')
+        (self.remote / 'scripts/update').mkdir()
+        shutil.copy2(ROOT / 'scripts/update/update_clock.sh', self.remote / 'scripts/update/update_clock.sh')
         self.commit()
         self.git('fetch', cwd=self.project)
         self.standalone = self.root / 'downloaded-updater.py'
@@ -121,11 +123,13 @@ class UpdateEntrypointTest(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD', cwd=self.project), self.old_head)
 
     def test_normal_shell_entrypoint_forwards_project_argument(self):
-        result = subprocess.run(['bash', str(self.remote / 'update_clock.sh'), str(self.project)],
-                                cwd=self.root, check=True, text=True, stdout=subprocess.PIPE)
-        output = json.loads(result.stdout)
-        self.assertEqual(output['argv'][1:], [str(self.project)])
-        self.assertEqual(output['file'], str(self.remote / 'scripts/update_clock.py'))
+        for name in ('update_clock.sh', 'scripts/update/update_clock.sh'):
+            with self.subTest(entrypoint=name):
+                result = subprocess.run(['bash', str(self.remote / name), str(self.project)],
+                                        cwd=self.root, check=True, text=True, stdout=subprocess.PIPE)
+                output = json.loads(result.stdout)
+                self.assertEqual(output['argv'][1:], [str(self.project)])
+                self.assertEqual(output['file'], str(self.remote / 'scripts/update_clock.py'))
 
     def test_normal_import_alias_and_dependency_errors(self):
         import update_clock

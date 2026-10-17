@@ -8,6 +8,11 @@ on:
         required: true
         default: '1.1.0'
         type: string
+      from_version:
+        description: Optional older Docker release to install before upgrading to version
+        required: false
+        default: ''
+        type: string
 
 permissions: {}
 
@@ -26,6 +31,7 @@ jobs:
             port: 5000
     env:
       VERSION: ${{ inputs.version }}
+      FROM_VERSION: ${{ inputs.from_version }}
       INSTALL_KIND: ${{ matrix.kind }}
       HEALTH_PORT: ${{ matrix.port }}
       PYTHONDONTWRITEBYTECODE: '1'
@@ -36,6 +42,7 @@ jobs:
           [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] || {
             echo 'Version must be X.Y.Z or a prerelease such as X.Y.Z-beta.1.' >&2; exit 1;
           }
+          [[ -z "$FROM_VERSION" || "$FROM_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]
           work="$RUNNER_TEMP/webclock-release-smoke"
           test ! -e "$work"
           mkdir "$work"
@@ -55,7 +62,7 @@ jobs:
             if docker inspect webclock >/dev/null 2>&1; then
               echo 'Refusing to replace an existing WebClock container.' >&2; exit 1;
             fi
-            WEBCLOCK_HTTP_PORT="$HEALTH_PORT" bash "$work/install.sh" --docker --version "$VERSION" --dir "$work/app"
+            WEBCLOCK_HTTP_PORT="$HEALTH_PORT" bash "$work/install.sh" --docker --version "${FROM_VERSION:-$VERSION}" --dir "$work/app"
           else
             if systemctl cat webclock.service >/dev/null 2>&1; then
               echo 'Refusing to replace an existing WebClock service.' >&2; exit 1;
@@ -63,13 +70,29 @@ jobs:
             PORT="$HEALTH_PORT" bash "$work/install.sh" --version "$VERSION" --dir "$work/app"
           fi
 
+      - name: Upgrade the older public Docker release with the published entry
+        if: matrix.kind == 'docker' && inputs.from_version != ''
+        run: |
+          work="$RUNNER_TEMP/webclock-release-smoke"
+          base="https://github.com/kcayut/webclock/releases/download/v$VERSION"
+          curl --proto '=https' --proto-redir '=https' -fsSL "$base/portable_docker_update.sh" -o "$work/portable_docker_update.sh"
+          expected=$(awk '$2 == "portable_docker_update.sh" {print $1}' "$work/SHA256SUMS")
+          [[ "$expected" =~ ^[a-f0-9]{64}$ ]]
+          printf '%s  %s\n' "$expected" "$work/portable_docker_update.sh" | sha256sum --check -
+          sudo sh -c 'printf "%s\n" "{\"retained\":true}" > "$1/webclock_state/upgrade-sentinel.json"' sh "$work/app"
+          before=$(sudo sha256sum "$work/app/webclock_state/upgrade-sentinel.json")
+          sudo bash "$work/portable_docker_update.sh" --project "$work/app" --version "$VERSION"
+          test "$before" = "$(sudo sha256sum "$work/app/webclock_state/upgrade-sentinel.json")"
+          sudo bash "/var/lib/webclock-docker-recovery/$VERSION/portable_docker_update.sh" --offline --project "$work/app" --diagnose
+
       - name: Verify release version, self mode and data after restart
         run: |
           python3 - <<'PYTHON'
           import http.cookiejar, json, os, pathlib, subprocess, time, urllib.request
           project = pathlib.Path(os.environ['RUNNER_TEMP']) / 'webclock-release-smoke/app'
           version, kind = os.environ['VERSION'], os.environ['INSTALL_KIND']
-          assert (project / 'VERSION').read_text().strip() == version
+          host_version = os.environ.get('FROM_VERSION') if kind == 'docker' else None
+          assert (project / 'VERSION').read_text().strip() == (host_version or version)
           assert not (project / '.webclock-bootstrap').exists()
           assert not (project / '.webclock-install.json').exists()
           base = 'http://127.0.0.1:' + os.environ['HEALTH_PORT']
