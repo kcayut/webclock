@@ -214,9 +214,9 @@ class Updater:
                          next_check=time.time() + RETRY_INTERVAL)
 
     def _install(self, expected):
-        self._change(state='updating', phase='checking', error=None, result=None)
         started = False
         try:
+            self._change(state='updating', phase='checking', error=None, result=None)
             release = self._discover()
             self._record_release(release)
             if not release['update_available'] or release['latest_version'] != expected:

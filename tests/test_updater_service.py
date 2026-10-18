@@ -255,6 +255,16 @@ class UpdaterServiceTest(unittest.TestCase):
         self.assertEqual(self.updater.status()['channel'], 'stable')
         self.assertTrue(self.updater.status()['auto_update'])
 
+    def test_install_worker_save_failure_does_not_leave_updating_state(self):
+        self.updater._change(state='updating', phase='checking')
+        with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):
+            self.updater._install('1.2.0')
+        status = self.updater.status()
+        self.assertEqual(status['state'], 'failed')
+        self.assertTrue(status['auto_update_paused'])
+        self.assertGreater(status['next_check'], service.time.time() + 3500)
+        self.update.assert_not_called()
+
     def test_scheduler_survives_save_failure_and_postpones_retry(self):
         self.updater.data['next_check'] = service.time.time() - 10
         with patch.object(self.updater, '_save', side_effect=OSError('Disk full')):

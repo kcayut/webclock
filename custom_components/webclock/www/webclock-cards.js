@@ -1,7 +1,7 @@
 /* WebClock cards: HA transports data; device credentials never enter this file. */
 (() => {
   'use strict';
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const labels = {
     'zh-TW': {time: '時間', calendar: '行事曆', alarms: '鬧鐘', empty: '目前沒有項目', unavailable: '尚無有效授權資料', enabled: '個已啟用鬧鐘', allDay: '全天'},
     en: {time: 'Time', calendar: 'Calendar', alarms: 'Alarms', empty: 'No items', unavailable: 'No authorized data available', enabled: 'enabled alarms', allDay: 'All day'},

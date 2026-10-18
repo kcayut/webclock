@@ -98,8 +98,10 @@ def migrate(project, destination, source):
                     info = new._container(running=False, allow_missing=True)
                     if info:
                         new._run(['rm', info['Id']])
+                old.pin_image(pre['source_image_id'], restart_policy='no')
                 old.start_service()
                 old.wait_for_health(pre['source_version'], pre['source_image_id'], pre['deployment_mode'])
+                old.restore_restart_policy(pre['source_image_id'], pre['restart_policy'])
                 save('rolled_back')
             except Exception:
                 try:

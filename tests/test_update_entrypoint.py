@@ -131,6 +131,16 @@ class UpdateEntrypointTest(unittest.TestCase):
                 self.assertEqual(output['argv'][1:], [str(self.project)])
                 self.assertEqual(output['file'], str(self.remote / 'scripts/update_clock.py'))
 
+    def test_shell_help_does_not_enable_or_restart_the_updater(self):
+        (self.remote / 'scripts/update_clock.py').write_text(
+            'import argparse\ndef main():\n    argparse.ArgumentParser().parse_args()\n')
+        (self.remote / 'scripts/enable_updates.sh').write_text('echo unexpected-service-change; exit 91\n')
+        for name in ('update_clock.sh', 'scripts/update/update_clock.sh'):
+            result = subprocess.run(['bash', str(self.remote / name), '--help'], cwd=self.root,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn('unexpected-service-change', result.stdout)
+
     def test_normal_import_alias_and_dependency_errors(self):
         import update_clock
         from scripts import update_clock as implementation

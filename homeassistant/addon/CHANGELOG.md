@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Server、App、HACS 整合與卡片同步至 1.2.0。
+- 整合顯示實際 Server／Integration 版本與對齊狀態，卡片版本不同時提示重新載入。
+- 保留 HA Ingress、持久資料與原生更新入口；完整備份／還原及跨環境安裝維護流程補入回歸驗證。
+- 同版獨立 Server 提供 Docker 安全更新與離線救援；HA App 繼續由 HA 管理更新，仍標示 experimental。
+
 ## 1.1.0
 
 - Server、Docker、App、整合與卡片統一為 1.1.0；沿用原有 App 版號作為首個公開 Release。

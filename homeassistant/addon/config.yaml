@@ -1,5 +1,5 @@
 name: WebClock
-version: "1.1.0"
+version: "1.2.0"
 slug: webclock
 description: Run WebClock Server inside Home Assistant
 url: https://github.com/kcayut/webclock

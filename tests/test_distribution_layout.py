@@ -32,7 +32,8 @@ class DistributionLayoutTest(unittest.TestCase):
                     destination = repository / name
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, destination)
-            for args in (('init', '-q'), ('add', '.'),
+            for args in (('init', '-q'), ('config', 'maintenance.auto', 'false'),
+                         ('config', 'gc.auto', '0'), ('add', '.'),
                          ('-c', 'user.name=Layout Test', '-c', 'user.email=layout@example.test',
                           'commit', '-qm', 'candidate layout')):
                 subprocess.run(['git', *args], cwd=repository, check=True, capture_output=True)
@@ -52,7 +53,8 @@ class DistributionLayoutTest(unittest.TestCase):
             with tarfile.open(assets / f'webclock-{version}.tar.gz') as archive:
                 archive.extractall(work / 'extracted', filter='data')
             installed = work / 'extracted' / f'webclock-{version}'
-            for name in ('install.sh', 'setup.sh', 'docker_update.sh', 'portable_docker_update.sh',
+            for name in ('install.sh', 'setup.sh', 'update_clock.sh', 'scripts/update/update_clock.sh',
+                         'docker_update.sh', 'portable_docker_update.sh',
                          'scripts/update/docker_update.sh', 'scripts/update/portable_docker_update.sh'):
                 with self.subTest(entrypoint=name):
                     self.assertIn('usage:', run('bash', str(installed / name), '--help').lower())

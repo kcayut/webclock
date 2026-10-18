@@ -259,7 +259,12 @@ def protected_paths(project, *layouts):
     candidates = {project / '.env': 'file', project / 'manual_notes.json': 'file',
                   project / 'webclock_state': 'directory'}
     for state, notes in layouts:
-        if notes in (state, state / 'settings.json') or notes in state.parents:
+        reserved = [state / name for name in (
+            'settings.json', 'auth.json', 'auth-required', 'device-access.json', 'devices.json',
+            'control-clients.json', 'control-requests.json', 'calendar.json', 'schedules.json',
+            'events.json', 'owners', '.portable-restore-pending', '.portable-restore-previous')]
+        if (notes == state or notes in state.parents
+                or any(notes == path or path in notes.parents for path in reserved)):
             raise RuntimeError('Settings directory and notes file overlap.')
         candidates[state] = 'directory'
         candidates[notes] = 'file'
@@ -732,6 +737,10 @@ def perform_update(project, channel=None, expected_version=None, progress=None):
                 print('Previous service and data restored.', flush=True)
                 error.rollback_succeeded = True
             except Exception as rollback_error:
+                try:
+                    run(['systemctl', 'stop', 'webclock'])
+                except Exception as stop_error:
+                    print('Could not stop the unverified service: ' + str(stop_error), file=sys.stderr)
                 print('Automatic recovery failed: ' + str(rollback_error), file=sys.stderr)
         print('Backup retained at: ' + str(backup), file=sys.stderr)
         raise

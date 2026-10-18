@@ -44,7 +44,7 @@ Linux、Docker、Home Assistant 三種方式只決定 **Server 跑在哪裡**，
 
 ## 免安裝：GitHub 線上時鐘與離線使用
 
-**[直接開啟 WebClock →](https://kcayut.github.io/webclock/)**　**[下載離線使用的 ZIP →](https://github.com/kcayut/webclock/releases/download/v1.1.0/webclock-clock-1.1.0.zip)**
+**[直接開啟 WebClock →](https://kcayut.github.io/webclock/)**　**[下載離線使用的 ZIP →](https://github.com/kcayut/webclock/releases/download/v1.2.0/webclock-clock-1.2.0.zip)**
 
 公開時鐘只顯示**時間、日期與星期**，使用裝置本身的時間與時區，不向 WebClock Server 校時；離線時仍依靠裝置時鐘。先確認系統時間正確即可，不需 GitHub 帳號、Python、Docker 或 WebClock 管理員帳號。這個版本不提供自架版的行事曆、提醒、鬧鐘或群組管理。
 
@@ -59,7 +59,7 @@ Linux、Docker、Home Assistant 三種方式只決定 **Server 跑在哪裡**，
 
 ### 電腦：下載後直接開啟，不用架 Server
 
-1. 點[下載 v1.1.0 離線 ZIP](https://github.com/kcayut/webclock/releases/download/v1.1.0/webclock-clock-1.1.0.zip)，或到[最新正式版](https://github.com/kcayut/webclock/releases/latest)下載 `webclock-clock-版本.zip`。
+1. 點[下載 v1.2.0 離線 ZIP](https://github.com/kcayut/webclock/releases/download/v1.2.0/webclock-clock-1.2.0.zip)，或到[最新正式版](https://github.com/kcayut/webclock/releases/latest)下載 `webclock-clock-版本.zip`。
 2. **先解壓縮整個 ZIP**：Windows 按右鍵選「解壓縮全部」，Mac 雙擊 ZIP，Linux 使用系統壓縮檔工具。不要直接在壓縮檔預覽裡開 HTML。
 3. 打開解壓後的 `webclock-clock-版本` 資料夾，用 Chrome、Edge、Firefox 或電腦版 Safari 開啟**最外層的 `index.html`**。通常雙擊即可；若被文字編輯器開啟，改用右鍵「開啟方式」選瀏覽器。不要開 `templates/index.html`。
 4. **保留整個資料夾**，尤其是同一層的 `static`；不能只把 `index.html` 單獨移到桌面。想快速開啟時，替它建立桌面捷徑／替身即可。
@@ -91,7 +91,7 @@ Safari 從 iOS 11.3 才加入 Service Worker 與 Cache API；這只是瀏覽器�
 
 網站快取由瀏覽器管理，清除網站資料、儲存空間不足或系統回收後可能消失；之後需重新連線準備。加入主畫面、書籤或 Safari 閱讀列表本身，都不能代替上述檢查。下載與快取也不會自動防止螢幕休眠，仍需設定[全螢幕與恆亮](guides/display-devices.md)。
 
-以下快速指令用於**全新 Server 安裝**，預設安裝到目前位置的 `webclock` 子目錄；可加 `--dir /安裝路徑`。安裝器先查 GitHub 最新正式 Release，再固定使用該版本的程式與映像，不會安裝開發中的 `main`。要指定版本，加 `--version 1.1.0`。已安裝者請看[更新](#update)或[既有安裝啟用 managed](#enable-managed)。
+以下快速指令用於**全新 Server 安裝**，預設安裝到目前位置的 `webclock` 子目錄；可加 `--dir /安裝路徑`。安裝器先查 GitHub 最新正式 Release，再固定使用該版本的程式與映像，不會安裝開發中的 `main`。要指定版本，加 `--version 1.2.0`。已安裝者請看[更新](#update)或[既有安裝啟用 managed](#enable-managed)。
 
 <a id="bare-metal"></a>
 ## 1. Bare metal
@@ -188,8 +188,8 @@ git clone https://github.com/kcayut/webclock.git && cd webclock && bash homeassi
 下列 `install.sh` 範例指已下載的 `/tmp/webclock-install.sh`；參數加在 `bash` 後的腳本名稱之後。目的地必須尚不存在，請使用絕對路徑，Linux 服務路徑不能含空白、`%` 或反斜線。
 
 ```bash
-# 全新 Linux 安裝，固定到已發行的 v1.1.0：
-bash /tmp/webclock-install.sh --dir "$HOME/webclock" --version 1.1.0
+# 全新 Linux 安裝，固定到 v1.2.0：
+bash /tmp/webclock-install.sh --dir "$HOME/webclock" --version 1.2.0
 # 全新 Docker 安裝，使用 8080 主機連接埠：
 WEBCLOCK_HTTP_PORT=8080 bash /tmp/webclock-install.sh --docker --dir "$HOME/webclock"
 ```
@@ -206,7 +206,7 @@ WEBCLOCK_HTTP_PORT=8080 bash /tmp/webclock-install.sh --docker --dir "$HOME/webc
 | `--build` | 不接受 | 搭配 `--docker`，以目前原始碼建置 |
 | `--help` | 顯示下載到的安裝器支援的參數 | 顯示目前 checkout 支援的參數，不會安裝 |
 
-**更新選項有版本限制：**v1.1.0 公開安裝包不含 `--enable-updates`、`--auto-update on|off`。不要把開發中版本的參數直接附加到舊 Release 指令；先核對使用版本的 `--help`。既有安裝請走[更新流程](#update)，不要重新安裝。
+**v1.2.0 起**支援 `--enable-updates`、`--auto-update on|off`，用法見[更新維護](operations/update-operations.md#新安裝)。v1.1.0 公開安裝包沒有這些選項；先核對使用版本的 `--help`。既有安裝請走[更新流程](#update)，不要重新安裝。
 
 <a id="source-install"></a>
 ## 從原始碼安裝與本機建置
@@ -214,11 +214,11 @@ WEBCLOCK_HTTP_PORT=8080 bash /tmp/webclock-install.sh --docker --dir "$HOME/webc
 適合需要檢查／修改程式，或已有完整原始碼的使用者。需先準備 Git；也可以下載 Release 的 **Source code (zip)**，完整解壓後進入包含 `app.py`、`setup.sh` 與 `requirements.txt` 的目錄。
 
 ```bash
-git clone --branch v1.1.0 https://github.com/kcayut/webclock.git webclock
+git clone --branch v1.2.0 https://github.com/kcayut/webclock.git webclock
 cd webclock
 ```
 
-`v1.1.0` 是固定版本範例；要測試開發中程式可省略 `--branch v1.1.0`，但 `main` 不等於已公開驗收的版本。已有 checkout 者不必重新 clone，也不要為安裝而覆蓋本機修改。
+`v1.2.0` 是固定版本範例；要測試開發中程式可省略 `--branch v1.2.0`，但 `main` 不等於已公開驗收的版本。已有 checkout 者不必重新 clone，也不要為安裝而覆蓋本機修改。
 
 選擇其中一種：
 
@@ -437,16 +437,16 @@ HOST=127.0.0.1 ./venv/bin/python app.py
 <a id="update"></a>
 ## 更新與確認
 
-新版的首次啟用、明確選擇自動安裝、受保護目錄遷移、worker 更新與失敗復原，見[完整操作流程](operations/update-operations.md)。這些新增入口尚待新版正式發布。
+新版的首次啟用、明確選擇自動安裝、受保護目錄遷移、worker 更新與失敗復原，見[完整操作流程](operations/update-operations.md)。這些新增入口從 v1.2.0 提供。
 
 | 環境 | 更新／確認 |
 | --- | --- |
 | Bare metal（HTTP／HTTPS） | managed 管理員可於「更新」頁面（`/updates`）點擊一鍵升級；self 使用宿主機指令；或在安裝目錄執行 `sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`（首次從 v1.1.0 升級時會一併啟用背景更新服務；亦可執行[新版獨立入口](guides/guide.md#更新程式) `bash scripts/update/portable_update_clock.sh /實際安裝路徑`）。正式版安裝自動選最新正式 Release；`systemctl status webclock` 查看服務 |
-| Docker（Compose） | **尚未發布的新更新器：**在相容的本機 Docker 安裝使用 `bash docker_update.sh`；Linux＋systemd 可明確啟用網頁控制，見下節。遇到自訂 Compose、遠端／rootless daemon 或未完成交易時會停止，不能直接套用到所有 NAS／Docker Desktop。v1.1.0 公開包尚不包含這些入口。 |
+| Docker（Compose） | **v1.2.0 起：**在相容的本機 Docker 安裝使用 `bash docker_update.sh`；Linux＋systemd 可明確啟用網頁控制，見下節。遇到自訂 Compose、遠端／rootless daemon 或未完成交易時會停止，不能直接套用到所有 NAS／Docker Desktop。v1.1.0 公開包尚不包含這些入口。 |
 | HA 商店 App | HA 顯示新版後，在 App 頁先建立備份，再按「更新」；WebClock 更新頁會提供前往 HA 更新頁的直接入口；不要移除 App |
 | HA 本機 App | 先做 HA 備份；用新版原始碼產生至新的暫存目錄，核對後替換 `/addons/webclock` 的程式檔，再於 App 頁重建／啟動；不要移除 App 或 `/data` |
 
-### Docker 更新器（開發中、尚未公開發行）
+### Docker 更新器（v1.2.0 起）
 
 目前支援官方單一服務 Compose、本機 `/var/run/docker.sock`、Linux amd64／arm64 映像。客製 override、多服務、非預設資料掛載、遠端 Docker、rootless／user namespace remapping 會拒絕自動接管。Docker Desktop／NAS 不在已驗收範圍；不能將 CLI 視為所有平台的替代保證。
 
@@ -487,7 +487,7 @@ sudo bash scripts/enable_docker_updates.sh
 2. 使用 `sudo bash docker_update.sh --diagnose` 查看交易。舊版沒有此檔時，可用獨立入口加 `--project /實際安裝路徑 --diagnose`；不要刪除 journal 來強迫重試，不要移除 App／volume 或 prune 映像。
 3. 先用 `--diagnose` 查看交易 ID，再依[復原流程](operations/update-operations.md#docker-復原)明確選擇 `--recover current` 或 `--recover previous`。工具會驗證、封存原 journal 並確認健康；資料已變更者不能回退舊 image。
 
-這些是目前程式行為，**尚未代表公開 Release、Linux Docker／systemd、HA OS 或 HACS 實機已驗收**。具體證據與缺口見 [Docker／HA 更新驗證](acceptance/docker-ha-update-acceptance.md)。舊 v1.1.0 的一次性 bootstrap 已實作並納入發行打包，公開資產仍待發布與驗收，不要為了取得更新器重新執行新安裝指令覆蓋原目錄。
+各項 CI、公開資產及實機驗收分開記錄於 [Docker／HA 更新驗證](acceptance/docker-ha-update-acceptance.md)。舊 v1.1.0 可使用 v1.2.0 的獨立更新入口；不要為了取得更新器重新執行新安裝指令覆蓋原目錄。
 
 ### Bare Metal 自動升級與發行管道
 

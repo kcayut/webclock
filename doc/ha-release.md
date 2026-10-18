@@ -4,7 +4,7 @@
 
 ## 目前狀態
 
-- Docker／HA 更新功能目前另有未發行的工作目錄實作；其截至 2026-10-16 的本機修正與尚待驗收範圍見 [更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。不可將下列既有 v1.1.0 發行證據套用到新更新器。
+- **v1.2.0 發行準備中**：新增 Docker 安全更新、離線救援、worker 維護與 HA 版本對齊，並補修備份、安裝及回退流程。發布與公開下載驗證完成後在本頁補入獨立證據；[本機修正及實機缺口](acceptance/docker-ha-update-acceptance.md)不等於發行成功。
 
 - 首個公開版本定為 **1.1.0**；Server、Docker、App 與 Integration 使用相同版本。HA App 仍標示 `experimental`。
 - 已補入正式版安裝入口、獨立離線 ZIP、版本與 SHA256 檢查、安裝健康檢查／重試、managed TLS 設定及完整發行流程。App 來源、HACS 標準目錄、整合換址與可選加密的 `.webclock` 完整備份一併交付。
@@ -40,7 +40,7 @@
 | --- | --- |
 | 產品版號與發行紀錄 | 根目錄 `VERSION`、`CHANGELOG.md`、`doc/releases/vX.Y.Z.md` |
 | 一行安裝入口 | Release 的 `install.sh`，固定同一版號；使用者入口為 `releases/latest/download/install.sh` |
-| 舊 Docker 升級／worker 維護入口 | 下一版新增 `portable_docker_update.sh`，固定同一版號並驗證 Server 壓縮檔；操作與限制見 [更新維護](operations/update-operations.md) |
+| 舊 Docker 升級／worker 維護入口 | v1.2.0 起提供 `portable_docker_update.sh`，固定同一版號並驗證 Server 壓縮檔；操作與限制見 [更新維護](operations/update-operations.md) |
 | Server 原始碼與 Docker 部署檔 | Release 的 `webclock-X.Y.Z.tar.gz`，從已提交的公開檔案打包 |
 | 電腦離線時鐘 | Release 的 `webclock-clock-X.Y.Z.zip`，解壓後開啟最外層 `index.html` |
 | 下載完整性 | Release 的 `SHA256SUMS`，包含安裝器、獨立 Docker 更新入口與兩個壓縮檔；v1.1.0 尚無新更新入口 |

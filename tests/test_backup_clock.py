@@ -105,6 +105,14 @@ class HostBackupTest(unittest.TestCase):
         self.assertEqual(dict(os.environ), before)
         self.assertEqual(self.snapshot(roots), original)
 
+    def test_host_backup_rejects_notes_aliasing_authorization_data(self):
+        project, values, roots = self.installation('aliased-notes')
+        before = self.snapshot(roots)
+        for name in ('auth.json', 'device-access.json', 'owners/member/manual_notes.json'):
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'overlap'):
+                backup.data_roots(project, dict(values, NOTES_FILE='webclock_state/' + name))
+        self.assertEqual(self.snapshot(roots), before)
+
     def test_invalid_archive_is_rejected_before_target_writes(self):
         project, values, roots = self.installation('invalid')
         original = self.snapshot(roots)

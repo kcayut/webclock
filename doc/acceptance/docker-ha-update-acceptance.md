@@ -1,6 +1,6 @@
 # Docker／HA 更新實作與驗證紀錄
 
-查核及修正日期：2026-10-15～2026-10-16。基準提交：`6f20cbd836fc7c8089c32b84f678ea4f7e84e518`；修改尚在本機工作目錄，未提交、推送、發布或部署。原始需求見 [實作計劃](../development/docker-ha-update-plan.md)。
+初次查核及修正日期：2026-10-15～2026-10-16，基準提交為 `6f20cbd836fc7c8089c32b84f678ea4f7e84e518`。這批實作與目錄整理後於 `bae82cb` 提交並推送；尚未發布新版或部署。2026-10-18 的再檢查與補修見下節。原始需求見 [實作計劃](../development/docker-ha-update-plan.md)。
 
 **結論：已有本機實作與回歸證據，不能宣稱 P0～P5 全部完成。** Docker／systemd、HA OS、HACS、實體 ARM 與公開跨版本升級仍為 `not_ready`。
 
@@ -48,7 +48,26 @@
 
 重啟保護目前有命令與狀態模擬證據，**沒有本輪真實主機斷電／Docker daemon 重啟證據**。尚未使用新版線上入口建立過副本的舊安裝，也不具備離線救援工具。
 
-## 本機證據
+## 備份、安裝與更新再檢查（2026-10-18）
+
+本輪以 `bae82cb` 為基準，補修納入 v1.2.0 發行候選。下列問題先以故障注入／錯誤配置重現，再驗證修正：
+
+| 問題 | 修正後行為 |
+| --- | --- |
+| 裸機回退的健康檢查失敗，原服務仍在運行 | 再次停止未通過檢查的服務，保留備份並回報復原失敗；停止命令也失敗時明確記錄 |
+| worker 已接受更新，下一次寫入狀態失敗便跳出錯誤處理 | 更新前狀態寫入納入同一失敗分支；保留失敗狀態、暫停自動安裝並延後重試 |
+| 更新 shell 的 `--help` 也會啟用／重啟 worker，指定另一個目錄時仍操作原目錄 | shell 只轉交 Python 入口；服務更新由成功執行後的共用入口負責 |
+| Docker 複製後只計算現有資料指紋，沒有核對實際備份 | 複製前後資料、備份副本及 Compose／環境設定必須一致才接受快照；失敗不切換新版 |
+| Docker 備份失敗而未重建容器時，回退遺留 `restart=no`；冷搬移也缺少回復策略 | 健康確認後恢復原策略；搬移回退固定原 image ID，確認健康前保持禁止重啟 |
+| 自訂提醒檔可與帳號、其他狀態或還原 journal 重疊 | 安裝、主機備份與裸機更新共用路徑檢查，操作前拒絕危險設定；一般自訂提醒檔仍可使用 |
+| 新安裝僅確認健康與模式，未核對實際版本 | HTTP(S) 健康版本必須與安裝目錄 `VERSION` 一致，否則保留未完成標記 |
+| 打包測試刪除臨時 Git 目錄時，背景維護仍寫入 `.git` | 僅在臨時測試 repository 關閉自動 maintenance／GC；沒有略過清理失敗或修改使用者的 Git 設定 |
+
+本機完整 Python 回歸 **537 項通過**，包含 Docker 交易、bare metal 回退、HA Ingress 搬家備份、權限失效與還原中斷。17 份 JavaScript 測試、shell 語法、版本檢查與 Git 差異檢查通過。打包測試另以 Git trace 確認修正後沒有啟動背景 maintenance。HA Core 整合測試因本機缺少 `aiohttp`／完整 HA 依賴未能執行；這與 HA 備份 API 測試是不同範圍。
+
+獨立讀取上一輪 [安裝 CI](https://github.com/kcayut/webclock/actions/runs/39043282599) 與 [Linux 演練 CI](https://github.com/kcayut/webclock/actions/runs/39043282645)，兩者皆在打包測試的暫存 Git 目錄清理失敗，不能當成部署通過證據。本輪尚未推送或重跑遠端 CI；Docker engine、systemd、HA OS 冷備份／還原與 ARM 實機仍為 `not_ready`。
+
+## 2026-10-16 本機證據
 
 - 完整 Server Python suite：`venv/bin/python -m unittest discover -s tests -p 'test_*.py'`，**525 項通過**，49.390 秒。測試使用暫存安裝與本機 HTTP(S) 伺服器，沒有更新正式服務。
 - Docker 交易、worker 啟用／換版、冷搬移、公開入口、API／背景更新與 Release 打包集中回歸 **94 項通過**，後續完整 suite 包含所有最終修改。涵蓋兩個設定切換中斷點的兩種復原、重啟策略、worker 身分／逾時、離線快取校驗、設定競態與資料保持。
@@ -65,7 +84,7 @@ Docker 單元測試使用依命令回覆的 fake daemon，包含真實暫存檔�
 
 `tests/rehearsal/rehearse_docker_worker.sh` 僅允許一次性 GitHub-hosted Linux runner，以受保護安裝目錄檢查真實 worker 啟用、預設關閉自動安裝、偏好保留、重啟後私有 socket 與 worker refresh。`.github/workflows/release-smoke.yml` 新增 `from_version`，可從舊公開 Docker Release 安裝後，經新版公開入口跨版本升級並核對資料保持，再以保存的工具執行離線診斷；不填此參數仍只是新安裝驗證。
 
-此演練的 Release discovery／pull 使用本地候選映像替代；即使 CI 通過，也只證明容器交易，不代表正式 GitHub Release／GHCR 匿名拉取或 HA 商店升級通過。本機沒有 Docker CLI／daemon，未執行此演練；也未推送啟動遠端 CI。
+此演練的 Release discovery／pull 使用本地候選映像替代；即使 CI 通過，也只證明容器交易，不代表正式 GitHub Release／GHCR 匿名拉取或 HA 商店升級通過。本機沒有 Docker CLI／daemon，未執行此演練；`bae82cb` 的遠端 CI 被前置單元測試清理失敗擋住，尚無部署演練通過證據。
 
 ## 尚待完成
 
@@ -78,7 +97,7 @@ Docker 單元測試使用依命令回覆的 fake daemon，包含真實暫存檔�
 | 宿主機 worker 自身更新 | 本機程式與失敗回復測試通過，明確使用相同版本公開資產 refresh；真實 systemd／公開資產驗收為 `not_ready` |
 | 舊 Docker 冷搬移 | 暫存資料與故障注入通過；真實 Docker engine 與主機重開機為 `not_ready` |
 | v1.1.0 一次性公開 bootstrap | 本機入口、校驗與打包已實作；`not_ready`：v1.1.0 公開資產沒有新入口，需新版發布及跨公開版本 smoke |
-| 版本／發行／公開 smoke | `not_ready`：沒有新 tag、公開資產、image digest、CI run 或跨公開版本證據 |
+| 版本／發行／公開 smoke | `not_ready`：沒有新 tag、公開資產、image digest、CI 成功或跨公開版本證據 |
 | Docker Desktop／NAS／rootless／遠端 daemon | 非首版支援範圍，不能宣稱 CLI 可直接接管 |
 | 實體 ARM／舊 iPad／音訊／長期運行 | `not_ready`：沒有此次實機證據 |
 | P6 跨 App＋Integration 更新 | 未執行，維持原計劃的獨立進階工作 |

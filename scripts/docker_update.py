@@ -402,6 +402,8 @@ class DockerUpdater:
         return entries
 
     def backup(self, operation):
+        self._assert_config()
+        fingerprint = self.data_fingerprint()
         paths = list(self._data_files())
         size = sum(path.stat().st_size for path in paths if path.is_file())
         if shutil.disk_usage(self.project).free < size + 100 * 1024 * 1024:
@@ -417,7 +419,11 @@ class DockerUpdater:
                 shutil.copytree(source, target / name)
             else:
                 shutil.copy2(source, target / name)
-        fingerprint = self.data_fingerprint()
+        self._assert_config()
+        copied = DockerUpdater(target)
+        if (copied.data_fingerprint() != fingerprint or self.data_fingerprint() != fingerprint
+                or copied._config_hash() != self._config_hash()):
+            raise DockerUpdateError('Data changed or backup copy failed verification.', code='backup_mismatch')
         atomic_write(target / 'data-manifest.json', json.dumps(fingerprint, sort_keys=True).encode(), 0o600)
         for path in target.rglob('*'):
             if path.is_file():
@@ -594,6 +600,9 @@ class DockerUpdater:
                     self.wait_for_health(pre['source_version'], pre['source_image_id'], pre['deployment_mode'])
                     if not unchanged:
                         self.restore_restart_policy(pre['source_image_id'], pre['restart_policy'], journal)
+                    else:
+                        # Compose may only restart the existing container, retaining --restart=no.
+                        self._run(['update', '--restart=' + pre['restart_policy'], self._container()['Id']])
                     recovered = True
                 except Exception:
                     try:

@@ -68,6 +68,9 @@ class ReleaseTest(unittest.TestCase):
             path.write_text(content)
         (self.root / 'install.sh').chmod(0o755)
         self.git('init', '-q')
+        # Detached maintenance can still write .git while TemporaryDirectory removes it.
+        self.git('config', 'maintenance.auto', 'false')
+        self.git('config', 'gc.auto', '0')
         self.git('add', '.')
         self.git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '-qm', 'fixture')
 

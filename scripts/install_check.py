@@ -13,7 +13,7 @@ from dotenv import dotenv_values
 
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.update_clock import authorization_state, check_public_health, update_tls_handler
+from scripts.update_clock import authorization_state, check_public_health, protected_paths, update_tls_handler
 
 
 MARKER = '.webclock-install.json'
@@ -89,6 +89,10 @@ def prepare(project, kind, mode, project_id, existing, guard_only=False):
             raise ValueError('State directory overlaps installed program files.')
     if state.exists() and not state.is_dir():
         raise ValueError('State directory must be a directory.')
+    try:
+        protected_paths(project, (state, Path(config['notes'])))
+    except RuntimeError as error:
+        raise ValueError(str(error)) from error
     expected = {'version': 1, 'kind': kind, 'mode': mode, 'project': project_id, 'config': config}
     if marker.is_symlink():
         raise ValueError('Install marker must not be a symlink.')
@@ -129,6 +133,7 @@ def prepare(project, kind, mode, project_id, existing, guard_only=False):
 
 def wait_ready(project, record, timeout=60):
     config = record['config']
+    version = (project / 'VERSION').read_text().strip()
     host = 'host.docker.internal' if record['kind'] == 'docker' else local_host(config['host'])
     if ':' in host:
         host = '[' + host + ']'
@@ -137,7 +142,9 @@ def wait_ready(project, record, timeout=60):
     deadline, last_error = time.monotonic() + timeout, 'No response'
     while time.monotonic() < deadline:
         try:
-            check_public_health(url, deployment_mode=record['mode'], tls_handler=tls)
+            health = check_public_health(url, deployment_mode=record['mode'], tls_handler=tls)
+            if health.get('version') != version:
+                raise RuntimeError('Running version does not match the installed release.')
             return
         except (OSError, ValueError, RuntimeError) as error:
             last_error = str(error)

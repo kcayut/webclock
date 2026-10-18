@@ -43,6 +43,7 @@ class InstallCheckTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
         (self.root / '.env').write_text('PORT=49123\n')
+        (self.root / 'VERSION').write_text('1.1.0\n')
         self.output = io.StringIO()
 
     def prepare(self, **kwargs):
@@ -96,6 +97,28 @@ class InstallCheckTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'identity'):
             self.prepare(guard_only=True)
 
+    def test_notes_cannot_alias_authorization_or_other_application_state(self):
+        for name in ('auth.json', 'auth-required', 'settings.json', 'schedules.json',
+                     'device-access.json', 'owners/member/manual_notes.json',
+                     '.portable-restore-pending/journal.json'):
+            with self.subTest(name=name):
+                (self.root / '.env').write_text('NOTES_FILE=webclock_state/' + name + '\n')
+                with self.assertRaisesRegex(ValueError, 'overlap'):
+                    self.prepare(kind='systemd', guard_only=True)
+                self.assertFalse((self.root / install_check.MARKER).exists())
+        (self.root / '.env').write_text('NOTES_FILE=webclock_state/reminders.json\n')
+        self.prepare(kind='systemd', guard_only=True)
+
+    def test_health_rejects_a_different_running_release(self):
+        self.prepare()
+        record = json.loads((self.root / install_check.MARKER).read_text())
+        with patch.object(install_check.time, 'monotonic', side_effect=[0, 0, 1, 1]), \
+                patch.object(install_check.time, 'sleep'), \
+                patch.object(install_check, 'check_public_health', return_value={'version': '1.0.0'}):
+            with self.assertRaisesRegex(RuntimeError, 'version'):
+                install_check.wait_ready(self.root, record, timeout=1)
+        self.assertTrue((self.root / install_check.MARKER).exists())
+
     def test_managed_tls_checks_trust_hostname_and_matching_key(self):
         cert, key = create_certificate(self.root)
         config = {'WEBCLOCK_TLS_CERT': str(cert), 'WEBCLOCK_TLS_KEY': str(key),
@@ -123,7 +146,7 @@ class InstallCheckTest(unittest.TestCase):
     def test_health_retries_checks_mode_and_reports_failure(self):
         self.prepare()
         record = json.loads((self.root / install_check.MARKER).read_text())
-        with patch.object(install_check, 'check_public_health', side_effect=[OSError('starting'), None]) as health, \
+        with patch.object(install_check, 'check_public_health', side_effect=[OSError('starting'), {'version': '1.1.0'}]) as health, \
                 patch.object(install_check.time, 'sleep'):
             install_check.wait_ready(self.root, record)
         self.assertEqual(health.call_count, 2)

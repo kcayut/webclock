@@ -1,6 +1,6 @@
 # 安裝後的更新、復原與維護
 
-本文件描述目前工作目錄的新增功能。**尚未發布新版 Release；v1.1.0 的公開下載沒有以下新增入口與選項。** 發行後必須用實際公開資產跑過跨版本驗收，才能把下載指令交給使用者。
+本文件適用於 **v1.2.0 起**的更新入口與選項；v1.1.0 安裝需先使用下方的獨立 Docker 入口。各環境的 CI、公開下載及實機證據見[發行驗證](../ha-release.md)。
 
 原始碼中的手動與可攜式更新腳本已集中到 [`scripts/update/`](../../scripts/update/README.md)。根目錄一般更新指令保留轉接；以下公開下載資產名稱及離線救援路徑不變。
 
@@ -15,7 +15,7 @@
 
 ## 舊 Docker 第一次升級
 
-新版發布後，下載獨立入口到安裝目錄外。它只從官方 GitHub Release 下載壓縮檔，驗證 SHA256SUMS、檔案類型、路徑與版本，再執行該版更新器；不覆蓋既有宿主機原始碼、不還原舊資料。
+下載 v1.2.0 或更新正式版的獨立入口到安裝目錄外。它只從官方 GitHub Release 下載壓縮檔，驗證 SHA256SUMS、檔案類型、路徑與版本，再執行該版更新器；不覆蓋既有宿主機原始碼、不還原舊資料。
 
 ```bash
 curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/portable_docker_update.sh -o /tmp/webclock-docker-update.sh

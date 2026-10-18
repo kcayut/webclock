@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -34,6 +35,7 @@ class DockerFixture:
         self.remove_on_failure = False
         self.endpoint = 'unix:///var/run/docker.sock'
         self.actual_environment = self.environment()
+        self.applied_compose = (self.project / 'docker-compose.yml').read_bytes()
 
     def environment(self):
         _, env = module.parse_env_file(self.project / '.env')
@@ -98,12 +100,16 @@ class DockerFixture:
             elif action == 'stop':
                 self.running = False
             elif action == 'up':
+                compose = (self.project / 'docker-compose.yml').read_bytes()
+                recreate = self.missing or compose != self.applied_compose or self.environment() != self.actual_environment
                 self.missing = False
                 reference = self.reference()
                 self.image_id = NEW if reference == NEW else OLD
                 self.actual_environment = self.environment()
                 self.running = True
-                self.restart_policy = self.configured_restart()
+                if recreate:
+                    self.restart_policy = self.configured_restart()
+                self.applied_compose = compose
                 if self.image_id == NEW:
                     if self.mutate:
                         (self.project / 'webclock_state' / 'control-clients.json').write_text('{"revoked": true}')
@@ -187,6 +193,37 @@ class DockerUpdateTest(unittest.TestCase):
         self.assertEqual(up[up.index('--pull') + 1], 'never')
         self.assertIn('--project-name', up)
         self.assertEqual(self.engine.restart_policy, 'always')
+
+    def test_backup_failure_restores_restart_policy_even_without_container_recreation(self):
+        original = (self.project / 'docker-compose.yml').read_bytes()
+        with patch.object(self.updater, 'backup', side_effect=OSError('disk full')):
+            self.assert_failed(True)
+        self.assertEqual((self.project / 'docker-compose.yml').read_bytes(), original)
+        self.assertEqual(self.engine.restart_policy, 'always')
+
+    def test_copied_backup_is_verified_before_starting_the_new_image(self):
+        copy = shutil.copy2
+        def corrupt(source, target, *args, **kwargs):
+            result = copy(source, target, *args, **kwargs)
+            if Path(target).name == 'manual_notes.json':
+                Path(target).write_text('corrupted copy')
+            return result
+        with patch.object(module.shutil, 'copy2', side_effect=corrupt):
+            self.assert_failed(True)
+        self.assertEqual(self.engine.image_id, OLD)
+        self.assertEqual((self.project / 'manual_notes.json').read_text(), '[]')
+
+    def test_live_write_during_backup_does_not_become_a_valid_snapshot(self):
+        copy = shutil.copy2
+        def change_after_copy(source, target, *args, **kwargs):
+            result = copy(source, target, *args, **kwargs)
+            if Path(source) == self.project / 'manual_notes.json':
+                Path(source).write_text('[{"text":"new reminder"}]')
+            return result
+        with patch.object(module.shutil, 'copy2', side_effect=change_after_copy):
+            self.assert_failed(True)
+        self.assertEqual(self.engine.image_id, OLD)
+        self.assertIn('new reminder', (self.project / 'manual_notes.json').read_text())
 
     def test_config_cutover_power_loss_can_recover_both_images(self):
         class PowerLoss(BaseException):

@@ -557,7 +557,9 @@ class UpdaterTest(unittest.TestCase):
     def test_unsafe_data_paths_and_lock_symlink_are_rejected(self):
         for state, notes in ((self.project, self.root / 'notes.json'),
                              (self.project / 'venv/state', self.root / 'notes.json'),
-                             (self.root / 'state', self.root / 'state/settings.json')):
+                             (self.root / 'state', self.root / 'state/settings.json'),
+                             (self.root / 'state', self.root / 'state/auth.json'),
+                             (self.root / 'state', self.root / 'state/owners/member/manual_notes.json')):
             with self.subTest(state=state), self.assertRaises(RuntimeError):
                 updater.protected_paths(self.project, (state, notes))
         victim = self.root / 'untouched'
@@ -609,8 +611,10 @@ class UpdaterTest(unittest.TestCase):
 
     def test_failed_recovery_keeps_backup_and_reports_failure(self):
         with patch.object(updater, 'wait_healthy', side_effect=RuntimeError('crash')):
-            with self.assertRaisesRegex(RuntimeError, 'crash'):
+            with self.assertRaisesRegex(RuntimeError, 'crash') as failure:
                 updater.update(self.project)
+        self.assertFalse(failure.exception.rollback_succeeded)
+        self.assertEqual(self.state, 'inactive')
         backup = next(self.project.glob('.webclock-update-*'))
         self.assertTrue((backup / 'failed-venv').exists())
         manifest = json.loads((backup / 'manifest.json').read_text())

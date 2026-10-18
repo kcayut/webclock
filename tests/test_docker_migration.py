@@ -35,6 +35,7 @@ class MigrationTest(unittest.TestCase):
         self.old.stop_service = Mock()
         self.old.start_service = Mock()
         self.old.wait_for_health = Mock()
+        self.old.restore_restart_policy = Mock()
         self.old._run = Mock()
         self.new = None
         self.fail_health = False
@@ -86,6 +87,7 @@ class MigrationTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.migrate()
         self.old.start_service.assert_called_once()
+        self.old.restore_restart_policy.assert_called_once_with('sha256:' + '1' * 64, 'always')
         self.assertEqual(json.loads((self.project / '.docker-migration.json').read_text())['step'], 'rolled_back')
 
     def test_source_checkout_layout_keeps_both_update_entrypoints(self):

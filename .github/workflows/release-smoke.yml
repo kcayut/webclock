@@ -6,7 +6,7 @@ on:
       version:
         description: Published version (X.Y.Z or X.Y.Z-beta.N)
         required: true
-        default: '1.1.0'
+        default: '1.2.0'
         type: string
       from_version:
         description: Optional older Docker release to install before upgrading to version
