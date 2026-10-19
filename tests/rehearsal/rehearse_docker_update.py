@@ -68,14 +68,16 @@ def main():
                 (project / 'Dockerfile').write_text(dockerfile)
                 run('docker', 'build', '--platform', 'linux/' + architecture, '-t', tag, str(project))
             updater.start_service()
+            last_error = None
             for _ in range(45):
                 try:
                     updater.preflight()
                     break
-                except Exception:
+                except Exception as error:
+                    last_error = error
                     time.sleep(1)
             else:
-                raise RuntimeError('Source container did not become ready')
+                raise RuntimeError('Source container did not become ready') from last_error
             if args.managed:
                 auth_before = hashlib.sha256(auth.read_bytes()).hexdigest()
             real_wait = updater.wait_for_health
@@ -130,6 +132,8 @@ def main():
                     assert hashlib.sha256(auth.read_bytes()).hexdigest() == auth_before
             print('Real Docker image replacement and rollback passed for ' + architecture)
         finally:
+            logs = updater._compose('logs', '--tail', '60', check=False)
+            print(logs.stdout, logs.stderr, file=sys.stderr)
             updater._compose('down', check=False)
             run('docker', 'image', 'rm', *tags)
             # Container-created directories may be owned by root on Linux runners.
