@@ -3,7 +3,8 @@
 set -euo pipefail
 [[ "${GITHUB_ACTIONS:-}" = true && "${RUNNER_ENVIRONMENT:-}" = github-hosted && "$EUID" = 0 ]]
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PROJECT=/opt/webclock-worker-rehearsal
+# Hosted runners allow non-root tooling under /opt; use a protected parent.
+PROJECT=/var/lib/webclock-worker-rehearsal
 for path in "$PROJECT" /etc/webclock-docker-updater.json /etc/systemd/system/webclock-docker-updater.service /usr/local/lib/webclock-docker-updater /var/lib/webclock-docker-updater; do
     [[ ! -e "$path" && ! -L "$path" ]] || { echo "Refusing existing path: $path" >&2; exit 1; }
 done
@@ -25,6 +26,7 @@ chmod 600 "$PROJECT/.env"
 mkdir "$PROJECT/webclock_state" "$PROJECT/tls" "$PROJECT/.webclock-mode-backups-webclock_state" "$PROJECT/webclock_updater_run"
 printf '[]\n' > "$PROJECT/manual_notes.json"
 cd "$PROJECT"
+namei -l "$PROJECT/.env" /usr/local/lib /etc/systemd/system
 docker compose up -d --no-build --pull never
 curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:18502/api/health > /dev/null
 bash scripts/enable_docker_updates.sh
