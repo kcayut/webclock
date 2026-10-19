@@ -50,6 +50,9 @@ with patch.object(install_check.socket, 'socket'):
         self.env['PYTHONPATH'] = str(ROOT)
         self.env['TEST_PROJECT'] = str(self.project)
         self.command('docker', '''printf 'docker %s\\n' "$*" >> "$INSTALL_LOG"
+if [[ "$*" == 'compose run '* && " $* " == *' --no-build '* ]]; then
+    echo 'unknown flag: --no-build' >&2; exit 1
+fi
 if [ "$*" = 'compose ps -aq' ]; then printf '%s' "${EXISTING_CONTAINER:-}"; fi
 if [ "$*" = 'compose config --images' ]; then echo webclock-test; fi
 if [[ "$*" == *'scripts/install_check.py'* ]]; then

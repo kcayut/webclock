@@ -20,7 +20,11 @@ from scripts import docker_update
 
 
 def run(*command, **kwargs):
-    return subprocess.run(command, check=True, text=True, capture_output=True, **kwargs)
+    try:
+        return subprocess.run(command, check=True, text=True, capture_output=True, **kwargs)
+    except subprocess.CalledProcessError as error:
+        print(error.stdout, error.stderr, file=sys.stderr)
+        raise
 
 
 def main():
@@ -50,7 +54,7 @@ def main():
             with (project / '.env').open('a') as output:
                 output.write('WEBCLOCK_TLS_CERT=/app/tls/cert.pem\nWEBCLOCK_TLS_KEY=/app/tls/key.pem\n'
                              'WEBCLOCK_UPDATE_HOST=clock.test\nWEBCLOCK_UPDATE_CA=/app/tls/cert.pem\n')
-            run('docker', 'compose', 'run', '--rm', '-T', '--no-deps', '--no-build', 'webclock',
+            run('docker', 'compose', 'run', '--rm', '-T', '--no-deps', '--pull', 'never', 'webclock',
                 'python', 'scripts/manage_auth.py', 'setup', '--username', 'admin', '--enable-managed',
                 cwd=project, input='disposable-ci-password\ndisposable-ci-password\n')
         auth = project / 'webclock_state/auth.json'

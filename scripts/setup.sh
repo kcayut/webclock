@@ -181,7 +181,7 @@ if $DOCKER; then
     [ -f manual_notes.json ] && [ ! -L manual_notes.json ] || fail "manual_notes.json must be a regular file."
     (umask 077; mkdir -p webclock_state tls .webclock-mode-backups-webclock_state webclock_updater_run)
     if $MANAGED && [ "$("${CHECK[@]}" auth-needed)" = yes ]; then
-        docker compose run --rm --no-deps --no-build webclock python scripts/manage_auth.py setup --username admin --enable-managed
+        docker compose run --rm --no-deps --pull never webclock python scripts/manage_auth.py setup --username admin --enable-managed
     fi
     docker compose up -d --no-build
 else
