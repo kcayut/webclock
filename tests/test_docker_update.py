@@ -61,6 +61,7 @@ class DockerFixture:
 
     def config(self):
         services = {'webclock': {'image': self.reference(), 'environment': self.environment(),
+                    'command': None, 'entrypoint': None,
                     'restart': self.configured_restart(),
                     'ports': [{'target': 5000, 'published': '18500'}],
                     'volumes': [{'type': 'bind', 'source': m['Source'], 'target': m['Destination'],
@@ -200,6 +201,16 @@ class DockerUpdateTest(unittest.TestCase):
             self.assert_failed(True)
         self.assertEqual((self.project / 'docker-compose.yml').read_bytes(), original)
         self.assertEqual(self.engine.restart_policy, 'always')
+
+    def test_explicit_command_overrides_including_empty_values_are_rejected(self):
+        for key in ('command', 'entrypoint'):
+            for value in ('', [], ['python', 'other.py']):
+                with self.subTest(key=key, value=value):
+                    config = self.engine.config()
+                    config['services']['webclock'][key] = value
+                    with patch.object(self.engine, 'config', return_value=config):
+                        self.assertEqual(self.assert_failed().code, 'unsupported_compose')
+        self.assertEqual(self.updater.preflight()['source_version'], '1.1.0')
 
     def test_copied_backup_is_verified_before_starting_the_new_image(self):
         copy = shutil.copy2

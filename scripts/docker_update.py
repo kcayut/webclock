@@ -280,8 +280,10 @@ class DockerUpdater:
         restart_policy = service.get('restart', 'no')
         if not isinstance(restart_policy, str) or not re.fullmatch(r'no|always|unless-stopped|on-failure(?::[1-9][0-9]*)?', restart_policy):
             raise DockerUpdateError('Unsupported restart policy.', code='unsupported_compose')
-        allowed = {'image', 'build', 'container_name', 'restart', 'ports', 'volumes', 'environment', 'networks'}
-        if set(service) - allowed:
+        allowed = {'image', 'build', 'container_name', 'restart', 'ports', 'volumes', 'environment', 'networks',
+                   'command', 'entrypoint'}
+        # Compose renders absent image-command overrides as explicit JSON nulls.
+        if set(service) - allowed or any(service.get(key) is not None for key in ('command', 'entrypoint')):
             raise DockerUpdateError('Custom commands or privileges are unsupported.', code='unsupported_compose')
         reference = service.get('image', '')
         if not (reference.startswith(REPOSITORY + ':') or reference.startswith(REPOSITORY + '@sha256:')
