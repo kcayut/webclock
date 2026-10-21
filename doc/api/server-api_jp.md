@@ -1,6 +1,6 @@
 # WebClock Server：集中管理と端末 API
 
-プログラムからの書き込み：管理画面「プログラムアクセス」(`/integrations`) で個別の認証情報を発行し、`/api/v1/control/*` からアラーム、ローカル予定、表示期間、グループ／端末への割り当てを編集できます。self でもプログラム認証が必要です。managed では管理者による発行と HTTPS が必要で、表示用の参加コードに書き込み権限はありません。[契約と使用例（繁體中文）](control-api.md)を参照してください。音声ファイルのアップロードは含みません。
+プログラムからの書き込み：管理画面「プログラムアクセス」(`/integrations`) で個別の認証情報を発行し、`/api/v1/control/*` からアラーム、ローカル予定、表示期間、グループ／端末への割り当てを編集できます。self でもプログラム認証が必要です。managed では管理者による発行が必要です。既定は HTTPS ですが、ホストで明示的に LAN の HTTP を許可できます（[接続設定](../operations/accounts-and-https.md#https)）。表示用の参加コードに書き込み権限はありません。[契約と使用例（繁體中文）](control-api.md)を参照してください。音声ファイルのアップロードは含みません。
 
 Home Assistant のネイティブ参加: `POST /api/v2/device/token/prepare`, `token/join`, `token/leave`; JSON + `X-WebClock-Client: native-v1`, no browser cookies/headers. See the [native transport contract](server-api.md#非瀏覽器加入home-assistant) and [installation guide](../home-assistant.md).
 
@@ -44,7 +44,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 | `/api/v2/device/browser-alarms` | GET 選択済みアラームと計算結果 |
 | `/api/v2/device/status` | POST 名前・能力・revision・指令 ACK。認証情報から端末を決定し、`id`・`group_id` の自己指定は不可 |
 
-ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed は HTTPS と Secure Cookie を要求します。prepare・join・leave は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
+ブラウザーは prepare → identity による Cookie 確認 → join の順で参加します。待機中の秘密は確定後も同じ端末認証情報として使用するため、成功応答を失って再送しても二重に枠を消費しません。コードは URL やブラウザー保存領域に書きません。`webclock_device` は host-only・HttpOnly・SameSite=Lax、パス `/api/v2/device` の Cookie です。managed の既定は HTTPS ですが、明示的に許可した LAN の HTTP も使用できます。HTTPS の Cookie は Secure、HTTP の Cookie は非 Secure です。prepare・join・leave は Bearer を拒否し、それ以外は独立した端末 Bearer を受け付けます。管理 session や旧共有 `DEVICE_API_TOKEN` は使用できません。Cookie 書き込みには同一オリジンと CSRF が必要です。有効な端末 Bearer は Cookie CSRF を免除しますが、Origin は検査し、クロスオリジン読み取りを許可しません。
 
 退出と管理者による個別アクセスの取り消しは、対象端末の認可、完了済み参加試行、`devices.json` の観測記録を削除します。管理一覧からも消え、全体の上限 100 台の枠を解放します。旧認証情報と旧参加試行の再送は永久に無効となり、API は直ちに拒否します。オフライン端末には既存の最大 300 秒のリースが適用されます。他のメンバー、グループ、ローカルのリマインダーは保持し、元の招待の使用済み枠は戻しません。無効化されたグループからも退出できます。成功後は再度 prepare し、新しい招待で新しい端末 ID として参加できます。保存失敗は 500（端末の退出は `storage_failure`）を返し、Cookie を削除せず、成功とも報告しません。観測記録の削除後に認可の保存が失敗した場合、元の認可は有効なままで、観測記録は次回の status で再作成されます。複数ファイルの原子的なロールバックは保証しません。無効化と移動は認証情報・観察記録を維持します。取り消し後は直接再開できません。
 
@@ -194,7 +194,7 @@ managed の `GET /api/v1/devices` は現在の owner の認可済み端末を、
 
 自用モードは信頼できる LAN の共通管理を維持し、managed モードは管理 session を要求します。Origin/CSRF は認証ではありません。外部公開には HTTPS と適切なプロキシ設定が必要です。
 
-管理用 POST／PUT／PATCH／DELETE はすべて CSRF token と同じセッションの `webclock_csrf` cookie が必要です。設定、リマインダー、バックアップ読み込み、プレビュー、端末への同期要求も含みます。管理画面は自動で送信します。外部 client は GET `/api/csrf` の cookie を保持し、応答の `csrf_token` を `X-CSRF-Token` で送信してください。HTML フォームでは hidden の `csrf_token` を使います。managed では HTTPS の `/login` でログインし、成功後に更新された CSRF token を使います。Origin を省略しても token は必要です。CSRF token の不足・不一致は 403 `csrf_failed`、管理 session の不足・失効は API/JSON 要求の管理書き込み前に 401 `authentication_required` です。クロスオリジン情報は 403 で拒否し、managed の権限チェックでは `cross_origin_forbidden`、CSRF チェックでは `csrf_failed` を返します。[要求例](server-api.md#管理-api)を参照してください。
+管理用 POST／PUT／PATCH／DELETE はすべて CSRF token と同じセッションの `webclock_csrf` cookie が必要です。設定、リマインダー、バックアップ読み込み、プレビュー、端末への同期要求も含みます。管理画面は自動で送信します。外部 client は GET `/api/csrf` の cookie を保持し、応答の `csrf_token` を `X-CSRF-Token` で送信してください。HTML フォームでは hidden の `csrf_token` を使います。managed では HTTPS または明示的に許可した LAN の HTTP の `/login` でログインし、成功後に更新された CSRF token を使います。Origin を省略しても token は必要です。CSRF token の不足・不一致は 403 `csrf_failed`、管理 session の不足・失効は API/JSON 要求の管理書き込み前に 401 `authentication_required` です。クロスオリジン情報は 403 で拒否し、managed の権限チェックでは `cross_origin_forbidden`、CSRF チェックでは `csrf_failed` を返します。[要求例](server-api.md#管理-api)を参照してください。
 
 リマインダー削除 `/delete/<id>` は token 付き POST のみ受け付け、GET／HEAD は 405 です。管理 HTML、エラーページ、token 応答は `no-store` で、クロスオリジン読み取りを許可しません。未初期化の自用モードは一時署名秘密を使うため、再起動で CSRF cookie が失効します。初期化後の署名秘密は通常の再起動で維持されます。ログイン/ログアウトで CSRF token を更新し、ホストのパスワード復元で全管理 session を失効させます。失効後は管理画面を再読み込みするか、新しい CSRF token を取得してください。公開時計に CSRF cookie は不要です。`/api/v1/device/*` の独立した `DEVICE_API_TOKEN` と CSRF 不要の契約は self モードのみで、managed はこれらの旧端末呼び出しを拒否します。CSRF 対策自体は利用者の認証ではありません。
 

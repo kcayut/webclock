@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
+import os
 from pathlib import Path
 import tempfile
 from threading import Barrier
@@ -416,6 +417,28 @@ class EnrollmentTransportTest(unittest.TestCase):
         self.assertEqual(post('token/leave', {}, token).status_code, 200)
         self.assertEqual(post('status', {}, token).status_code, 401)
         self.assertNotEqual(post('token/join', join_body, token).status_code, 200)
+
+    def test_http_opt_in_supports_cookie_pairing_and_native_credentials(self):
+        self.base = 'http://localhost'
+        self.client = self.app.test_client()
+        with patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP='1', WEBCLOCK_HA_APP='0'):
+            self.csrf = self.call('/api/csrf').json['csrf_token']
+            prepared = self.prepare()
+            self.assertEqual(prepared.status_code, 201)
+            self.assertFalse(self.cookie().secure)
+            self.assertTrue(self.cookie().http_only)
+            self.assertEqual(self.cookie().same_site, 'Lax')
+            self.assertEqual(self.call('/api/v2/device/identity').json['status'], 'pending')
+            joined = self.join(prepared.json['attempt_id'])
+            self.assertEqual(joined.status_code, 201, joined.text)
+            self.assertEqual(self.call('/api/v2/device/display').status_code, 200)
+            self.assertEqual(self.call('/api/private').status_code, 401)
+            self.service.update_device(self.auth.owner_id(), joined.json['identity']['device_id'], {'enabled': False})
+            self.assertEqual(self.call('/api/v2/device/display').status_code, 403)
+        # A fresh invitation exercises the same native HA-style contract on HTTP.
+        self.invitation = self.service.create_invite(self.auth.owner_id(), self.group['id'], 1)
+        with patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP='1', WEBCLOCK_HA_APP='0'):
+            self.test_native_join_uses_same_transaction_without_cookie_or_csrf()
 
     def test_native_transport_rejects_browser_metadata_bad_code_http_and_forged_attempt(self):
         client = self.app.test_client(use_cookies=False)

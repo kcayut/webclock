@@ -4,6 +4,25 @@
 
 原始碼中的手動與可攜式更新腳本已集中到 [`scripts/update/`](../../scripts/update/README.md)。根目錄一般更新指令保留轉接；以下公開下載資產名稱及離線救援路徑不變。
 
+## 日常更新
+
+更新前先下載完整備份。以下指令在安裝目錄執行；更新失敗且要求人工復原時，保留資料與交易紀錄，依[復原流程](#docker-復原)處理。
+
+| 環境 | 操作 |
+| --- | --- |
+| Linux | `sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`；已啟用更新服務的 managed 管理員也可使用 `/updates` |
+| Docker v1.2.0 起 | `sudo bash docker_update.sh --check`，確認後執行 `sudo bash docker_update.sh`；僅支援官方單一 Compose、本機系統 Docker |
+| HA 商店 App | App 頁建立備份後按「更新」，再更新 HACS 整合並重啟 HA |
+| HA 本機 App | 備份後用新版原始碼產生至新暫存目錄，核對後替換 `/addons/webclock` 程式檔，再重建／啟動；保留 `/data` |
+
+| 環境 | 狀態與日誌 |
+| --- | --- |
+| Linux | `systemctl status webclock`；`sudo journalctl -u webclock -n 100 --no-pager` |
+| Docker | `docker compose ps`；`docker compose logs --tail=100 webclock` |
+| HA App | App「資訊」與「日誌」 |
+
+更新後以 `/api/health` 核對運行版本及模式，再確認管理設定與顯示內容。Docker Desktop、NAS、rootless／遠端 daemon 不在更新器支援範圍。
+
 ## 新安裝
 
 預設只每日檢查，不自動安裝。既有更新服務的選擇保留，不因重新啟用而改動。
@@ -61,7 +80,7 @@ curl -fsSL https://github.com/kcayut/webclock/releases/download/vVERSION/portabl
 sudo bash /tmp/webclock-docker-update.sh --project /opt/webclock --version VERSION --refresh-worker
 ```
 
-更新器在交易鎖內確認沒有進行中的更新，停止舊 worker，保留上一份程式於 `/usr/local/lib/webclock-docker-updater/previous/`，再替換並重新啟動；保留原有設定與狀態。10 秒內必須由控制 socket 回覆正確 provider、worker 版本及安裝路徑，才算啟用成功。複製、啟動或此項檢查失敗時會嘗試恢復先前程式。這是明確執行的維護操作，不會在容器升級時偷偷更新宿主機程式。
+更新器在交易鎖內確認沒有進行中的更新，停止舊 worker，保留上一份程式於 `/usr/local/lib/webclock-docker-updater/previous/`，再替換並重新啟動；保留原有設定與狀態。10 秒內必須由控制 socket 回覆正確 provider、worker 版本及安裝路徑，才算啟用成功。複製、啟動或此項檢查失敗時會嘗試恢復先前程式。這是明確執行的維護操作，不會在容器升級時自動更新宿主機程式。
 
 ## Docker 復原
 
@@ -134,3 +153,57 @@ App／Integration 繼續使用 HA／HACS 原生更新，不新增可控制整個
 - 實機：HA OS 商店備份／還原、HACS pending restart、主機重開機、真實 session／裝置／control token、ARM／音訊與舊瀏覽器，須另外留下證據。
 
 以上 CI 腳本已加入不代表已執行成功；發布前須記錄實際 SHA、版本、CI run、映像與公開 smoke 結果。
+
+## 更新器設定參考
+
+### Docker 更新器（v1.2.0 起）
+
+目前支援官方單一服務 Compose、本機 `/var/run/docker.sock`、Linux amd64／arm64 映像。客製 override、多服務、非預設資料掛載、遠端 Docker、rootless／user namespace remapping 會拒絕自動接管。Docker Desktop／NAS 不在已驗收範圍；不能將 CLI 視為所有平台的替代保證。
+
+在包含新版更新器的宿主機安裝目錄執行：
+
+```bash
+bash docker_update.sh --check
+bash docker_update.sh
+# beta 是明確選擇，切回 stable 不會降版：
+bash docker_update.sh --channel beta
+# 查看最近交易；--version 只能確認目前管道提供的目標，不能任選舊版：
+bash docker_update.sh --status
+```
+
+CLI 需要可操作本機 Docker 及讀寫安裝資料的帳號。一般升級依序確認運行中版本、映像與 Compose 身分，先拉映像，再停機、冷備份、固定不可變 image ID、重建及確認健康。更新會保存 `.env` 的其他設定與權限，並把安裝目錄的 Compose `image` 固定為實際 image ID；後續更新繼續使用此 CLI，不能只改 `.env` 的版號或執行 `compose pull`。
+
+完整冷備份位於 `.docker-update-backups/<operation ID>/`，含 state、模式備份、legacy notes、`.env`、Compose 與 TLS。備份包含私人資料及私鑰，**未加密**，以目錄權限限制存取；不要公開上傳。正常更新不改寫宿主機程式碼的 `VERSION`，運行版本以映像與 `/api/health` 為準。
+
+**失敗回退：**如果新版尚未改寫任何持久資料，可固定原 image ID 回退，且重新確認健康。若新版已改寫資料、憑證或 schema，保留目前資料與冷備份、停止容器並回報 `manual_recovery`；不會直接覆蓋整包舊 state，也不會復活已撤銷憑證。交易紀錄損壞或中斷也會阻止下一次自動更新。
+
+**網頁控制需另外明確啟用：**Linux＋systemd 宿主機可執行：
+
+```bash
+sudo bash scripts/enable_docker_updates.sh
+```
+
+背景模式要求安裝目錄、Compose、`.env` 及祖先目錄由 root 擁有且不可由其他帳號寫入，建議使用獨立受保護的 `/opt/webclock` 安裝。使用者家目錄可用新版獨立入口的 `--migrate-to /opt/webclock` 明確遷移，詳見[完整操作流程](../operations/update-operations.md)。客製安裝仍需先核對；勿直接對整個家目錄遞迴變更權限。
+
+啟用器把 worker 程式複製到 root 保護的 `/usr/local/lib/webclock-docker-updater/`，不以 root 執行應用程式可修改的原始碼。WebClock 只掛載專用的唯讀 socket 目錄，socket 權限為 `0600`；容器不掛載 Docker socket。更新頁會顯示 worker 版本，可用已驗證公開入口 `--refresh-worker` 更新與運行服務同版的 worker，保留上一份程式與偏好；不會自動更新宿主機 worker。
+
+新註冊的**自動安裝預設關閉**，既有偏好保留；managed 管理員可於 `/updates` 啟用，self 的匿名頁面無法觸發主機更新。首次補 socket 掛載可能重建容器並短暫中斷服務。Docker 全新安裝不會自動註冊 root worker。
+
+原生 HTTPS 使用容器的 TLS 設定，保留憑證與主機名稱驗證。若使用私人 CA，將 CA 放入宿主機 `tls/` 並設定容器路徑，例如 `WEBCLOCK_UPDATE_CA=/app/tls/ca.pem`；`WEBCLOCK_UPDATE_HOST` 填憑證名稱。健康檢查連到本機映射連接埠，不跟隨 redirect，也不略過驗證。
+
+### Linux 更新與發行管道
+
+`webclock-updater.service` 每日檢查版本，自動安裝預設關閉。managed 管理員可在 `/updates` 設定；self 使用[宿主機設定指令](#self-模式與宿主機設定)。升級流程包含備份、套件更新、重啟及健康檢查；失敗時嘗試回復原版本並暫停自動安裝。成功後背景服務會重新載入新版程式。
+
+- `stable`：正式 Release，忽略預先發行版。
+- `beta`：正式版與測試版；切回 stable 不降版，等待更高版號的正式版。
+
+```bash
+sudo bash update_clock.sh --channel stable && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh
+```
+
+測試管道將 `stable` 換成 `beta`。正式安裝以 Git 的 `webclock.releaseChannel` 記錄來源；開發 checkout 保留原 upstream。
+
+原生 HTTPS 的健康檢查在 `.env` 設定 `WEBCLOCK_UPDATE_HOST=clock.example`（憑證名稱）；私人 CA 另設 `WEBCLOCK_UPDATE_CA=/絕對路徑/ca.pem`。檢查連至本機服務，仍驗證憑證且不跟隨重新導向。
+
+舊更新器若顯示「Native HTTPS is not supported」，先備份，改用[獨立更新入口](../guides/guide.md#更新程式)。將入口存至安裝目錄外，保留原程式供失敗還原；不要先覆寫更新器或執行 `git pull`。

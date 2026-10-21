@@ -1,6 +1,6 @@
 # WebClock Server：集中管理與裝置 API
 
-程式寫入入口：管理頁「程式存取」(`/integrations`) 核發個別憑證，Home Assistant、AI 與裝置透過 `/api/v1/control/*` 建立／修改鬧鐘及本地事件、設定顯示區間與指定群組／裝置。self 保留區網管理方式，程式仍須憑證；managed 另要求管理員核發與 HTTPS。顯示配對不自動取得寫入權限。完整契約與例子見[程式寫入 API](control-api.md)。不含音檔上傳。
+程式寫入入口：管理頁「程式存取」(`/integrations`) 核發個別憑證，Home Assistant、AI 與裝置透過 `/api/v1/control/*` 建立／修改鬧鐘及本地事件、設定顯示區間與指定群組／裝置。self 保留區網管理方式，程式仍須憑證；managed 另要求管理員核發，預設 HTTPS；主機可明確允許內網 HTTP（見[連線設定](../operations/accounts-and-https.md#https)）。顯示配對不自動取得寫入權限。完整契約與例子見[程式寫入 API](control-api.md)。不含音檔上傳。
 
 ## B0–B4 管理、群組與受管裝置（2026-10-06）
 
@@ -44,7 +44,7 @@ Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](../home-assis
 | `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
 | `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
 
-瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 使用 Secure 並要求 HTTPS。上述瀏覽器 prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
+瀏覽器先完成 prepare → identity Cookie 確認，再送 join。待加入秘密成功後成為同一裝置憑證，避免遺失成功回應時重複扣額；code 不寫入 URL 或瀏覽器儲存。`webclock_device` 是 host-only、HttpOnly、SameSite=Lax、路徑 `/api/v2/device` 的 Cookie，managed 預設要求 HTTPS；主機明確啟用內網 HTTP 時也可使用。HTTPS Cookie 使用 Secure，HTTP Cookie 不設 Secure，其餘授權限制相同。上述瀏覽器 prepare／join／leave 不接受 Bearer；其他裝置端點接受獨立裝置 Bearer，不能使用管理 session 或舊共用 `DEVICE_API_TOKEN`。Cookie 寫入須同來源與 CSRF；有效裝置 Bearer 通過認證後可免 Cookie CSRF，但仍檢查 Origin，不開放跨來源讀取。
 
 ### 非瀏覽器加入（Home Assistant）
 
@@ -54,7 +54,7 @@ Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](../home-assis
 | `/api/v2/device/token/join` | POST `{"attempt_id":"…","code":"A7K9M2"}`，帶待加入 `Authorization: Bearer <token>`；沿用同一原子加入交易，首次 201、同一成功嘗試重試 200 |
 | `/api/v2/device/token/leave` | POST `{}`，帶自身 Bearer 憑證；200 `{status:"left"}`，停用時仍可退出 |
 
-三個端點須為 JSON 並帶 `X-WebClock-Client: native-v1`；拒絕 Cookie、Origin、Referer 與任何 Sec-Fetch-* 瀏覽器標頭，且不提供 CORS。通過專用原生傳輸檢查後，僅這三個 POST 免 Cookie CSRF；該標頭本身不是授權。managed 仍要求 HTTPS；prepare 只核發無權限的短期秘密，join 必須同時提供匹配的秘密、嘗試 ID 及有效加入碼，沿用名額、到期與限速規則。資料只保存憑證摘要，所有 token 端點回應 `no-store`，不得記錄請求 body／Authorization 或回應秘密。
+三個端點須為 JSON 並帶 `X-WebClock-Client: native-v1`；拒絕 Cookie、Origin、Referer 與任何 Sec-Fetch-* 瀏覽器標頭，且不提供 CORS。通過專用原生傳輸檢查後，僅這三個 POST 免 Cookie CSRF；該標頭本身不是授權。managed 預設要求 HTTPS，明確啟用內網 HTTP 時亦可；prepare 只核發無權限的短期秘密，join 必須同時提供匹配的秘密、嘗試 ID 及有效加入碼，沿用名額、到期與限速規則。資料只保存憑證摘要，所有 token 端點回應 `no-store`，不得記錄請求 body／Authorization 或回應秘密。
 
 成功後以同一 token 讀既有 display、browser-alarms、identity 並 POST status；不得把 token 當成管理 session 或以任意 device ID 接管裝置。HA 將秘密保存於整合設定，不放卡片設定／sensor 屬性，重試保留同一加入嘗試；收到重試衝突才明確重開加入流程。HA 每 15 秒取得完整授權快照，核對 identity 及三種 revision，並沿用最短租約期限；第一版不使用 304 快取，Server 現有 ETag 契約保留不變。
 

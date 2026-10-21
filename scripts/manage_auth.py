@@ -41,7 +41,8 @@ def main(argv=None):
         if args.action == 'setup-code':
             result = service.issue_setup_code(args.expires_in)
             print('One-use setup code: ' + result['code'])
-            print('Expires at Unix time ' + str(result['expires_at']) + '. Enter it at /setup over HTTPS.')
+            print('Expires at Unix time ' + str(result['expires_at']) +
+                  '. Enter it at /setup over HTTPS (or explicitly enabled trusted-LAN HTTP).')
             return 0
         if args.action == 'setup' and not args.enable_managed:
             parser.error('setup requires --enable-managed; existing displays must join with a code after restart')

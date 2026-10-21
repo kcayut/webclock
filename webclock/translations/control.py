@@ -3,7 +3,7 @@ CONTROL_TRANSLATIONS = {
     'zh-TW': {
         'title': '程式存取', 'hint': '讓 Home Assistant、AI 或裝置修改授權範圍內的鬧鐘與事件。顯示裝置的加入碼不具有寫入權限。',
         'self': '自用模式：區網管理免登入；程式寫入仍須使用個別憑證。',
-        'managed': '受管模式：由已登入管理員核發，程式透過 HTTPS 使用個別憑證。',
+        'managed': '受管模式：由已登入管理員核發個別憑證。預設使用 HTTPS；主機可明確允許內網 HTTP。',
         'name': '程式名稱', 'days': '有效天數', 'permissions': '允許的操作', 'create': '建立憑證',
         'own': '可讀寫自己建立的內容；既有內容與可指派對象須在下方另行授權。新增內容不會自動指派給裝置。',
         'advanced': '接收對象與既有內容', 'groups': '可指派的群組', 'devices': '可指派的裝置',
@@ -19,7 +19,7 @@ CONTROL_TRANSLATIONS = {
     'en': {
         'title': 'Program access', 'hint': 'Allow Home Assistant, AI or devices to edit authorized alarms and events. Display pairing codes do not grant write access.',
         'self': 'Self mode: LAN management needs no sign-in; programs still require individual credentials.',
-        'managed': 'Managed mode: a signed-in administrator issues credentials; programs must use HTTPS.',
+        'managed': 'Managed mode: a signed-in administrator issues credentials. HTTPS is the default; the host may explicitly allow LAN HTTP.',
         'name': 'Program name', 'days': 'Valid for days', 'permissions': 'Allowed operations', 'create': 'Create credential',
         'own': 'Access your own created content. Grant existing content and delivery targets separately below. Creating content does not assign it to displays.',
         'advanced': 'Delivery targets and existing content', 'groups': 'Allowed groups', 'devices': 'Allowed devices',
@@ -35,7 +35,7 @@ CONTROL_TRANSLATIONS = {
     'ja': {
         'title': 'プログラムアクセス', 'hint': 'Home Assistant、AI、デバイスに許可したアラームや予定の編集を許可します。表示端末の参加コードには書き込み権限はありません。',
         'self': 'セルフモード：LAN 内の管理にログインは不要です。プログラムには個別の認証情報が必要です。',
-        'managed': '管理モード：ログイン済みの管理者が発行します。プログラムは HTTPS を使用します。',
+        'managed': '管理モード：ログイン済みの管理者が認証情報を発行します。既定は HTTPS です。ホストで明示的に LAN の HTTP を許可できます。',
         'name': 'プログラム名', 'days': '有効日数', 'permissions': '許可する操作', 'create': '認証情報を作成',
         'own': '自分で作成した内容にアクセスできます。既存の内容と配信先は別途許可してください。作成だけでは表示端末に割り当てません。',
         'advanced': '配信先と既存の内容', 'groups': '許可するグループ', 'devices': '許可するデバイス',

@@ -59,7 +59,7 @@ Python 回歸涵蓋最後名額競態、成功回應遺失後重送、保存失�
 ./venv/bin/python scripts/manage_auth.py --state-dir /actual/state setup --username admin --enable-managed
 ```
 
-密碼由互動提示輸入。舊 `--enable-managed-test` 保留相容；不是自動更新時切換。舊 schema 2 ESP 韌體不能使用 managed 私人資料，F1 另行交辦。主機完整備份包含未加密的私人設定及授權資料，管理頁 JSON 匯出只包含既有 settings／notes。
+密碼由互動提示輸入。舊 `--enable-managed-test` 保留相容；不是自動更新時切換。舊 schema 2 ESP 韌體不能使用 managed 私人資料，ESP 接入列為後續 F1 範圍。主機完整備份包含未加密的私人設定及授權資料，管理頁 JSON 匯出只包含既有 settings／notes。
 
 以下 B5-2 仍未執行，需記錄精確 SHA、iOS 版本、網址／TLS 拓樸、起訖時間及實際結果：
 

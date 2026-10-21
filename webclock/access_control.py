@@ -5,6 +5,7 @@ from flask import g, jsonify, redirect, request, session, url_for
 from flask.sessions import SecureCookieSessionInterface
 from werkzeug.exceptions import HTTPException
 
+from webclock.auth import http_access_enabled, management_transport_allowed
 from webclock.csrf import same_origin
 from webclock.services.auth_service import AuthStateError
 from webclock.services.storage import storage_lock
@@ -12,6 +13,8 @@ from webclock.services.storage import storage_lock
 
 class RequestSessionInterface(SecureCookieSessionInterface):
     def get_cookie_secure(self, app):
+        if http_access_enabled():
+            return request.is_secure
         if (os.getenv('WEBCLOCK_HA_APP') == '1'
                 and request.environ.get('webclock.surface') in ('ingress', 'display')):
             return request.is_secure
@@ -104,6 +107,8 @@ def register_access_control(app, service_getter):
             if request.path.startswith('/api/') or request.is_json:
                 return failure('authentication_required', 401)
             return redirect(url_for('auth.login'))
+        if not management_transport_allowed():
+            return failure('https_required', 403)
         g.owner_id = owner
         return None
 

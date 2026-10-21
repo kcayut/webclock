@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from flask import Blueprint, g, jsonify, render_template, request, session
 
+from webclock.auth import management_transport_allowed
 from webclock.services.auth_service import AuthError, AuthStateError
 from webclock.services.storage import revision, storage_lock
 
@@ -26,7 +27,7 @@ def register_mode(app, auth, root, notes_file, content_directory, context, clear
         return data
 
     def reauthenticate(data):
-        if not request.is_secure:
+        if not management_transport_allowed():
             raise AuthError('https_required', 'HTTPS is required.', 403)
         if auth().mode() == 'managed':
             owner = admin()

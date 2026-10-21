@@ -31,9 +31,9 @@ while [ "$#" -gt 0 ]; do
             esac
             shift ;;
         -h|--help)
-            echo "Usage: bash setup.sh [--docker [--build]] [--managed --tls-cert FILE --tls-key FILE --tls-host NAME [--tls-ca FILE]]"
+            echo "Usage: bash setup.sh [--docker [--build]] [--managed] [--tls-cert FILE --tls-key FILE --tls-host NAME [--tls-ca FILE]]"
             echo "Fresh install: Linux/systemd by default; Docker pulls the release image. --build is for development."
-            echo "Self mode is the default. Managed requires a valid HTTPS certificate before administrator setup."
+            echo "Self mode is the default. Managed prefers HTTPS; without a certificate, two prompts let you explicitly choose HTTP for a trusted LAN."
             echo "Updates: --enable-updates opts Docker into a Linux host worker; --auto-update on|off explicitly sets automatic installation (default off)."
             echo "Failed new installs: correct the reported problem and repeat the same command; existing credentials are preserved."
             echo "Existing installations: see doc/installation.md for updates and mode changes."
@@ -134,6 +134,8 @@ if $DOCKER; then
     CHECK=(docker run --rm --add-host host.docker.internal:host-gateway --entrypoint python
            --env "WEBCLOCK_INSTALL_HOST=$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
            --mount "type=bind,src=$PROJECT_DIR,dst=/install" --workdir /install "$IMAGE" scripts/install_check.py)
+    # Only the confirmation step may consume stdin; other checks must not eat queued answers.
+    TRANSPORT_CHECK=(docker run -i "${CHECK[@]:2}")
 else
     apt-get update
     apt-get install -y git python3 python3-pip python3-venv
@@ -142,6 +144,7 @@ else
     venv/bin/python -m pip install -r requirements.txt
     venv/bin/python -m pip check
     CHECK=(venv/bin/python scripts/install_check.py)
+    TRANSPORT_CHECK=("${CHECK[@]}")
 fi
 "${CHECK[@]}" guard --kind "$KIND" --mode "$MODE" --project-id "$PROJECT_DIR" ${EXISTING[@]+"${EXISTING[@]}"}
 
@@ -169,6 +172,9 @@ if [ -n "$TLS_CA" ]; then
     set_env WEBCLOCK_UPDATE_CA "$TLS_PREFIX/install-ca.pem"
 fi
 [ -z "$TLS_HOST" ] || set_env WEBCLOCK_UPDATE_HOST "$TLS_HOST"
+if $MANAGED; then
+    "${TRANSPORT_CHECK[@]}" transport --kind "$KIND"
+fi
 state_dir="$("${CHECK[@]}" prepare --kind "$KIND" --mode "$MODE" --project-id "$PROJECT_DIR" ${EXISTING[@]+"${EXISTING[@]}"})"
 trap 'echo "Install incomplete. Correct the error and repeat the same command. New-install state and credentials are preserved. See doc/installation.md for recovery." >&2' ERR
 

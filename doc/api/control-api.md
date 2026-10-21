@@ -10,7 +10,7 @@ Home Assistant、ESP 或 AI agent 可用同一套 HTTP API 建立、修改、刪
 |---|---|---|
 | 憑證發行者 | 既有 self 管理入口／HA Ingress 的管理者 | 登入的 WebClock 管理員 |
 | 程式如何呼叫 | 獨立的 `Authorization: Bearer …` 程式憑證 | 同樣使用獨立程式憑證 |
-| 傳輸 | 信任的區網可使用 HTTP；公開網路使用 HTTPS | 伺服器強制 HTTPS |
+| 傳輸 | 信任的區網可使用 HTTP；公開網路使用 HTTPS | 預設 HTTPS；主機可明確允許可信任內網 HTTP（見[連線設定](../operations/accounts-and-https.md#https)） |
 | 授權範圍 | 安裝實例的 owner、指定 scope 與資源 | 目前 owner、managed 模式、指定 scope 與資源 |
 
 即使 self 管理頁在可信任區網不需登入，新的程式寫入 API 仍必須帶憑證。顯示裝置 token、六碼加入碼、`DEVICE_API_TOKEN`、管理頁 Cookie 都不能取代程式憑證。self 憑證綁定 self；切換到 managed 後必須重新核發，不能沿用。HA App 的 self 儲存模式與 WebClock managed 登入是不同模式。

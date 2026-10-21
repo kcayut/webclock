@@ -25,7 +25,7 @@
 | HTTP-only 健康檢查使 managed HTTPS 更新失敗 | 沿用憑證與主機名稱驗證，映射容器 CA 至宿主機；禁止 redirect 與略過驗證 | `scripts/docker_update.py`、`tests/test_update_tls.py` |
 | 建立容器或落盤失敗不在原回退範圍；壞 journal 被忽略 | 破壞步驟納入共同錯誤處理；備份失敗須驗證原服務健康；中斷／損壞 journal 阻止自動重試 | `scripts/docker_update.py` |
 | 宿主機 root worker 執行可修改的原始碼，socket 為 0666 | 明確啟用時檢查受保護安裝路徑，複製 worker 至 root 保護路徑；socket 0600、目錄 0700、容器唯讀掛載 | `scripts/docker_update_install.py`、`scripts/updater_service.py` |
-| 啟用器覆寫 override、首次安裝偷偷啟用自動更新 | 不覆寫未知 override；全新 Docker 安裝不自動註冊服務；新註冊的自動安裝預設關閉，重跑保留偏好 | `scripts/setup.sh`、`scripts/docker_update_install.py` |
+| 啟用器覆寫 override、首次安裝自動啟用自動更新 | 不覆寫未知 override；全新 Docker 安裝不自動註冊服務；新註冊的自動安裝預設關閉，重跑保留偏好 | `scripts/setup.sh`、`scripts/docker_update_install.py` |
 | Docker 可能連到裸機 helper；helper 暫停被當成未安裝 | Docker 命令前驗證 provider，拒絕不相符 worker；已配置 helper 中斷回 503；HA 仍不呼叫本機 worker | `webclock/api/updates.py` |
 | 備份及 socket 目錄可能進 Git／建置內容；文件過度宣稱完成 | 加入 ignore 與 release 過濾；改寫支援範圍、資料復原與未發行狀態 | `.gitignore`、`.dockerignore`、`tools/build_release.py`、`doc/installation.md` |
 
@@ -56,11 +56,11 @@
 | worker 只檢查 systemd active 就回報成功 | 10 秒內等待控制 socket，核對 provider、版本、安裝路徑；缺少回覆或身分不符會進入原有回復流程。另將系統 Python 版本檢查提前至 Docker 新安裝前 |
 | 舊安裝救援需要再次連 GitHub | 停機前保存版本固定、附雜湊的工具副本；`--offline` 僅供診斷、復原與清理，重新驗證本機副本。測試切斷下載命令後仍可救援，修改過的工具會拒絕執行 |
 
-重啟保護目前有命令與狀態模擬證據，**沒有本輪真實主機斷電／Docker daemon 重啟證據**。尚未使用新版線上入口建立過副本的舊安裝，也不具備離線救援工具。
+重啟保護目前有命令與狀態模擬證據，**沒有此階段真實主機斷電／Docker daemon 重啟證據**。尚未使用新版線上入口建立過副本的舊安裝，也不具備離線救援工具。
 
 ## 備份、安裝與更新再檢查（2026-10-18）
 
-本輪以 `bae82cb` 為基準，補修納入 v1.2.0 發行候選。下列問題先以故障注入／錯誤配置重現，再驗證修正：
+此階段以 `bae82cb` 為基準，補修納入 v1.2.0 發行候選。下列問題先以故障注入／錯誤配置重現，再驗證修正：
 
 | 問題 | 修正後行為 |
 | --- | --- |

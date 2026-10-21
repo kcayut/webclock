@@ -2,6 +2,7 @@
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
+import os
 import tempfile
 import unittest
 
@@ -42,10 +43,11 @@ class ModeSpacesTest(unittest.TestCase):
 
     def call(self, client, path, method='GET', data=None, **kwargs):
         headers = kwargs.pop('headers', {})
+        base = getattr(self, 'base', 'https://localhost')
         if method not in ('GET', 'HEAD'):
-            csrf = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+            csrf = client.get('/api/csrf', base_url=base).json['csrf_token']
             headers = dict(headers, **{'X-CSRF-Token': csrf})
-        return client.open(path, method=method, base_url='https://localhost', json=data, headers=headers, **kwargs)
+        return client.open(path, method=method, base_url=base, json=data, headers=headers, **kwargs)
 
     def login(self, client, username, password):
         result = self.call(client, '/login', 'POST', dict(username=username, password=password))
@@ -152,6 +154,24 @@ class ModeSpacesTest(unittest.TestCase):
             self.assertEqual(self.call(browser, '/setup', 'POST', data).status_code, 409)
             self.assertEqual(fresh.mode(), 'managed')
             self.assertNotIn(issued['code'], fresh.path.read_text())
+
+    def test_http_opt_in_keeps_setup_code_and_mode_confirmation_requirements(self):
+        self.base = 'http://localhost'
+        with patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP='1', WEBCLOCK_HA_APP='0'):
+            browser = clock.app.test_client()
+            self.login(browser, 'admin', PASSWORD)
+            self.assertEqual(self.switch(browser, self.a).status_code, 200)
+            self.assertEqual(self.switch(browser, self.a, mode='managed').status_code, 200)
+            path = self.folder / 'http-fresh' / 'settings.json'
+            with patch.object(clock, 'SETTINGS_FILE', str(path)), \
+                    patch.object(clock, 'NOTES_FILE', str(path.with_name('manual_notes.json'))):
+                fresh = clock.auth_service()
+                browser = clock.app.test_client()
+                code = fresh.issue_setup_code()['code']
+                data = dict(code=code, username='first', password=PASSWORD)
+                self.assertEqual(self.call(browser, '/setup', 'POST', dict(data, code='wrong')).status_code, 403)
+                self.assertEqual(self.call(browser, '/setup', 'POST', data).status_code, 201)
+                self.assertEqual(self.call(browser, '/setup', 'POST', data).status_code, 409)
 
     def test_resume_does_not_replay_current_minute_alarm(self):
         from datetime import datetime

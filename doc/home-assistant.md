@@ -14,28 +14,29 @@ WebClock 可直接以 Home Assistant App 執行，不必另外架設 Server；�
 
 安裝方式見[安裝指南：Home Assistant](installation.md#home-assistant)：加入 WebClock App 來源，安裝並啟動，再按「開啟網頁介面」。App 與整合對應同一個 [GitHub 正式 Release](https://github.com/kcayut/webclock/releases/latest)；公開映像與 HA OS 實機驗收狀態見[發行說明](ha-release.md)。
 
-新安裝預設為 self，管理頁透過 HA 登入與 Ingress 使用。匯入 managed 完整備份後，保留原本 WebClock 帳號與模式，Ingress 內仍須登入原 WebClock 帳號；HA 登入不會略過 WebClock 授權。選用的 `8100` 區網連接埠提供時鐘、六碼加入、裝置同步，以及必須另帶程式憑證的內容 API；管理頁仍由 Ingress 保護。所有可變資料保存在 `/data`，由 HA 冷備份保存。
+| 用途 | 入口與設定 |
+| --- | --- |
+| 管理 WebClock | App「開啟網頁介面」，由 HA 登入保護；匯入 managed 備份後仍須登入原 WebClock 帳號 |
+| 連接同機 HA 整合 | 複製 App 日誌 `Home Assistant integration URL:` 後的完整網址，不需開放主機連接埠 |
+| 平板／電腦顯示 | 映射 App 的 `8100/tcp`，開啟 `http://HA主機IP:8100` 並輸入群組六碼；此入口不提供管理頁 |
+| 保存 App 資料 | `/data` 由 HA 冷備份保存；跨主機搬家使用完整 `.webclock` 備份 |
 
-要用 iPad／Android／電腦持續顯示時鐘，請把外部時鐘入口建立成主畫面圖示，再從圖示完成六碼加入；全螢幕與恆亮步驟見[裝置顯示設定](guides/display-devices.md#clock-url)。
-
-同機整合的 Server 位址：App 啟動後，到 App「日誌」複製 `Home Assistant integration URL:` 後面的完整網址。也可在 App「資訊」頁查看「主機名稱」，組成 `http://主機名稱:8100`；例如本機 App 為 `http://local-webclock:8100`，商店 App 的名稱會帶儲存庫前綴。不要使用 Ingress 管理頁網址或自行省略前綴。同機連線不需開放主機連接埠。
-
-外部顯示可各自加入其他群組，不會改變 HA 儀表板的群組。App 支援從完整備份帶入 managed 模式，管理員可在「模式與帳號」(`/mode`) 管理成員；模式切換與首次建立 managed 帳號仍不在 App 內提供。
+整合不能使用 Ingress 管理網址。若手動填 App 主機名稱，須包含商店來源前綴；本機 App 範例為 `http://local-webclock:8100`。外部顯示裝置可加入其他群組，設定全螢幕與恆亮見[裝置指南](guides/display-devices.md)。App 可管理成員，但不提供模式切換或首次 managed 啟用。
 
 ## 從既有 Server 搬進 HA App
 
-1. 舊 Server「備份與還原」→ 預設以至少 12 字元的密碼加密，也可取消「以密碼加密（建議）」→ 下載完整 `.webclock` 檔。
-2. 新 App「開啟網頁介面」→「備份與還原」→ 選擇檔案，加密檔才須輸入備份密碼 → 預覽並核對各類資料數量。
-3. 停止舊 Server，確認使用最新檔案，再勾選確認並還原；managed 會要求用原 WebClock 帳密重新登入。
+1. 舊 Server「備份與還原」下載完整 `.webclock`，預設以至少 12 字元的密碼加密。
+2. 新 App「備份與還原」選檔，加密檔輸入密碼，預覽並核對資料數量。
+3. 停止舊 Server，確認使用最新備份，再確認取代並還原；managed 使用原 WebClock 帳密登入。
 
-完整檔包含所有帳號的私人 iCal 網址（含舊 `ICAL_URL`）、顯示設定、提醒、鬧鐘、原生行事曆事件、群組、裝置與程式授權。未加密檔可被持有者直接讀取；選擇未加密不會略過管理員驗證。只有尚無資料的全新目標會保留裝置與程式憑證；已有資料的目標會撤銷這兩類憑證，需重新加入或建立。所有登入 session、待加入嘗試與舊邀請皆不延續，HA App options 不會被覆寫。
+**已有資料的目標會撤銷裝置與程式憑證，須重新加入或建立。** 全新目標保留這兩類憑證，但登入 session 與舊邀請不延續。原瀏覽器要接續還須沿用相同 HTTPS 來源及 Cookie；TLS／DNS、系統服務、瀏覽器資料與 App options 不在還原範圍內。
 
-要讓原瀏覽器裝置直接接續，須沿用相同 HTTPS 來源（網域、協定、連接埠）及 Cookie；換成 HA IP 或其他來源仍需更新連線或重新加入。檔案不包含 TLS／DNS、系統服務或瀏覽器本機資料。HA 整合改 Server 位址時走下方「重新設定」，無需重建實體與卡片。完整保護與失敗復原見[備份指南](guides/guide.md#完整備份與搬家)；HA OS 實機搬移仍待驗收。
+未加密檔含私人行事曆及授權資料，須妥善保存。詳細範圍與失敗處理見[備份指南](guides/guide.md#完整備份與搬家)；HA OS 實機搬移仍待驗收。
 
 ## 自訂整合安裝前準備
 
 1. WebClock Server 須更新至包含 `/api/v2/device/token/prepare`、`token/join`、`token/leave` 的版本。
-2. 確認 HA 主機可以連到 WebClock Server。正式的受管部署使用有效憑證的 HTTPS；可信任的自用區網可以使用 HTTP。
+2. 確認 HA 主機可以連到 WebClock Server。受管部署預設使用有效憑證的 HTTPS；可信任內網的 self 或已在主機明確啟用 HTTP 的 managed 可以使用 HTTP。HA App 的 Ingress 也可搭配沒有 TLS 的內網 HA。
 3. WebClock Server 位址只填來源，例如 `https://clock.example`、`http://192.168.1.20:5000`，或上述 App 日誌中的整合網址。自訂整合目前不接受任意反向代理子路徑；App 的 Ingress 子路徑由 Server 自動處理。
 
 ## 安裝整合

@@ -144,6 +144,58 @@ class AccessControlTest(unittest.TestCase):
         self.assertEqual(self.request('/api/backup').status_code, 401)
         self.assertEqual(self.request('/api/time').status_code, 200)
 
+    def test_explicit_http_keeps_login_csrf_device_and_program_authorization(self):
+        client = clock.app.test_client()
+        def post(path, data, **kwargs):
+            token = client.get('/api/csrf').json['csrf_token']
+            return client.post(path, json=data, headers={'X-CSRF-Token': token}, **kwargs)
+
+        with patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP='1', WEBCLOCK_HA_APP='0'):
+            self.assertEqual(client.get('/api/calendar').status_code, 401)
+            result = post('/login', {'username': 'owner', 'password': 'a-long-test-password'})
+            self.assertEqual(result.status_code, 200, result.text)
+            cookie = client.get_cookie(clock.app.config['SESSION_COOKIE_NAME'])
+            self.assertFalse(cookie.secure)
+            self.assertTrue(cookie.http_only)
+            self.assertEqual(cookie.same_site, 'Lax')
+            self.assertEqual(client.get('/admin').status_code, 200)
+            self.assertEqual(client.post('/api/control', json={'brightness': 42}).status_code, 403)
+            self.assertEqual(client.get('/api/calendar', headers={'Origin': 'http://evil.invalid'}).status_code, 403)
+            self.assertEqual(post('/api/control', {'brightness': 42}).status_code, 200)
+            self.assertEqual(client.get('/api/v2/device/display').status_code, 401)
+            issued = post('/api/v1/control-clients', {'name': 'LAN program', 'scopes': ['schedules:read']})
+            self.assertEqual(issued.status_code, 201, issued.text)
+            token = issued.json['client']['token']
+            program = clock.app.test_client()
+            self.assertEqual(program.get('/api/v1/control/identity').status_code, 401)
+            self.assertEqual(program.get('/api/v1/control/identity',
+                                         headers={'Authorization': 'Bearer ' + token}).status_code, 200)
+            backup = post('/api/backup/complete/export', {
+                'username': 'owner', 'admin_password': 'a-long-test-password',
+                'password': 'backup-test-password', 'encrypted': True})
+            self.assertEqual(backup.status_code, 200, backup.text if backup.status_code != 200 else '')
+            with patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP='0'):
+                self.assertEqual(client.get('/api/calendar').json['code'], 'https_required')
+                self.assertEqual(client.get('/api/v2/device/display').json['code'], 'https_required')
+                self.assertEqual(program.get('/api/v1/control/identity',
+                    headers={'Authorization': 'Bearer ' + token}).json['code'], 'tls_required')
+            self.assertEqual(post('/logout', {}).status_code, 200)
+            self.assertEqual(client.get('/api/calendar').status_code, 401)
+            self.login()
+            self.assertTrue(self.client.get_cookie(clock.app.config['SESSION_COOKIE_NAME']).secure)
+
+    def test_http_requires_exact_host_opt_in_and_cannot_be_enabled_by_headers(self):
+        for value in ('', '0', 'true', 'yes'):
+            with self.subTest(value=value), patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP=value, WEBCLOCK_HA_APP='0'):
+                client = clock.app.test_client()
+                headers = {'X-Forwarded-Proto': 'https', 'X-WebClock-Allow-HTTP': '1'}
+                csrf = client.get('/api/csrf', headers=headers).json['csrf_token']
+                result = client.post('/login', json={'username': 'owner', 'password': 'a-long-test-password'},
+                                     headers=dict(headers, **{'X-CSRF-Token': csrf}))
+                self.assertEqual(result.status_code, 403)
+                self.assertEqual(result.json['code'], 'https_required')
+                self.assertEqual(client.get('/api/calendar', headers=headers).status_code, 401)
+
     def test_corrupt_or_missing_protected_state_keeps_private_endpoints_closed(self):
         self.login()
         for value in ('{broken', None):

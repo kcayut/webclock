@@ -73,6 +73,14 @@ class HAManagedTest(unittest.TestCase):
         return client.open(path, method=method, json=data, headers=headers,
                            environ_overrides={'REMOTE_ADDR': '192.0.2.40', 'SERVER_PORT': '8100'})
 
+    def test_standalone_http_option_does_not_bypass_ha_ingress(self):
+        with patch.dict(os.environ, WEBCLOCK_ALLOW_HTTP='1'):
+            self.assertEqual(self.admin.get('/admin').status_code, 403)
+            self.assertEqual(self.display(self.admin, '/admin').status_code, 404)
+            self.assertEqual(self.ingress(self.admin, '/api/backup').status_code, 401)
+            self.login(self.admin, 'admin')
+            self.assertEqual(self.ingress(self.admin, '/api/backup').status_code, 200)
+
     def test_restored_accounts_keep_their_private_spaces_behind_ha_login(self):
         self.assertEqual(self.ingress(self.admin, '/api/backup', **{'X-Remote-User-Id': 'HA-admin'}).status_code, 401)
         for client, name, owner, foreign in ((self.admin, 'admin', self.admin_owner, self.member_owner),

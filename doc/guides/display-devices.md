@@ -30,7 +30,7 @@
 | 電腦下載後離線使用 | 解壓資料夾最外層的 `index.html`；網址通常以 `file://` 開頭，保留同層 `static` 資料夾 |
 | Bare metal 預設 self | `http://主機IP:5000/` |
 | Docker 預設 self | `http://主機IP/`；自訂連接埠就加上，例如 `:8080` |
-| managed | 實際設定好的 `https://你的主機名稱/`，保留必要的連接埠 |
+| managed | 實際設定好的 `https://主機名稱/`，保留必要的連接埠 |
 | Home Assistant App 的外部顯示 | 開放 App 的 `8100` 網路連接埠後，使用 `http://HA主機IP:8100/` |
 
 把「主機IP」換成執行 Server 的電腦位址，不是平板自己的位址。另一台裝置不能使用 `localhost` 連到 Server。自架入口詳見[安裝指南](../installation.md)。

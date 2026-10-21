@@ -1,16 +1,14 @@
 # Docker 與 Home Assistant 一鍵更新實作計劃
 
-本文件供其他 AI agent 接手實作。目標是讓既有 WebClock 使用者從已安裝版本安全更新到正式 Release，保留設定、帳號、裝置及程式憑證，並能看懂進度與失敗後的處理方式。
+目標：既有安裝可更新至正式 Release，保留設定、帳號、裝置及程式憑證，並提供進度與失敗復原資訊。
 
-**這是 2026-10-14 的原始計劃；2026-10-15 的實作修正與驗證狀態請看 [驗證紀錄](../acceptance/docker-ha-update-acceptance.md)，尚不能宣稱 P0～P5 全部完成。** 查核日期：2026-10-14；程式基準：`6f20cbd836fc7c8089c32b84f678ea4f7e84e518`；根目錄 `VERSION` 為 `1.1.0`。接手時先核對 HEAD 與工作目錄；這些是原始碼快照，不代表此提交已發行或部署。
+原始設計日期：2026-10-14；基準提交：`6f20cbd836fc7c8089c32b84f678ea4f7e84e518`（v1.1.0）。實作與驗證進度見[驗證紀錄](../acceptance/docker-ha-update-acceptance.md)。本文保留當時的設計範圍，並非目前發行狀態。
 
-## 1. 可直接交給 agent 的工作指令
+## 1. 實作範圍
 
-> 請依本文件完成必做階段 P0～P5，實作 WebClock 的 Docker 一鍵更新，以及 Home Assistant App／HACS 的原生更新體驗與驗收。先核對目前程式與 AGENTS.md，保留其他人的修改，沿用既有版本解析、更新頁、授權與測試結構。每階段完成後提供修改檔案、測試及尚未驗證事項，接續下一階段，不要只交付操作說明。
->
-> Docker 採容器外的受限更新程序；HA App 由 Supervisor 更新，Integration 與附帶卡片由 HACS 更新。不要把 Docker socket 掛進 WebClock，也不要在 App 裡執行 Git 更新或自行覆寫 HA 的 custom_components。
->
-> 先完成本機實作與可重現測試。正式環境更新、正式 tag／Release 發布與推送依執行當下的使用者授權處理；沒有 HA OS 或 ARM 實機時標示 `not_ready`，不得以 mock 或容器測試宣稱實機通過。P6「跨元件一次更新」是獨立進階工作，不是 P0～P5 的完成條件。
+P0～P5 涵蓋 Docker 更新交易、Home Assistant App／HACS 更新入口與驗證。Docker 使用容器外的受限程序；App 由 Supervisor 更新，整合與卡片由 HACS 更新。WebClock 容器不掛載 Docker socket，App 不自行覆寫 HA 整合。
+
+本機、CI、公開發行與實機結果分別記錄；缺少 HA OS 或 ARM 實測時標示 `not_ready`。P6 跨元件協調屬獨立進階功能。
 
 ## 2. 「一鍵」的交付定義
 
@@ -31,7 +29,7 @@
 
 下表為查核基準；路徑相對於 repository 根目錄。
 
-| 檔案／位置 | 現況 | 接手原則 |
+| 檔案／位置 | 現況 | 修改原則 |
 | --- | --- | --- |
 | `scripts/release_versions.py:40` | 解析官方 GitHub Releases，檢查資產完整性，支援 stable／beta 與 SemVer 比較 | 重用版本選擇；Docker 另驗證所選版本映像確實可取得 |
 | `scripts/updater_service.py:32` | 裸機獨立 worker、持久狀態、排程、更新鎖與失敗暫停 | 重用可共用的行為；其 Git／systemd 更新動作不適用 Docker |
@@ -57,7 +55,7 @@
 7. **祕密不進狀態 API。** `.env`、私有 iCal、token、TLS 私鑰、完整命令輸出及備份內容不得出現在前端、公開日誌或 CI artifacts；備份權限受限，清楚區分完整性雜湊與加密。
 8. **未知不算成功。** 逾時、磁碟寫入失敗、重開機、無法判明新舊資料相容性，均保留可追查紀錄，回報 `interrupted`／`manual_recovery`／`not_ready` 等明確結果。
 
-## 5. P0：先固定支援範圍與交接契約
+## 5. P0：固定支援範圍與介面契約
 
 交付：短版設計紀錄與測試清單，完成後直接進入 P1。
 
@@ -69,7 +67,7 @@
 - 第一版 Docker 預設 stable。自動更新另由使用者明確啟用，既有設定須保留；不要因啟用 helper 就默默開啟。HA 自動更新仍由 HA 原生設定控制，不設第二套排程。
 - 同一份 release 的 Server／App／Integration／cards 維持共同版本號，但已安裝元件可暫時不同版本。需定義至少前一正式版的相容組合；不相容組合阻擋自動升級並提供順序，不以「全部必須同版」代替遷移設計。
 
-完成條件：接手 agent 能清楚指出哪些環境可執行、誰授權、誰持有進度、怎樣判定成功及何時停止回退。
+完成條件：明確定義支援環境、授權方式、進度儲存、成功判定與停止回退的條件。
 
 ## 6. P1：Docker 宿主機更新交易
 
@@ -137,7 +135,7 @@ Docker 官方文件確認 `pull` 用於取得映像，`up` 提供 `--no-build`�
 ### 8.2 HACS：Integration 與卡片一起更新
 
 - 使用 HACS 自帶的 update entity／更新入口，避免建立重複的 WebClock Integration 更新實體。文件分別寫清「WebClock Server App」與「WebClock Integration＋卡片」。
-- HACS 更新完成後若待重啟，顯示需要重新啟動 HA；未重啟前不能宣稱執行中 Integration 已換版。HA 重啟會影響其他整合，不能由 WebClock 的一般檢查動作偷偷觸發。
+- HACS 更新完成後若待重啟，顯示需要重新啟動 HA；未重啟前不能宣稱執行中 Integration 已換版。HA 重啟會影響其他整合，不能由 WebClock 的一般檢查動作自動觸發。
 - 驗證 `manifest.json`、`const.py`、卡片資源版本與 URL 一致，HA 重新啟動後資源註冊不重複、瀏覽器快取更新、三張卡片都能讀到新資料。
 - 保留 config entry、選定群組、Server URL 與原憑證；App 更新不得改寫 Integration 的連線資料。實際同機 URL 仍以 App 日誌的 `Home Assistant integration URL:` 為準。
 - 驗證「新 Integration＋前一版 Server」與「前一版 Integration＋新 Server」。有不相容變更時先定義安全順序；不得將升級期間的版本差異一律判錯。
@@ -218,14 +216,14 @@ HACS 官方提供 tracked repositories 的 update entities 及 `update.install`�
 
 2026-10-14 查核的 Supervisor 文件已將舊 `/addons/<app>/update` 標為 deprecated，商店更新介面為 `/store/addons/<app>/update`，提供 `backup`、`background`，背景工作需查 job；文件未在此介面列任意 `version` 參數，不能照搬 Core API。這是設計依據，不是要求 P3 直接新增 Supervisor 呼叫。參見 [Supervisor endpoints](https://developers.home-assistant.io/docs/api/supervisor/endpoints/)。HACS 的受支援 `update.install` 也不代表它會替整個 WebClock 組合執行備份、重啟與回退。
 
-## 12. 接手 agent 的結案格式
+## 12. 驗證紀錄要求
 
-請提供以下資訊，避免只寫「已完成」：
+各階段紀錄須包含：
 
 1. **已實作：**各平台使用者現在能做的事、主要修改檔案。
 2. **本機驗證：**實際執行命令、通過／失敗與資料保存證據。
-3. **CI／公開發行：**run、Release、digest；未發布則直說。
+3. **CI／公開發行：**run、Release、digest；未發布時標示未發布。
 4. **實機／部署：**Docker 主機、HA OS、HACS、ARM 的環境版本與結果；未提供環境者標 not_ready。
 5. **剩餘限制：**未支援平台、失敗恢復邊界與 P6 是否另行執行。
 
-本文件依目前 repository、既有產品決策及本日官方 Docker／HA／HACS 文件撰寫；沒有執行正式更新、發布或實機驗收。
+本設計紀錄不包含正式部署、發布或實機驗收結果。

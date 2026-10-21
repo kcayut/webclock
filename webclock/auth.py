@@ -38,9 +38,14 @@ def current_owner(service):
     return service.authenticate(session.get('admin_token'))
 
 
+def http_access_enabled():
+    """Only host configuration can opt standalone installations into plain HTTP."""
+    return os.getenv('WEBCLOCK_ALLOW_HTTP') == '1' and os.getenv('WEBCLOCK_HA_APP') != '1'
+
+
 def management_transport_allowed():
     """HA Ingress authenticates its proxy before accepting the browser origin."""
-    return request.is_secure or (os.getenv('WEBCLOCK_HA_APP') == '1'
+    return request.is_secure or http_access_enabled() or (os.getenv('WEBCLOCK_HA_APP') == '1'
                                  and request.environ.get('webclock.surface') == 'ingress')
 
 
@@ -86,7 +91,7 @@ def register_auth(app, service_getter):
         error = None
         status = 200
         if request.method == 'POST':
-            if not request.is_secure:
+            if not management_transport_allowed():
                 return jsonify(code='https_required'), 403
             data = request.get_json(silent=True) if request.is_json else request.form
             data = data if hasattr(data, 'get') else {}

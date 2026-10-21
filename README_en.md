@@ -19,9 +19,7 @@ Turn an iPad, tablet, or spare screen into a large clock. Use the public clock d
 - **Download an offline clock:** on a computer, [download and extract the ZIP](doc/installation.md#offline-download), then open its top-level `index.html` in a browser. No server installation is needed. For tablets, see [offline caching and iOS 9 limitations](doc/installation.md#offline-cache) (Traditional Chinese).
 - **Self-host it:** run the full version on a computer, NAS, or Raspberry Pi. `/admin` manages the display, calendars, and text reminders; `/schedules` manages alarms and device status.
 
-The self-hosted UI supports Traditional Chinese, English, and Japanese, with Google, Apple iCloud, and other ICS calendars. Private URLs stay out of the public clock, status responses, and legacy JSON exports. Download one complete `.webclock` backup from management to move accounts, private calendars, and device settings to a new server or HA App. Password encryption is enabled by default, with an option to save an unencrypted file. See [backup and migration](doc/guides/guide.md#完整備份與搬家) (Traditional Chinese).
-
-The clock renders time, date, and weekday first; connection, browser-storage, or optional-feature failures should not stop an already loaded page running in the foreground. Device management supports naming, reported capabilities, and sync confirmation. Groups, six-character enrollment, per-device authorization, movement, disable/resume and revocation are available. Managed mode requires explicit host-side activation; existing installations remain in self mode by default. See the [guide](doc/guides/guide_en.md#device-sync-status) for operation and limits, and the [phase-A acceptance record](doc/acceptance/phase-a-acceptance.md) / [Phase B groups and authorization acceptance](doc/acceptance/phase-b-acceptance.md) for current evidence and pending checks (Traditional Chinese). CI and iPad mini 1 / iOS 9 physical acceptance are tracked separately.
+The self-hosted UI supports Traditional Chinese, English, Japanese, and ICS calendars such as Google and Apple iCloud. Manage displays by group and move accounts and settings with a complete `.webclock` backup. See the [user guide](doc/guides/guide_en.md).
 
 ## Installation options
 
@@ -45,21 +43,17 @@ curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.s
 
 The installer uses the [latest official GitHub release](https://github.com/kcayut/webclock/releases/latest), verifies health, and prints the clock and management URLs. Docker pulls the matching prebuilt image.
 
-The first public version is **1.1.0**, retaining the existing HA version. Server, images, and integration share one version; see the [changelog and version policy](CHANGELOG.md) (Traditional Chinese).
-
 **[Install the HA App](doc/installation.md#home-assistant)** · **[Install the HA integration and cards](doc/home-assistant.md#安裝整合)**
 
-**[Open the installation guide →](doc/installation.md)** (Traditional Chinese): quick commands, prerequisites, self/managed activation and HTTPS setup for all three methods.
+Linux and Docker default to self mode without sign-in; use only on a trusted LAN. For administrator sign-in, use [managed](doc/installation.md#https) with HTTPS by default, or explicitly confirm HTTP twice for a trusted LAN. The HA App uses HA sign-in; imported managed backups also require the original WebClock account.
 
-Source and troubleshooting details (Traditional Chinese): [source builds](doc/installation.md#source-install), [manual Python](doc/installation.md#manual-python), [installer options](doc/installation.md#install-options), [first run](doc/installation.md#first-run), and [installation troubleshooting](doc/installation.md#install-troubleshooting).
+- [Installation guide](doc/installation.md): prerequisites, first run, and troubleshooting.
+- [Display setup](doc/guides/display-devices.md): home-screen shortcuts, fullscreen, and keeping the screen awake, including iPad mini 1 / iOS 9.
+- [English guide](doc/guides/guide_en.md): calendars, alarms, groups, and backups.
+- [Updates and recovery](doc/operations/update-operations.md) · [HTTPS and accounts](doc/operations/accounts-and-https.md).
+- [Device API](doc/api/server-api_en.md) · [ESP32-S3 prototype](firmware/README.md) · [Release and hardware validation](doc/ha-release.md).
 
-With an existing administrator, use `/mode` to [switch self/managed, choose the primary user, and manage members](doc/installation.md#mode-switch). See [multi-account backup and recovery](doc/installation.md#owner-data), [device/group settings](doc/guides/guide.md#群組設定與裝置加入), [shared announcements](doc/guides/guide.md#指定群組或裝置的公告), and [phase 2/4 acceptance](doc/acceptance/phase2-acceptance.md) for steps, test results, and pending checks (Traditional Chinese).
-
-**[Set up a clock display →](doc/guides/display-devices.md)** (Traditional Chinese): home-screen shortcuts, fullscreen and keeping the screen awake on iPad/iPhone, Android, Windows and Mac, with version-specific steps including iPad mini 1/iOS 9.
-
-Linux and Docker default to **self** mode. For administrator sign-in and per-device authorization, add `--managed` and the TLS certificate options to a fresh installation. The HA App protects management through HA sign-in; importing a managed full backup also retains the original WebClock account sign-in. HA OS, ARM, and older iPad physical acceptance are recorded separately in the [release status](doc/ha-release.md). A local build remains available for development.
-
-**More information:** [English guide](doc/guides/guide_en.md) · [Home Assistant integration and cards](doc/home-assistant.md) · [Device API](doc/api/server-api_en.md) · [ESPHome development](doc/guides/esp-home.md) · [Firmware](firmware/README.md) (HA and firmware guides: Traditional Chinese).
+Installation, maintenance, and hardware documentation is in Traditional Chinese.
 
 ## Support WebClock
 

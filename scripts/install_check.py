@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import ssl
@@ -31,6 +32,10 @@ def configuration(project, docker=False):
     result = {'port': port, 'host': host, 'state': str(state.absolute())}
     notes = state / 'manual_notes.json' if docker else project / (values.get('NOTES_FILE') or str(state / 'manual_notes.json'))
     result['notes'] = str(notes.absolute())
+    allow_http = values.get('WEBCLOCK_ALLOW_HTTP', '0')
+    if allow_http not in ('0', '1'):
+        raise ValueError('WEBCLOCK_ALLOW_HTTP must be 0 or 1.')
+    result['WEBCLOCK_ALLOW_HTTP'] = allow_http
     for key in ('WEBCLOCK_TLS_CERT', 'WEBCLOCK_TLS_KEY', 'WEBCLOCK_UPDATE_HOST', 'WEBCLOCK_UPDATE_CA'):
         value = values.get(key)
         if value:
@@ -47,8 +52,8 @@ def configuration(project, docker=False):
 
 def validate_tls(config, managed):
     cert, key = config.get('WEBCLOCK_TLS_CERT'), config.get('WEBCLOCK_TLS_KEY')
-    if bool(cert) != bool(key) or (managed and not cert):
-        raise ValueError('Managed setup needs valid HTTPS first: --tls-cert FILE --tls-key FILE --tls-host NAME [--tls-ca FILE].')
+    if bool(cert) != bool(key) or (managed and not cert and config.get('WEBCLOCK_ALLOW_HTTP') != '1'):
+        raise ValueError('Managed setup needs valid HTTPS or explicit HTTP confirmation: --tls-cert FILE --tls-key FILE --tls-host NAME [--tls-ca FILE].')
     if not cert:
         return
     server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -72,6 +77,47 @@ def validate_tls(config, managed):
         if len(completed) == 2:
             return
     raise ValueError('TLS certificate validation did not complete.')
+
+
+def configure_transport(project, docker=False):
+    """Ask twice before persisting the host's explicit HTTP choice."""
+    config = configuration(project, docker)
+    if config.get('WEBCLOCK_TLS_CERT') or config.get('WEBCLOCK_TLS_KEY'):
+        validate_tls(config, True)
+        if config['WEBCLOCK_ALLOW_HTTP'] == '0':
+            return
+        choice = '0'
+    elif config['WEBCLOCK_ALLOW_HTTP'] == '1':
+        print('已設定允許 HTTP：連線未加密，僅限可信任內網。 / HTTP enabled for trusted LAN use.')
+        return
+    else:
+        print('未設定 TLS 憑證。 / No TLS certificate configured.')
+        try:
+            answer = input('需要啟用 TLS / HTTPS 嗎？[Y/n] / Enable TLS? [Y/n]: ').strip().lower()
+            if answer != 'n':
+                raise ValueError('請準備有效 HTTPS 憑證後重試 / Configure valid HTTPS: --tls-cert FILE --tls-key FILE --tls-host NAME [--tls-ca FILE].')
+            print('HTTP 不加密密碼、登入憑證及私人資料；只適用於可信任內網，請勿對 Internet 開放。')
+            print('HTTP sends passwords, credentials and private data unencrypted. Use only on a trusted LAN, never expose it to the Internet.')
+            answer = input('確定不使用 TLS？輸入 HTTP 確認，其他輸入取消 / Type HTTP to confirm, otherwise cancel: ').strip()
+            if answer != 'HTTP':
+                raise ValueError('已取消，未啟用 HTTP。 / Cancelled; HTTP was not enabled.')
+        except EOFError as error:
+            raise ValueError('需要互動確認或有效 HTTPS 憑證；未啟用 HTTP。 / Interactive confirmation or valid HTTPS is required.') from error
+        choice = '1'
+    path = project / '.env'
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('.env must be a regular file.')
+    contents = path.read_text()
+    contents = re.sub(r'^(?:export[ \t]+)?WEBCLOCK_ALLOW_HTTP[ \t]*=.*(?:\n|$)', '', contents, flags=re.MULTILINE)
+    with tempfile.NamedTemporaryFile(mode='w', dir=project, prefix='.env.transport.', delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(contents.rstrip('\n') + '\nWEBCLOCK_ALLOW_HTTP=' + choice + '\n')
+            stream.flush()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    print('已儲存連線設定。 / Transport setting saved.')
 
 
 def local_host(host):
@@ -183,7 +229,7 @@ def print_urls(record):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('guard', 'prepare', 'auth-needed', 'wait', 'complete', 'port', 'tls-files'))
+    parser.add_argument('action', choices=('guard', 'prepare', 'transport', 'auth-needed', 'wait', 'complete', 'port', 'tls-files'))
     parser.add_argument('--project', type=Path, default=Path.cwd())
     parser.add_argument('--kind', choices=('docker', 'systemd'), default='systemd')
     parser.add_argument('--mode', choices=('self', 'managed'), default='self')
@@ -191,6 +237,9 @@ def main():
     parser.add_argument('--existing', action='store_true')
     args = parser.parse_args()
     project = args.project.resolve()
+    if args.action == 'transport':
+        configure_transport(project, args.kind == 'docker')
+        return
     if args.action in ('guard', 'prepare'):
         prepare(project, args.kind, args.mode, args.project_id or str(project), args.existing, args.action == 'guard')
         return

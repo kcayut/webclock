@@ -86,7 +86,7 @@ class InstallCheckTest(unittest.TestCase):
         self.assertFalse((self.root / install_check.MARKER).exists())
 
     def test_invalid_config_and_marker_fail_closed(self):
-        for settings in ('WEBCLOCK_HTTP_PORT=0', 'WEBCLOCK_STATE_DIR=/other',
+        for settings in ('WEBCLOCK_HTTP_PORT=0', 'WEBCLOCK_STATE_DIR=/other', 'WEBCLOCK_ALLOW_HTTP=yes',
                          'WEBCLOCK_TLS_CERT=/etc/cert.pem', 'WEBCLOCK_TLS_CERT=/app/tls/../cert.pem'):
             (self.root / '.env').write_text(settings + '\n')
             with self.assertRaises(ValueError):
@@ -135,6 +135,31 @@ class InstallCheckTest(unittest.TestCase):
         _, other_key = create_certificate(other)
         with self.assertRaises(install_check.ssl.SSLError):
             install_check.validate_tls(dict(config, WEBCLOCK_TLS_KEY=str(other_key)), True)
+
+    def test_http_confirmation_and_tls_upgrade_persist_only_valid_choices(self):
+        env = self.root / '.env'
+        env.write_text('PORT=49123\n# keep this setting\nWEBCLOCK_ALLOW_HTTP=0\n')
+        with patch('builtins.input', side_effect=['n', 'HTTP']), redirect_stdout(self.output):
+            install_check.configure_transport(self.root)
+        self.assertIn('# keep this setting', env.read_text())
+        self.assertEqual(env.stat().st_mode & 0o777, 0o600)
+        config = install_check.configuration(self.root)
+        install_check.validate_tls(config, True)
+        cert, key = create_certificate(self.root)
+        env.write_text(env.read_text() + f'WEBCLOCK_TLS_CERT={cert}\nWEBCLOCK_TLS_KEY={key}\n'
+                       f'WEBCLOCK_UPDATE_HOST=wrong.test\nWEBCLOCK_UPDATE_CA={cert}\n')
+        original = env.read_bytes()
+        with patch('builtins.input', side_effect=AssertionError('TLS must not fall back to HTTP')):
+            with self.assertRaises(install_check.ssl.SSLError):
+                install_check.configure_transport(self.root)
+        self.assertEqual(env.read_bytes(), original)
+        env.write_text(env.read_text().replace('wrong.test', 'clock.test'))
+        with redirect_stdout(self.output):
+            install_check.configure_transport(self.root)
+        self.assertEqual(install_check.configuration(self.root)['WEBCLOCK_ALLOW_HTTP'], '0')
+        self.assertEqual(env.read_text().count('WEBCLOCK_ALLOW_HTTP='), 1)
+        with self.assertRaises(ValueError):
+            install_check.validate_tls(dict(config, WEBCLOCK_TLS_CERT=str(cert)), True)
 
     def test_port_check_precedes_marker(self):
         with patch.object(install_check.socket, 'socket') as factory:

@@ -25,7 +25,8 @@ while (( $# )); do
             shift 2 ;;
         -h|--help)
             echo 'Usage: bash install.sh [--docker] [--dir DIRECTORY] [--version X.Y.Z[-beta.N]]'
-            echo 'Managed: add --managed --tls-cert FILE --tls-key FILE --tls-host HOST [--tls-ca FILE]'
+            echo 'Managed: add --managed; without TLS certificates, confirm HTTP twice for trusted LAN use.'
+            echo 'HTTPS: add --tls-cert FILE --tls-key FILE --tls-host HOST [--tls-ca FILE]'
             echo 'Docker host worker: sudo bash install.sh --docker --enable-updates (defaults to /opt/webclock; requires Python 3.9+ and systemd).'
             echo 'Automatic installation is off by default; explicitly select --auto-update on|off.'
             echo 'Installs an official GitHub release; existing installations are never replaced.'

@@ -72,9 +72,9 @@ if [ "$*" = "${FAIL_DOCKER:-unused}" ]; then exit 1; fi
         path.chmod(0o755)
         return path
 
-    def run_setup(self, *args):
+    def run_setup(self, *args, answers=''):
         return subprocess.run(['bash', str(self.project / 'setup.sh'), *args], cwd=self.root,
-                              env=self.env, text=True, capture_output=True)
+                              env=self.env, text=True, capture_output=True, input=answers)
 
     def log(self):
         return (self.root / 'commands').read_text()
@@ -107,6 +107,29 @@ if [ "$*" = "${FAIL_DOCKER:-unused}" ]; then exit 1; fi
         self.assertIn('valid HTTPS', result.stderr)
         self.assertNotIn('manage_auth', self.log())
         self.assertNotIn('compose up', self.log())
+
+    def test_managed_http_requires_second_confirmation_and_retries_keep_credentials(self):
+        original = (self.project / '.env.example').read_bytes()
+        for answers in ('\n', 'n\n', 'n\nno\n'):
+            result = self.run_setup('--docker', '--managed', answers=answers)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertEqual((self.project / '.env').read_bytes(), original)
+            self.assertFalse((self.project / '.webclock-install.json').exists())
+            self.assertNotIn('manage_auth', self.log())
+            self.assertNotIn('compose up', self.log())
+        self.env['FAIL_HEALTH'] = '1'
+        result = self.run_setup('--docker', '--managed', answers='n\nHTTP\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('WEBCLOCK_ALLOW_HTTP=1', (self.project / '.env').read_text())
+        auth = self.project / 'webclock_state/auth.json'
+        original = auth.read_bytes()
+        self.env.pop('FAIL_HEALTH')
+        self.env['EXISTING_CONTAINER'] = 'pending-container'
+        result = self.run_setup('--docker', '--managed')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('http://', result.stdout)
+        self.assertEqual(auth.read_bytes(), original)
+        self.assertEqual(self.log().count('manage_auth.py setup'), 1)
 
     def test_failed_managed_health_resumes_without_resetting_credentials(self):
         from tests.test_install_check import create_certificate
