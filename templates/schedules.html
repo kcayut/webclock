@@ -69,7 +69,7 @@
                                 </details>
                             </div>
                             <div class="field setting-row"><label for="schedule-name" data-schedule-i18n="name_optional">{{ t.name_optional }}</label><input id="schedule-name" maxlength="120" data-schedule-placeholder="name_placeholder" placeholder="{{ t.name_placeholder }}" autocomplete="off"></div>
-                            <div id="schedule-type-field" class="field setting-row"><label for="schedule-type" data-schedule-i18n="type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" hidden disabled data-schedule-i18n="alarm">{{ t.alarm }}</option><option value="reminder" data-schedule-i18n="reminder">{{ t.reminder }}</option><option value="announcement" data-schedule-i18n="announcement">{{ t.announcement }}</option></select></div>
+                            <div id="schedule-type-field" class="field setting-row" hidden><label for="schedule-type" data-schedule-i18n="type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" selected data-schedule-i18n="alarm">{{ t.alarm }}</option></select></div>
                             <div id="schedule-sound-field" class="field setting-row">
                                 <label for="schedule-sound" data-schedule-i18n="browser_sound">{{ t.browser_sound }}</label>
                                 <div class="sound-choice"><select id="schedule-sound">{% for sound in ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'] %}<option value="{{ sound }}" data-schedule-i18n="sound_{{ sound }}">{{ t['sound_' + sound] }}</option>{% endfor %}</select><button id="preview-sound" type="button" data-schedule-i18n="preview_sound">{{ t.preview_sound }}</button></div>
@@ -154,18 +154,6 @@
             <div id="devices-panel-devices" class="management-tab-panel is-current" role="tabpanel" aria-labelledby="devices-tab-devices" data-tab-group="devices" data-management-tab-panel="devices">
             <p id="device-refresh-status" class="help" role="status" aria-live="polite"></p>
             <ul id="device-list" class="device-list"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
-            <section id="other-schedules-section" class="other-schedules" aria-labelledby="other-schedules-title">
-                <div class="section-heading"><h2 id="other-schedules-title" data-schedule-i18n="other_schedules">{{ t.other_schedules }}</h2><button id="add-other-schedule" type="button" data-schedule-i18n="add_other">{{ t.add_other }}</button></div>
-                <p class="help"><span data-schedule-i18n="other_hint">{{ t.other_hint }}</span> <a href="{{ url_for('admin', _anchor='calendar-title') }}" data-schedule-i18n="calendar_settings">{{ t.calendar_settings }}</a></p>
-                <div class="management-toolbar">
-                    <div class="management-filter" data-filter-group="other-schedules" role="group" aria-label="{{ t.other_schedules }}">
-                        <button type="button" data-filter-group="other-schedules" data-filter-value="all" aria-pressed="true" data-schedule-i18n="filter_all">{{ t.filter_all }}</button>
-                        <button type="button" data-filter-group="other-schedules" data-filter-value="reminder" aria-pressed="false" data-schedule-i18n="reminder">{{ t.reminder }}</button>
-                        <button type="button" data-filter-group="other-schedules" data-filter-value="announcement" aria-pressed="false" data-schedule-i18n="announcement">{{ t.announcement }}</button>
-                    </div>
-                </div>
-                <ul id="other-schedule-list" class="schedule-list" data-schedule-aria-label="other_schedules" aria-label="{{ t.other_schedules }}" data-filter-list="other-schedules" data-filter-active="all"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
-            </section>
             <details id="legacy-devices" class="panel legacy-devices" hidden>
                 <summary id="legacy-devices-summary"></summary>
                 <p class="help" data-schedule-i18n="legacy_devices_hint">{{ t.legacy_devices_hint }}</p>

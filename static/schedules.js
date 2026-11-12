@@ -285,26 +285,24 @@
     }
     function renderSchedules() {
         const list = $("schedule-list");
-        const otherList = $("other-schedule-list");
         list.replaceChildren();
-        otherList.replaceChildren();
         assignmentSummaries.forEach(element => assignments.removeSummary(element));
         assignmentSummaries.clear();
         nextPauseEnd = null;
         schedules.forEach(schedule => {
+            if (schedule.type !== "alarm") return;
             const skip = pendingSkip(schedule), paused = isRecurringAlarm(schedule) && skip;
             const enabled = schedule.enabled && !paused;
             if (skip) nextPauseEnd = nextPauseEnd === null ? Date.parse(skip) : Math.min(nextPauseEnd, Date.parse(skip));
             const row = node("li", undefined, "schedule-row" + (enabled ? "" : " disabled"));
-            row.setAttribute("data-filter-kind", schedule.type);
             const details = node("div", undefined, "schedule-details");
             const description = ruleText(schedule.rule, schedule.skip_holidays, schedule.calendar_link) + " · " +
-                (schedule.type === "alarm" ? t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%" : t(schedule.type));
+                t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%";
             details.append(node("h3", schedule.name), node("p", description));
             if (schedule.calendar_link) details.append(node("p", calendarText(schedule.calendar_link)));
             const next = nextTime(schedule.next_occurrence);
             if (paused) details.append(node("p", resumeMessage(paused, "resume_at"), "schedule-next"));
-            details.append(node("p", schedule.type === "alarm" ? format("next_ring", {datetime: next}) : t("next") + ": " + next, "schedule-next"));
+            details.append(node("p", format("next_ring", {datetime: next}), "schedule-next"));
             const actions = node("div", undefined, "schedule-row-actions");
             if (assignments) {
                 const summary = node("span", undefined, "content-group-summary");
@@ -341,10 +339,9 @@
                 });
             } else time.textContent = shownTime;
             row.append(time, details, actions);
-            (schedule.type === "alarm" ? list : otherList).append(row);
+            list.append(row);
         });
         if (!schedules.some(schedule => schedule.type === "alarm")) list.append(node("li", t("none"), "empty"));
-        if (!schedules.some(schedule => schedule.type !== "alarm")) otherList.append(node("li", t("none"), "empty"));
         renderAssignments();
         renderEditorActions();
     }
@@ -356,7 +353,7 @@
         $("editor").hidden = true;
         renderAssignments();
         $(editorPanel + "-panel").classList.toggle("is-editing", false);
-        if (!$(editorPanel + "-panel").hidden) $(editorPanel === "alarms" ? "add-schedule" : "add-other-schedule").focus();
+        if (!$(editorPanel + "-panel").hidden) $("add-schedule").focus();
     }
     function renderEditorActions() {
         const actions = $("editor-actions");
@@ -429,8 +426,7 @@
         renderDayStatus();
         if (assignments) assignments.applyLanguage();
         if (!$("editor").hidden) {
-            const alarm = $("schedule-type").value === "alarm";
-            $("editor-title").textContent = t($("schedule-id").value ? (alarm ? "edit_alarm" : "edit_other") : (alarm ? "add_alarm" : "add_other"));
+            $("editor-title").textContent = t($("schedule-id").value ? "edit_alarm" : "add_alarm");
             renderCalendarSources(selectedCalendarSources());
             setRule();
             setCalendarMode();
@@ -544,7 +540,7 @@
         loadCalendarTargets();
         refreshTimeInputs();
     }
-    function edit(schedule, type = "alarm") {
+    function edit(schedule) {
         $("schedule-form").reset();
         editorPausedUntil = null;
         previewTime = null;
@@ -552,14 +548,14 @@
         $("editor-next").textContent = "";
         $("editor-countdown").textContent = "";
         if (!schedule) $("schedule-time").value = "07:30";
-        $("schedule-rule").value = !schedule && type === "alarm" ? "once" : "every_day";
+        $("schedule-rule").value = !schedule ? "once" : "every_day";
         $("schedule-date-picker").value = "";
         $("form-error").textContent = "";
         $("schedule-id").value = schedule ? schedule.id : "";
-        $("schedule-type").value = schedule ? schedule.type : type;
-        $("schedule-type-field").hidden = $("schedule-type").value === "alarm";
-        $("schedule-sound-field").hidden = $("schedule-type").value !== "alarm";
-        $("schedule-volume-field").hidden = $("schedule-type").value !== "alarm";
+        $("schedule-type").value = "alarm";
+        $("schedule-type-field").hidden = true;
+        $("schedule-sound-field").hidden = false;
+        $("schedule-volume-field").hidden = false;
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
         $("schedule-volume").value = String(schedule && schedule.browser_volume != null ? schedule.browser_volume : 100);
         $("schedule-volume-value").textContent = $("schedule-volume").value + "%";
@@ -572,10 +568,10 @@
         $("schedule-offset").value = link ? String(link.offset_minutes || 0) : "0";
         renderCalendarSources(link ? link.source_ids : []);
         $(editorPanel + "-panel").classList.toggle("is-editing", false);
-        editorPanel = $("schedule-type").value === "alarm" ? "alarms" : "devices";
+        editorPanel = "alarms";
         $(editorPanel + "-panel").append($("editor"));
         $(editorPanel + "-panel").classList.toggle("is-editing", true);
-        $("editor-title").textContent = t(schedule ? (editorPanel === "alarms" ? "edit_alarm" : "edit_other") : type === "alarm" ? "add_alarm" : "add_other");
+        $("editor-title").textContent = t(schedule ? "edit_alarm" : "add_alarm");
         if (schedule) {
             ["name", "type", "time"].forEach(key => $("schedule-" + key).value = schedule[key]);
             $("schedule-enabled").checked = schedule.enabled;
@@ -598,7 +594,6 @@
         ($("schedule-time-hour") || $("schedule-name")).focus({preventScroll: true});
     }
     $("add-schedule").addEventListener("click", () => edit(null));
-    $("add-other-schedule").addEventListener("click", () => edit(null, "reminder"));
     $("cancel-edit").addEventListener("click", closeEditor);
     $("schedule-special-rule").addEventListener("change", function () {
         $("schedule-rule").value = this.value || "once";
@@ -813,7 +808,6 @@
         $('group-select').hidden = $('group-select-label').hidden = groupTarget;
         $('device-list').hidden = !!deviceTarget && !deviceId;
         $('device-list').classList.toggle('device-target-single', !!deviceId);
-        $('other-schedules-section').hidden = !!deviceTarget;
         const known = operatingDevice && !deviceDataStale;
         const current = known && devices.find(device => device.id === operatingDevice.device_id);
         let relation = missing ? 'device_target_unavailable' : '';

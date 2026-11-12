@@ -27,7 +27,7 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .schedule-list .empty { border: 0; padding: 40px 26px; }
 .schedule-note { margin: 14px 2px 24px; font-size: 14px; }
 .is-editing > .schedule-overview, .is-editing > .schedule-list, .is-editing > .schedule-note,
-.is-editing > .device-list, .is-editing > .other-schedules, .is-editing > .page-heading > button { display: none; }
+.is-editing > .device-list, .is-editing > .page-heading > button { display: none; }
 .schedule-editor { padding: 0; scroll-margin-top: 24px; }
 .schedule-editor > h2 { margin: 0; padding: 22px 28px; border-bottom: 1px solid var(--line); font-size: 20px; }
 .schedule-editor-body { display: grid; grid-template-columns: minmax(220px, 30%) minmax(0, 1fr); padding: 28px; gap: 32px; }
@@ -110,9 +110,6 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .device-name-editor button { flex: 0 0 auto; }
 .device-sync-status { line-height: 1.6; overflow-wrap: anywhere; }
 #device-refresh-status:not(:empty) { margin: -8px 0 18px; }
-.other-schedules > .help { margin-bottom: 16px; }
-.other-schedules .section-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-.other-schedules .section-heading h2 { margin: 0; }
 @media (max-width: 1100px) {
     .schedule-row { grid-template-columns: 140px minmax(0, 1fr) auto; gap: 18px; padding: 24px; }
     .schedule-time { font-size: 46px; }

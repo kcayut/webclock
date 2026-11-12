@@ -17,7 +17,6 @@ assert.ok(template.indexOf("time-inputs.js") < template.indexOf("schedules.js"))
 assert.ok(template.indexOf("group-assignment.js") < template.indexOf("schedules.js"));
 assert.match(template, /data-tab-group="devices"/);
 assert.match(template, /id="devices-tab-groups"/);
-assert.match(template, /data-filter-list="other-schedules"/);
 assert.ok(template.indexOf("schedules.js") < template.indexOf("management.js"), "Language controls wait for the schedule translation hook");
 const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "07:30", rule: {},
     skipped_occurrences: [], next_occurrence: "2026-10-01T07:30:00+08:00"};
@@ -243,8 +242,6 @@ const completionTimeout = setTimeout(() => {
     assert.match($("day-status").textContent, /2026-09-30.*workday/);
     assert.match($("next-event").textContent, /Morning/);
     assert.doesNotMatch(content($("schedule-list")), /Device reminder/);
-    assert.match(content($("other-schedule-list")), /Device reminder/);
-    assert.doesNotMatch(content($("other-schedule-list")), /Morning/);
     assert.match(content($("device-list")), /config_revision.*unknown.*schedule_revision.*unknown.*holiday_revision.*unknown/);
     assert.equal(descendants($("device-list")).filter(item => item.tag === "button").length, 3);
     const deviceDetails = descendants($("device-list")).find(item => item.getAttribute("data-device-details") === "desk");
@@ -258,10 +255,9 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("next-event").textContent, "Tomorrow 07:30 · Morning");
     assert.match(content($("schedule-list")), /Next ring: Tomorrow 07:30/);
     assert.equal(assignmentLoads, 1, "Successful schedule polls refresh assignment data");
-    assert.equal(assignmentSummaries.size, 2, "Alarm and other schedule rows both show assignments");
+    assert.equal(assignmentSummaries.size, 1, "Alarm rows show assignments");
     const alarmSummary = descendants($("schedule-list")).find(child => child.getAttribute("data-schedule-assignment") === "alarm");
     assert.equal(alarmSummary.textContent, "work");
-    assert.match(content($("other-schedule-list")), /Unassigned/);
 
     qa.edit({...row, rule: {weekdays: [1, 2, 3, 4, 5, 6, 7]}, browser_volume: 0});
     assert.deepEqual(assignmentEditors.at(-1).item, {kind: "schedule", id: "alarm"});
@@ -775,38 +771,6 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("schedule-volume-value").textContent, "25%");
     assert.equal($("schedule-skip-holidays").checked, true);
 
-    showPanel("devices");
-    await $("add-other-schedule").trigger("click");
-    assert.equal($("editor").parentNode, $("devices-panel"));
-    assert.equal($("alarms-panel").classList.contains("is-editing"), false);
-    assert.equal($("devices-panel").classList.contains("is-editing"), true);
-    assert.equal($("schedule-type").value, "reminder");
-    assert.equal($("schedule-type-field").hidden, false);
-    assert.equal($("schedule-sound-field").hidden, true);
-    assert.equal($("schedule-calendar-mode-field").hidden, true);
-    $("schedule-name").value = "Weekly reminder";
-    $("schedule-type").value = "reminder";
-    weekdays.forEach(input => input.checked = false);
-    $("schedule-rule").value = "weekdays";
-    assert.equal($("weekday-field").hidden, false);
-    await $("schedule-form").trigger("submit");
-    assert.equal($("form-error").textContent, "select_weekday");
-    assert.equal(pending.length, 0);
-    weekdays[0].checked = true;
-    weekdays[4].checked = true;
-    await weekdays[0].trigger("change");
-    $("schedule-skip-holidays").checked = true;
-    const creating = $("schedule-form").trigger("submit");
-    const createRequest = take("/schedules", "POST");
-    const created = {id: "weekly", ...JSON.parse(createRequest.options.body), skipped_occurrences: [], next_occurrence: nextDate};
-    assert.deepEqual(JSON.parse(createRequest.options.body), {rule: {weekdays: [1, 5]}, enabled: true, skip_holidays: true, name: "Weekly reminder", type: "reminder", time: "07:30"});
-    reply(createRequest, created);
-    await flush();
-    scheduleReply(take("/schedules"), [created]);
-    await creating;
-    assert.equal($("add-other-schedule").focused, true, "Saving device schedules returns focus to their add button");
-    assert.equal($("status").textContent, "Saved · in 1 d 21 hr 30 min", "Save confirmation names compact duration units instead of using only colons");
-
     showPanel("alarms");
     $("schedule-time").value = "23:45";
     await $("add-schedule").trigger("click");
@@ -845,8 +809,27 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("alarms-panel").classList.contains("is-editing"), false);
     assert.equal($("add-schedule").focused, true);
 
-    showPanel("devices");
-    await button("other-schedule-list", "edit").trigger("click");
+    showPanel("alarms");
+    await $("add-schedule").trigger("click");
+    $("schedule-name").value = "Weekly alarm";
+    weekdays.forEach(input => input.checked = false);
+    weekdays[0].checked = true;
+    weekdays[4].checked = true;
+    $("schedule-rule").value = "weekdays";
+    await weekdays[0].trigger("change");
+    $("schedule-skip-holidays").checked = true;
+    const creating = $("schedule-form").trigger("submit");
+    const createRequest = take("/schedules", "POST");
+    const created = {id: "weekly", ...JSON.parse(createRequest.options.body), skipped_occurrences: [], next_occurrence: nextDate};
+    assert.deepEqual(JSON.parse(createRequest.options.body), {rule: {weekdays: [1, 5]}, enabled: true, skip_holidays: true,
+        browser_sound: "bell", browser_volume: 100, name: "Weekly alarm", type: "alarm", time: "07:30"});
+    reply(createRequest, created);
+    await flush();
+    scheduleReply(take("/schedules"), [created]);
+    await creating;
+    assert.equal($("add-schedule").focused, true, "Saving an alarm returns focus to its add button");
+    assert.match(content($("schedule-list")), /Weekly alarm/);
+    await button("schedule-list", "edit").trigger("click");
     const skipPreview = runPreview();
     reply(take("/schedules/preview", "POST"), {next_occurrence: created.next_occurrence, server_time: "2026-09-30T10:00:00+08:00"});
     await skipPreview;
@@ -857,8 +840,8 @@ const completionTimeout = setTimeout(() => {
     const skipped = {...created, next_occurrence: skipDate, skipped_occurrences: [created.next_occurrence]};
     reply(skipRequest, skipped);
     await flush();
-    assert.equal($("next-event").textContent, "none");
-    assert.match(content($("other-schedule-list")), /Next Tue 07:30/);
+    assert.match($("next-event").textContent, /Weekly alarm/);
+    assert.match(content($("schedule-list")), /Next Tue 07:30/);
     scheduleReply(take("/schedules"), [skipped]);
     await skipping;
     assert.match($("status").textContent, /Skipped/);

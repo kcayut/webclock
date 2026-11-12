@@ -12,6 +12,7 @@ assert.match(admin, /<details id="calendar-source-settings" class="panel calenda
 assert.match(admin, /data-tab-group="display"/);
 assert.match(admin, /data-tab-group="calendar"/);
 assert.match(admin, /data-filter-list="calendar"/);
+assert.match(admin, /id="calendar-device-filter"/);
 assert.match(admin, /data-filter-kind="\{\{ 'announcement' if note\.get\('announcement_targets'\) else 'reminder' \}\}"/);
 assert.match(admin, /<dialog id="edit-note-\{\{ note\.id \}\}" class="management-dialog"/);
 assert.doesNotMatch(admin, /<summary data-i18n="edit_note">/);
@@ -338,6 +339,27 @@ async function calendarWindows() {
     saveReply(patch); listReply([]);
     assert.equal(firstNote.input.value, 'Unsent manual note');
     assert.equal(laterNote.li.parentNode, $('calendar-current-list')); assert.equal(undated.li.parentNode, $('calendar-current-list'));
+    // Device filter matches announcement targets, hides calendar events, and resets to all devices.
+    const deviceFilter = $('calendar-device-filter');
+    const allDevices = element('option'), deskDevice = element('option');
+    allDevices.value = ''; allDevices.setAttribute('data-group', '');
+    deskDevice.value = 'desk'; deskDevice.setAttribute('data-group', 'group-desk');
+    deviceFilter.options = [allDevices, deskDevice]; deviceFilter.selectedIndex = 0; deviceFilter.value = '';
+    const announcementCard = element('li');
+    announcementCard.setAttribute('data-filter-kind', 'announcement');
+    announcementCard.setAttribute('data-announcement-devices', 'desk');
+    announcementCard.setAttribute('data-announcement-groups', '');
+    const calendarCard = element('li');
+    calendarCard.setAttribute('data-filter-kind', 'calendar');
+    $('calendar-current-list').appendChild(announcementCard);
+    $('calendar-current-list').appendChild(calendarCard);
+    deviceFilter.selectedIndex = 1; deviceFilter.value = 'desk'; deviceFilter.trigger('change');
+    assert.equal(announcementCard.hidden, false);
+    assert.equal(calendarCard.hidden, true);
+    deskDevice.setAttribute('data-group', 'group-desk');
+    deviceFilter.selectedIndex = 0; deviceFilter.value = ''; deviceFilter.trigger('change');
+    assert.equal(announcementCard.hidden, false);
+    assert.equal(calendarCard.hidden, false);
     assert.equal(requests.length, 0);
     console.log('Calendar tree and windows: scoped drafts, source/series inheritance, relative/absolute saves, list ordering, stable focus, failures and stale responses passed.');
 }

@@ -230,6 +230,31 @@
         var target = copy(cardTarget(card, card.scope.value)); delete target.display_window;
         card.groupEditor.set({kind: 'calendar', target: target}, card.scope.value === card.item.target.scope ? card.item.assignment : card.item.series_assignment);
     }
+    function applyDeviceFilter() {
+        var filter = $('calendar-device-filter'), list = $('calendar-current-list');
+        if (!filter || !list) return;
+        var option = filter.options && filter.options[filter.selectedIndex];
+        var device = filter.value || '';
+        var group = option && option.getAttribute ? option.getAttribute('data-group') : '';
+        Array.from(list.children).forEach(function (item) {
+            var kind = item.getAttribute('data-filter-kind');
+            if (!kind) return;
+            var visible = true;
+            if (device) {
+                if (kind === 'announcement') {
+                    var devices = (item.getAttribute('data-announcement-devices') || '').split(/\s+/);
+                    var groups = (item.getAttribute('data-announcement-groups') || '').split(/\s+/);
+                    visible = devices.indexOf(device) >= 0 || !!(group && groups.indexOf(group) >= 0);
+                } else if (kind === 'reminder') {
+                    var assignment = assignments ? assignments.get('manual_note', item.getAttribute('data-note-id')) : null;
+                    visible = !!(assignment && group && assignment.group_ids.indexOf(group) >= 0);
+                } else {
+                    visible = false;
+                }
+            }
+            item.hidden = !visible;
+        });
+    }
     function refreshAssignments() {
         if (!assignments) return;
         noteAssignments.forEach(function (entry) {
@@ -237,6 +262,7 @@
             assignments.summary(entry.summary, value); entry.editor.set({kind: 'manual_note', id: entry.id}, value);
         });
         cards.forEach(refreshCardAssignment);
+        applyDeviceFilter();
     }
     function newCard(item) {
         var card = {item: item, labels: [], drafts: {}, element: node('li', undefined, 'note-card calendar-entry')};
@@ -351,7 +377,7 @@
             if (assignments) { assignments.removeSummary(card.groupSummary); card.groupEditor.remove(); }
             card.element.remove(); cards.delete(id);
         } });
-        sortList(); controls();
+        sortList(); controls(); applyDeviceFilter();
     }
     function refreshList() {
         if (!saved) return;
@@ -518,6 +544,7 @@
         refreshAssignments();
     }
     $('calendar-list-refresh').addEventListener('click', refreshList);
+    if ($('calendar-device-filter')) $('calendar-device-filter').addEventListener('change', applyDeviceFilter);
     $('timezone-select').addEventListener('change', function () { cards.forEach(updateCardText); sortList(); });
     $('time-format-select').addEventListener('change', function () { cards.forEach(updateCardText); });
     window.CalendarSettings = {applyLanguage: applyLanguage};

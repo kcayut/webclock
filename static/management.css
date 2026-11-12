@@ -107,6 +107,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .management-filter button { min-height: 36px; padding: 6px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; }
 .management-filter button:hover { background: var(--hover); border-color: transparent; color: var(--ink); }
 .management-filter button[aria-pressed="true"] { background: var(--tint); color: var(--tint-ink); }
+.management-device-filter { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.management-device-filter label { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.management-device-filter select { width: auto; min-width: 150px; min-height: 38px; padding: 6px 10px; font-size: 14px; }
 [data-filter-active="reminder"] > [data-filter-kind]:not([data-filter-kind="reminder"]),
 [data-filter-active="announcement"] > [data-filter-kind]:not([data-filter-kind="announcement"]),
 [data-filter-active="alarm"] > [data-filter-kind]:not([data-filter-kind="alarm"]) { display: none !important; }
@@ -275,6 +278,8 @@ details[open] > summary { margin-bottom: 10px; }
     .management-tabs { margin-bottom: 14px; padding: 3px; }
     .management-tabs button { min-height: 42px; padding: 7px 13px; font-size: 14px; }
     .management-filter button { min-height: 34px; padding: 5px 12px; font-size: 13px; }
+    .management-device-filter { flex: 1 1 100%; margin-left: 0; }
+    .management-device-filter select { flex: 1; width: 100%; min-width: 0; }
     .panel, .control-panel { padding: 18px; margin-bottom: 16px; }
     .fields, .window-fields, .backup-actions { grid-template-columns: 1fr; gap: 14px; }
     .note-card { padding: 18px; }

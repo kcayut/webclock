@@ -272,12 +272,21 @@
             <button type="button" data-filter-group="calendar" data-filter-value="reminder" aria-pressed="false" data-i18n="calendar_tab_notes">{{ translations[language].calendar_tab_notes }}</button>
             <button type="button" data-filter-group="calendar" data-filter-value="announcement" aria-pressed="false" data-i18n="announcements">{{ translations[language].announcements }}</button>
         </div>
+        <div class="management-device-filter">
+            <label for="calendar-device-filter" data-i18n="calendar_device_filter">{{ translations[language].calendar_device_filter }}</label>
+            <select id="calendar-device-filter">
+                <option value="" data-group="" data-i18n="all_devices">{{ translations[language].all_devices }}</option>
+                {% for device in announcement_devices %}
+                <option value="{{ device.id }}" data-group="{{ device.group_id or '' }}">{{ device.name or device.id }}</option>
+                {% endfor %}
+            </select>
+        </div>
         <button id="calendar-list-refresh" type="button" data-i18n="calendar_list_refresh">{{ translations[language].calendar_list_refresh }}</button>
     </div>
     <p id="calendar-list-status" class="help" role="status" aria-live="polite"></p>
     <ul id="calendar-current-list" class="note-list cards" data-filter-list="calendar" data-filter-active="all">
         {% for note in notes + announcements %}
-        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}" data-filter-kind="{{ 'announcement' if note.get('announcement_targets') else 'reminder' }}">
+        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}" data-filter-kind="{{ 'announcement' if note.get('announcement_targets') else 'reminder' }}"{% if note.get('announcement_targets') %} data-announcement-groups="{{ note.announcement_targets['group_ids']|join(' ') }}" data-announcement-devices="{{ note.announcement_targets['device_ids']|join(' ') }}"{% endif %}>
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag" data-time-value="{{ note.due_date }}">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
