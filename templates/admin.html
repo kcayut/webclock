@@ -48,7 +48,7 @@
     {% endmacro %}
     {% macro announcement_fields(values, suffix) %}
         {% set is_announcement = values.get('announcement', '1' if values.get('announcement_targets') else '') == '1' %}
-        {% set targets = values.get('announcement_targets', {}) %}
+        {% set targets = values.get('announcement_targets', values.get('targets', {})) %}
         {% set selected_groups = values.getlist('announcement_group_ids') if values.getlist is defined else targets.get('group_ids', []) %}
         {% set selected_devices = values.getlist('announcement_device_ids') if values.getlist is defined else targets.get('device_ids', []) %}
         <div class="field">
@@ -58,9 +58,9 @@
                 <option value="1" {% if is_announcement %}selected{% endif %} data-i18n="announcements">{{ translations[language].announcements }}</option>
             </select>
         </div>
-        <fieldset data-announcement-options {% if not is_announcement %}hidden disabled{% endif %}>
-            <legend data-i18n="announcement_targets">{{ translations[language].announcement_targets }}</legend>
-            <p class="help" data-i18n="announcement_hint">{{ translations[language].announcement_hint }}</p>
+        <fieldset>
+            <legend data-i18n="note_targets">{{ translations[language].note_targets }}</legend>
+            <p class="help" data-i18n="note_targets_hint">{{ translations[language].note_targets_hint }}</p>
             {% for key, items, selected_ids, title in [('group_ids', announcement_groups, selected_groups, 'announcement_groups'), ('device_ids', announcement_devices, selected_devices, 'announcement_devices')] %}
             <fieldset>
                 <legend data-i18n="{{ title }}">{{ translations[language][title] }}</legend>
@@ -75,6 +75,8 @@
                 </div>
             </fieldset>
             {% endfor %}
+        </fieldset>
+        <fieldset data-announcement-options {% if not is_announcement %}hidden disabled{% endif %}>
             <div class="field">
                 <label for="announcement-expires-{{ suffix }}" data-i18n="announcement_expires">{{ translations[language].announcement_expires }}</label>
                 <input id="announcement-expires-{{ suffix }}" name="expires_at" type="datetime-local" value="{{ values.get('announcement_expires_local', values.get('expires_at', '')) }}">
@@ -286,7 +288,7 @@
     <p id="calendar-list-status" class="help" role="status" aria-live="polite"></p>
     <ul id="calendar-current-list" class="note-list cards" data-filter-list="calendar" data-filter-active="all">
         {% for note in notes + announcements %}
-        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}" data-filter-kind="{{ 'announcement' if note.get('announcement_targets') else 'reminder' }}"{% if note.get('announcement_targets') %} data-announcement-groups="{{ note.announcement_targets['group_ids']|join(' ') }}" data-announcement-devices="{{ note.announcement_targets['device_ids']|join(' ') }}"{% endif %}>
+        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}" data-filter-kind="{{ 'announcement' if note.get('announcement_targets') else 'reminder' }}"{% if note.get('announcement_targets') %} data-announcement-groups="{{ note.announcement_targets['group_ids']|join(' ') }}" data-announcement-devices="{{ note.announcement_targets['device_ids']|join(' ') }}"{% elif note.get('targets') %} data-target-groups="{{ note.targets['group_ids']|join(' ') }}" data-target-devices="{{ note.targets['device_ids']|join(' ') }}"{% endif %}>
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag" data-time-value="{{ note.due_date }}">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
@@ -308,6 +310,13 @@
                 <span data-i18n="announcement_expires">{{ translations[language].announcement_expires }}</span>:
                 {% if note.get('announcement_expires_local') %}<span data-time-value="{{ note.announcement_expires_local }}">{{ note.announcement_expires_local|replace('T', ' ') }}</span>{% else %}<span data-i18n="announcement_no_expiry">{{ translations[language].announcement_no_expiry }}</span>{% endif %}
             </p>
+            {% elif note.get('targets') %}
+            <p class="help announcement-summary">
+                {% for key, items, title in [('group_ids', announcement_groups, 'announcement_groups'), ('device_ids', announcement_devices, 'announcement_devices')] %}
+                <span data-i18n="{{ title }}">{{ translations[language][title] }}</span>:
+                {% for id in note.targets[key] %}{% set target = items|selectattr('id', 'equalto', id)|first %}{{ target.name if target else id }}{% if not loop.last %} · {% endif %}{% else %}—{% endfor %}<br>
+                {% endfor %}
+            </p>
             {% else %}
             <span data-note-group-summary="{{ note.id }}" class="content-group-summary"></span>
             {% endif %}
@@ -326,7 +335,7 @@
                     <div class="management-overlay-body">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
-                    {% if not note.get('announcement_targets') %}<div data-note-assignment-wrapper {% if editing_id == note.id and request.form.get('announcement') == '1' %}hidden{% endif %}><div data-note-group-editor="{{ note.id }}"></div></div>{% endif %}
+                    {% if not note.get('announcement_targets') and not note.get('targets') %}<div data-note-assignment-wrapper {% if editing_id == note.id and request.form.get('announcement') == '1' %}hidden{% endif %}><div data-note-group-editor="{{ note.id }}"></div></div>{% endif %}
                     </div>
                     <div class="management-overlay-actions">
                         <button type="button" data-dialog-close data-i18n="cancel">{{ translations[language].cancel }}</button>

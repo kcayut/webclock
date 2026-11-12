@@ -246,8 +246,14 @@
                     var groups = (item.getAttribute('data-announcement-groups') || '').split(/\s+/);
                     visible = devices.indexOf(device) >= 0 || !!(group && groups.indexOf(group) >= 0);
                 } else if (kind === 'reminder') {
-                    var assignment = assignments ? assignments.get('manual_note', item.getAttribute('data-note-id')) : null;
-                    visible = !!(assignment && group && assignment.group_ids.indexOf(group) >= 0);
+                    var targetDevices = (item.getAttribute('data-target-devices') || '').split(/\s+/).filter(Boolean);
+                    var targetGroups = (item.getAttribute('data-target-groups') || '').split(/\s+/).filter(Boolean);
+                    if (targetDevices.length || targetGroups.length) {
+                        visible = targetDevices.indexOf(device) >= 0 || !!(group && targetGroups.indexOf(group) >= 0);
+                    } else {
+                        var assignment = assignments ? assignments.get('manual_note', item.getAttribute('data-note-id')) : null;
+                        visible = !!(assignment && group && assignment.group_ids.indexOf(group) >= 0);
+                    }
                 } else {
                     visible = false;
                 }

@@ -149,6 +149,23 @@ class ReminderWindowTest(unittest.TestCase):
         page = self.client.get('/admin').data
         self.assertIn(b'type="time" name="display_start" value="22:00"', page)
 
+    def test_reminder_targets_are_validated_and_kept_separate_from_announcements(self):
+        targets = {'group_ids': ['group-b', 'group-a'], 'device_ids': ['device-1']}
+        note = clock.validate_note(dict(text='targeted', targets=targets))
+        self.assertEqual(note['targets'], {'group_ids': ['group-a', 'group-b'], 'device_ids': ['device-1']})
+        with self.assertRaises(ValueError):
+            clock.validate_note(dict(text='targeted', targets=targets, expires_at='2026-09-10T10:00+08:00'))
+        with self.assertRaises(ValueError):
+            clock.validate_note(dict(text='targeted', targets=targets,
+                                     announcement_targets={'group_ids': [], 'device_ids': []}))
+        with patch.object(clock, 'validate_note_ownership'):
+            with clock.app.test_request_context('/add', method='POST', data={
+                    'note_text': 'targeted', 'announcement': '',
+                    'announcement_group_ids': ['group-a'], 'announcement_device_ids': ['device-1']}):
+                saved = clock.note_from_form()
+        self.assertNotIn('announcement_targets', saved)
+        self.assertEqual(saved['targets'], {'group_ids': ['group-a'], 'device_ids': ['device-1']})
+
     def test_invalid_daily_windows_and_mode(self):
         clock.save_note('existing', '')
         original = self.path.read_bytes()

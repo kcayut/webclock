@@ -62,6 +62,36 @@ class ManagedDisplayTest(unittest.TestCase):
     def get(self, client, path='display', **kwargs):
         return client.get('/api/v2/device/' + path, base_url='https://localhost', **kwargs)
 
+    def test_targeted_reminder_form_persists_existing_group_targets(self):
+        group = self.group('Targets')
+        client = clock.app.test_client()
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        client.post('/login', base_url='https://localhost', data={
+            'username': 'owner', 'password': 'a-long-test-password', 'csrf_token': token})
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        response = client.post('/add', base_url='https://localhost', data={
+            'csrf_token': token, 'note_text': 'targeted reminder', 'announcement': '',
+            'announcement_group_ids': [group['id']], 'announcement_device_ids': []})
+        self.assertEqual(response.status_code, 302)
+        note = clock.load_notes()[-1]
+        self.assertEqual(note['targets'], {'group_ids': [group['id']], 'device_ids': []})
+        page = client.get('/admin', base_url='https://localhost').get_data(as_text=True)
+        self.assertIn('data-target-groups="' + group['id'] + '"', page)
+        self.assertIn('data-i18n="note_targets"', page)
+
+    def test_targeted_reminders_are_delivered_only_to_matching_devices(self):
+        group_a = self.group('A')
+        group_b = self.group('B')
+        client_a, _ = self.device(group_a)
+        client_b, identity_b = self.device(group_b)
+        clock.save_json(self.root / 'manual_notes.json', [
+            dict(id=1, text='group-target', due_date='', targets={'group_ids': [group_a['id']], 'device_ids': []}),
+            dict(id=2, text='device-target', due_date='', targets={'group_ids': [], 'device_ids': [identity_b['device_id']]}),
+            dict(id=3, text='unassigned', due_date=''),
+        ])
+        self.assertEqual([event['text'] for event in self.get(client_a).json['events']], ['group-target'])
+        self.assertEqual([event['text'] for event in self.get(client_b).json['events']], ['device-target'])
+
     def test_global_windows_use_management_zone_without_widening_group_grants(self):
         settings = clock.load_calendar_settings()
         rule = dict(source_id='a', uid='wanted', scope='occurrence', recurrence_id='',

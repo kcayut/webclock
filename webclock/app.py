@@ -231,7 +231,7 @@ def load_notes():
 
 
 def save_note(text, due_date, display_start='', display_end='', display_mode='range', weekdays=None,
-              announcement_targets=None, expires_at=''):
+              announcement_targets=None, expires_at='', targets=None):
     with settings_lock:
         notes = load_notes()
         new_id = 1 if not notes else max(n['id'] for n in notes) + 1
@@ -240,6 +240,8 @@ def save_note(text, due_date, display_start='', display_end='', display_mode='ra
                       'display_mode': display_mode, 'weekdays': weekdays or [], 'enabled': True})
         if announcement_targets is not None:
             notes[-1].update(announcement_targets=announcement_targets, expires_at=expires_at)
+        elif targets is not None:
+            notes[-1].update(targets=targets)
         save_json(notes_path(), notes)
 
 
@@ -249,10 +251,19 @@ def delete_note(note_id):
         save_json(notes_path(), notes)
 
 
+def validate_targets(targets, label):
+    if (not isinstance(targets, dict) or set(targets) != {'group_ids', 'device_ids'}
+            or any(not isinstance(values, list) or len(values) > 100
+                   or any(not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value)
+                          for value in values) for values in targets.values())):
+        raise ValueError('Invalid ' + label + ' targets')
+    return {key: sorted(set(values)) for key, values in targets.items()}
+
+
 def validate_note(note):
     if not isinstance(note, dict) or set(note) - {
         'id', 'text', 'due_date', 'display_start', 'display_end', 'display_mode', 'weekdays', 'enabled',
-        'announcement_targets', 'expires_at'
+        'announcement_targets', 'targets', 'expires_at'
     }:
         raise ValueError('Invalid reminder')
     if not isinstance(note.get('text'), str) or not 1 <= len(note['text'].strip()) <= 1000:
@@ -271,12 +282,9 @@ def validate_note(note):
     if type(note.get('enabled', True)) is not bool:
         raise ValueError('Invalid enabled flag')
     if 'announcement_targets' in note:
-        targets = note['announcement_targets']
-        if (not isinstance(targets, dict) or set(targets) != {'group_ids', 'device_ids'}
-                or any(not isinstance(values, list) or len(values) > 100
-                       or any(not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value)
-                              for value in values) for values in targets.values())):
-            raise ValueError('Invalid announcement targets')
+        if 'targets' in note:
+            raise ValueError('Announcements cannot also have reminder targets')
+        targets = validate_targets(note['announcement_targets'], 'announcement')
         expiry = note.get('expires_at', '')
         if not isinstance(expiry, str) or len(expiry) > 40:
             raise ValueError('Invalid announcement expiry')
@@ -285,8 +293,11 @@ def validate_note(note):
             if parsed.tzinfo is None or parsed.utcoffset() is None:
                 raise ValueError('Announcement expiry must include its timezone')
             expiry = parsed.isoformat()
-        note = dict(note, announcement_targets={key: sorted(set(values)) for key, values in targets.items()},
-                    expires_at=expiry)
+        note = dict(note, announcement_targets=targets, expires_at=expiry)
+    elif 'targets' in note:
+        if 'expires_at' in note:
+            raise ValueError('Only announcements have an expiry')
+        note = dict(note, targets=validate_targets(note['targets'], 'reminder'))
     elif 'expires_at' in note:
         raise ValueError('Only announcements have an expiry')
     return dict(note, text=note['text'].strip(), due_date=due, display_start=start, display_end=end,
@@ -294,19 +305,20 @@ def validate_note(note):
                 enabled=note.get('enabled', True))
 
 
-def validate_announcement_ownership(note, allow_missing=False):
-    if 'announcement_targets' not in note:
+def validate_note_ownership(note, allow_missing=False):
+    targets = note.get('announcement_targets') or note.get('targets')
+    if not targets:
         return
     with storage_lock:
         owner = getattr(g, 'owner_id', None) or auth_service().owner_id()
         state = group_service(read_only=True)._load()
         for key, collection in (('group_ids', 'groups'), ('device_ids', 'devices')):
-            for identifier in note['announcement_targets'][key]:
+            for identifier in targets[key]:
                 row = state[collection].get(identifier)
                 if row is None and allow_missing:
                     continue
                 if row is None or row['owner_id'] != owner:
-                    raise ValueError('Select your existing announcement targets')
+                    raise ValueError('Select your existing targets')
 
 
 def note_from_form(existing=None):
@@ -333,16 +345,24 @@ def note_from_form(existing=None):
                 if parsed.isoformat(timespec='minutes') != expiry:
                     raise ValueError('Invalid announcement expiry')
                 expiry = parsed.replace(tzinfo=get_local_now().tzinfo).isoformat()
+            note.pop('targets', None)
             note.update(announcement_targets={
                 'group_ids': request.form.getlist('announcement_group_ids'),
                 'device_ids': request.form.getlist('announcement_device_ids')}, expires_at=expiry)
         elif request.form['announcement'] == '':
             note.pop('announcement_targets', None)
             note.pop('expires_at', None)
+            targets = {
+                'group_ids': request.form.getlist('announcement_group_ids'),
+                'device_ids': request.form.getlist('announcement_device_ids')}
+            if targets['group_ids'] or targets['device_ids']:
+                note['targets'] = targets
+            else:
+                note.pop('targets', None)
         else:
             raise ValueError('Invalid announcement flag')
     note = validate_note(note)
-    validate_announcement_ownership(note)
+    validate_note_ownership(note)
     return note
 
 
@@ -552,7 +572,7 @@ def local_calendar_events(start, end, zone=None):
     events = []
     zone = zone or get_local_now().tzinfo
     for note in load_notes():
-        if 'announcement_targets' in note or not note.get('enabled', True):
+        if 'announcement_targets' in note or 'targets' in note or not note.get('enabled', True):
             continue
         try:
             due = note.get('due_date', '')
@@ -956,7 +976,8 @@ def add():
         except (ValueError, TypeError):
             return admin(error='invalid_announcement' if request.form.get('announcement') == '1' else 'window_error'), 400
         save_note(note['text'], note['due_date'], note['display_start'], note['display_end'],
-                  note['display_mode'], note['weekdays'], note.get('announcement_targets'), note.get('expires_at', ''))
+                  note['display_mode'], note['weekdays'], note.get('announcement_targets'), note.get('expires_at', ''),
+                  note.get('targets'))
     return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in note else 'calendar-title'))
 
 
@@ -1019,7 +1040,7 @@ def backup():
                 raise ValueError('Invalid notes')
             notes = [validate_note(note) for note in data['notes']]
             for note in notes:
-                validate_announcement_ownership(note, allow_missing=True)
+                validate_note_ownership(note, allow_missing=True)
             ids = [note.get('id') for note in notes]
             if any(type(i) is not int or i < 1 for i in ids) or len(set(ids)) != len(ids):
                 raise ValueError('Invalid reminder IDs')
@@ -1366,7 +1387,7 @@ def group_service(read_only=False):
 
 def group_content_catalog():
     calendar = load_calendar_settings()
-    notes = [note for note in load_notes() if 'announcement_targets' not in note]
+    notes = [note for note in load_notes() if 'announcement_targets' not in note and 'targets' not in note]
     schedules = read_schedules(content_directory())
     return {
         'calendar_source_ids': [source['id'] for source in get_calendar_sources()],
@@ -1391,7 +1412,7 @@ def group_owner():
 def group_ui_catalog():
     return dict(calendar_sources=[{'id': row['id'], 'name': row['name']} for row in get_calendar_sources()],
                 manual_notes=[{'id': row['id'], 'text': row['text']} for row in load_notes()
-                              if 'announcement_targets' not in row],
+                              if 'announcement_targets' not in row and 'targets' not in row],
                 schedules=[{'id': row['id'], 'name': row['name']} for row in read_schedules(content_directory())],
                 defaults=dict(active_settings(), night=dict(DEFAULT_NIGHT, **active_settings().get('night', {}))))
 
@@ -1412,6 +1433,10 @@ def managed_content(identity):
                 targets = validate_note(row)['announcement_targets']
                 if identity['group_id'] in targets['group_ids'] or identity['device_id'] in targets['device_ids']:
                     notes.append(row)
+            elif row.get('targets'):
+                targets = validate_note(row)['targets']
+                if identity['group_id'] in targets['group_ids'] or identity['device_id'] in targets['device_ids']:
+                    notes.append(row)
             elif row['id'] in content['manual_note_ids']:
                 notes.append(row)
         calendar_settings = load_calendar_settings()
@@ -1425,7 +1450,7 @@ def managed_content(identity):
             source for row in schedules for source in (row.get('calendar_link') or {}).get('source_ids', [])}
         # This server-only digest detects deletion/replacement during calendar I/O.
         dependencies = [[row for row in source_rows if row['id'] in needed],
-                        [note for note in all_notes if 'announcement_targets' not in note] if 'local' in needed else []]
+                        [note for note in all_notes if 'announcement_targets' not in note and 'targets' not in note] if 'local' in needed else []]
         if NATIVE_CALENDAR_SOURCE in needed:
             dependencies.append(native_event_rows(identity['owner_id']))
         if any('announcement_targets' in note for note in notes):
