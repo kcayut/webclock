@@ -96,7 +96,6 @@ $("schedule-form").querySelector = selector => {
 };
 $("schedule-form").reset = () => {
     ["id", "name", "dates"].forEach(key => $("schedule-" + key).value = "");
-    $("schedule-type").value = "alarm";
     // The time helper makes this canonical field hidden; native reset keeps its current value.
     $("schedule-rule").value = "every_day";
     $("schedule-sound").value = "bell";
@@ -726,7 +725,6 @@ const completionTimeout = setTimeout(() => {
     showPanel("alarms");
     assert.equal($("schedule-name").value, "Unsaved draft", "Navigation keeps the editor DOM and draft");
     $("schedule-name").value = row.name;
-    assert.equal($("schedule-type-field").hidden, true);
     assert.equal($("schedule-sound-field").hidden, false);
     assert.equal($("schedule-sound").value, "bell", "Existing alarms default to bell");
     await $("preview-sound").trigger("click");

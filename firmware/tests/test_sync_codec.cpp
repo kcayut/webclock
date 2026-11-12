@@ -47,6 +47,6 @@ int main(int argc, char **argv) {
   assert(decode(quiet.as<JsonObjectConst>(), snapshot));
   assert(due(snapshot, monday, 0).due && due(snapshot, monday, 0).volume == 0);
   quiet["schedules"]["schedules"][0]["type"] = "reminder";
-  assert(decode(quiet.as<JsonObjectConst>(), snapshot) && !due(snapshot, monday, 0).due);
+  assert(!decode(quiet.as<JsonObjectConst>(), snapshot));
   std::cout << "sync codec: server fixture and rejection cases passed\n";
 }

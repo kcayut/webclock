@@ -131,7 +131,7 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
 }
 ```
 
-- `type`: `alarm`, `reminder`, or `announcement`. The clock page executes only `alarm`; calendar events and text reminders do not automatically become alarms.
+- `type`: only `alarm` is accepted. Retired `reminder`/`announcement` schedules are rejected and removed from stored data on read.
 - `rule`: one of `{}` for daily, `{"weekdays":[1,3,5]}`, `{"workday_only":true}`, `{"holiday_only":true}`, or `{"dates":["2026-10-03"]}`.
 - `skip_holidays`: filters holidays for daily, weekday, or explicit-date rules. Make-up workdays remain workdays. Combining it with `holiday_only=true` returns 400.
 - `browser_sound`: `bell`, `beep`, `digital`, `chime`, `melody`, `pulse`, `sonar`, or `silent`. It is independent from old hardware sound fields.

@@ -352,9 +352,11 @@ class ServerApiTest(unittest.TestCase):
 
     def test_browser_alarms_keep_current_minute_and_local_dismissal(self):
         for row in (self.schedule, dict(self.schedule, id='second', browser_sound='melody', browser_volume=25),
-                    dict(self.schedule, id='disabled', enabled=False),
-                    dict(self.schedule, id='text', type='reminder')):
+                    dict(self.schedule, id='disabled', enabled=False)):
             self.assertEqual(self.client.post('/api/v1/schedules', json=row).status_code, 201)
+        for retired in ('reminder', 'announcement'):
+            self.assertEqual(self.client.post('/api/v1/schedules',
+                                              json=dict(self.schedule, id='retired', type=retired)).status_code, 400)
         now = datetime.fromisoformat('2026-09-23T07:30:08+08:00')
         with patch('webclock.api.management.taipei_now', return_value=now) as current:
             response = self.client.get('/api/v1/browser-alarms')

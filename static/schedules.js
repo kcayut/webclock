@@ -524,9 +524,8 @@
         }
     }
     function setCalendarMode() {
-        const alarm = $("schedule-type").value === "alarm";
-        const mode = alarm ? $("schedule-calendar-mode").value : "none";
-        $("schedule-calendar-mode-field").hidden = !alarm;
+        const mode = $("schedule-calendar-mode").value;
+        $("schedule-calendar-mode-field").hidden = false;
         $("calendar-source-field").hidden = mode === "none";
         $("schedule-offset-field").hidden = mode !== "event";
         $("schedule-offset").disabled = mode !== "event";
@@ -552,8 +551,6 @@
         $("schedule-date-picker").value = "";
         $("form-error").textContent = "";
         $("schedule-id").value = schedule ? schedule.id : "";
-        $("schedule-type").value = "alarm";
-        $("schedule-type-field").hidden = true;
         $("schedule-sound-field").hidden = false;
         $("schedule-volume-field").hidden = false;
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
@@ -573,7 +570,7 @@
         $(editorPanel + "-panel").classList.toggle("is-editing", true);
         $("editor-title").textContent = t(schedule ? "edit_alarm" : "add_alarm");
         if (schedule) {
-            ["name", "type", "time"].forEach(key => $("schedule-" + key).value = schedule[key]);
+            ["name", "time"].forEach(key => $("schedule-" + key).value = schedule[key]);
             $("schedule-enabled").checked = schedule.enabled;
             const rule = schedule.rule;
             $("schedule-rule").value = ["weekdays", "workday_only", "holiday_only", "dates"].find(key => rule[key]) || "every_day";
@@ -679,13 +676,12 @@
             const schedule = schedules.find(item => item.id === id);
             data.skipped_occurrences = schedule.skipped_occurrences.filter(value => Date.parse(value) < serverNow());
         }
-        ["name", "type", "time"].forEach(key => data[key] = $("schedule-" + key).value);
-        data.name = data.name.trim() || t(data.type);
-        if (data.type === "alarm") {
-            data.browser_sound = $("schedule-sound").value;
-            data.browser_volume = Number($("schedule-volume").value);
-        }
-        const calendarMode = data.type === "alarm" ? $("schedule-calendar-mode").value : "none";
+        ["name", "time"].forEach(key => data[key] = $("schedule-" + key).value);
+        data.type = "alarm";
+        data.name = data.name.trim() || t("alarm");
+        data.browser_sound = $("schedule-sound").value;
+        data.browser_volume = Number($("schedule-volume").value);
+        const calendarMode = $("schedule-calendar-mode").value;
         if (calendarMode === "event" && !data.time) data.time = "07:30";
         if (calendarMode !== "event" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.time) || ($("schedule-time")._clockTimeControl || {}).invalid)) throw new Error(t("select_time"));
         if (mode === "once") {

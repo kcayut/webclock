@@ -32,7 +32,7 @@ OLED 主畫面顯示大時間、日期、星期數字（1＝星期一，7＝星�
 | 項目 | 第一版行為 |
 | --- | --- |
 | `type=alarm` | 本機響鈴 |
-| `reminder`／`announcement` | 可在快照中存在，但不播放；也計入 64 筆上限 |
+| 其他 `type` | 已淘汰；伺服器會拒絕，舊資料讀取時會自動移除 |
 | `bell`／`beep`／`digital`／`chime`／`melody`／`pulse`／`sonar` | 全部映射成同一種 4 kHz 嗶聲，不模擬網頁音色 |
 | 聲音節奏 | 每秒輸出 350 ms，最多 60 秒 |
 | 每鬧鐘音量 | `browser_volume / 100 × volume_limit` 作為 PWM 輸出值；預設 `volume_limit=0.25`，可調範圍 0 至 0.5 |

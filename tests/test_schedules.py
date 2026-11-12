@@ -1,11 +1,16 @@
 """Run with: python -m unittest discover -s tests -p test_schedules.py"""
 
+import json
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock
 
 from webclock.services.holiday_service import HolidayService
-from webclock.services.schedule_service import TAIPEI, next_event, next_occurrence, validate_schedule
+from webclock.services.schedule_service import (
+    TAIPEI, next_event, next_occurrence, read_schedules, validate_schedule,
+)
 
 
 class ScheduleTests(unittest.TestCase):
@@ -18,6 +23,21 @@ class ScheduleTests(unittest.TestCase):
 
     def next(self, schedule, stamp):
         return next_occurrence(schedule, self.holidays, datetime.fromisoformat(stamp))
+
+    def test_retired_schedule_types_are_removed_from_storage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'schedules.json'
+            rows = [
+                dict(id='keep', name='Keep', type='alarm', time='07:30', rule={}),
+                dict(id='drop-reminder', name='Drop reminder', type='reminder', time='08:00', rule={}),
+                dict(id='drop-announcement', name='Drop announcement', type='announcement', time='09:00', rule={}),
+            ]
+            path.write_text(json.dumps(rows), encoding='utf-8')
+            self.assertEqual([row['id'] for row in read_schedules(directory)], ['keep'])
+            self.assertEqual([row['id'] for row in json.loads(path.read_text(encoding='utf-8'))], ['keep'])
+        for retired in ('reminder', 'announcement'):
+            with self.assertRaises(ValueError):
+                validate_schedule(dict(id='retired', name='Retired', type=retired, time='07:30', rule={}))
 
     def test_holidays_makeup_and_coverage(self):
         for day in ('2023-09-23', '2024-02-17', '2025-02-08'):

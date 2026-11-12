@@ -69,7 +69,6 @@
                                 </details>
                             </div>
                             <div class="field setting-row"><label for="schedule-name" data-schedule-i18n="name_optional">{{ t.name_optional }}</label><input id="schedule-name" maxlength="120" data-schedule-placeholder="name_placeholder" placeholder="{{ t.name_placeholder }}" autocomplete="off"></div>
-                            <div id="schedule-type-field" class="field setting-row" hidden><label for="schedule-type" data-schedule-i18n="type">{{ t.type }}</label><select id="schedule-type"><option value="alarm" selected data-schedule-i18n="alarm">{{ t.alarm }}</option></select></div>
                             <div id="schedule-sound-field" class="field setting-row">
                                 <label for="schedule-sound" data-schedule-i18n="browser_sound">{{ t.browser_sound }}</label>
                                 <div class="sound-choice"><select id="schedule-sound">{% for sound in ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'] %}<option value="{{ sound }}" data-schedule-i18n="sound_{{ sound }}">{{ t['sound_' + sound] }}</option>{% endfor %}</select><button id="preview-sound" type="button" data-schedule-i18n="preview_sound">{{ t.preview_sound }}</button></div>

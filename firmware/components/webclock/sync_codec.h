@@ -67,10 +67,10 @@ inline bool decode(JsonObjectConst bundle, Snapshot &snapshot) {
         !row["rule"].is<JsonObjectConst>() || !row["skipped_occurrences"].is<JsonArrayConst>() ||
         !row["calendar_link"].isNull()) return false;
     const std::string type = row["type"].as<std::string>();
-    if (type != "alarm" && type != "reminder" && type != "announcement") return false;
+    if (type != "alarm") return false;
     Schedule schedule;
     schedule.id = row["id"].as<std::string>();
-    schedule.enabled = row["enabled"].as<bool>() && type == "alarm";
+    schedule.enabled = row["enabled"].as<bool>();
     schedule.skip_holidays = row["skip_holidays"].as<bool>();
     const std::string when = row["time"].as<std::string>();
     if (when.size() != 5 || when[2] != ':' || when[0] < '0' || when[0] > '2' ||

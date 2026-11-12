@@ -156,7 +156,7 @@ webclock_state/              私人執行資料，不進 Git
 }
 ```
 
-- `type`：`alarm`、`reminder`、`announcement`；時鐘頁只執行 `alarm`，不將行事曆或文字提醒自動變成鬧鐘。硬體如何呈現仍由裝置決定。
+- `type`：只接受 `alarm`；`reminder`／`announcement` 已淘汰，API 會拒絕，讀取舊資料時會自動移除。
 - `rule` 擇一：`{}` 每天、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}`。
 - `skip_holidays`：可在每天、星期或指定日期規則上過濾假日。補班日仍是工作日；`holiday_only=true` 同時 `skip_holidays=true` 會回 400。
 - `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar` 或 `silent`。這是網頁專用音色，和舊硬體 `sound` 欄位分開；`silent` 保留視覺提示。
@@ -252,7 +252,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 | --- | --- |
 | `id` | 可省略由 Server 產生，或提供 1–80 個英數字、底線、連字號；新增不可重複，PUT 不可變更 ID |
 | `name`、`time` | 新增必填；名稱去除前後空白後 1–120 字元，時間嚴格為 `HH:MM`，例如 `07:30` |
-| `type`、`enabled` | 預設 `alarm`、`true`；類型見上節 |
+| `type`、`enabled` | 預設 `alarm`、`true`；只接受 `alarm` |
 | `rule` | 預設 `{}`；星期陣列 1–7 筆、日期陣列 1–366 筆，值排序並去重；`workday_only`／`holiday_only` 的值只能是 `true` |
 | `skip_holidays` | 布林值，預設 `false` |
 | `browser_sound`、`browser_volume` | 預設 `bell`、100；音色與音量限制見上節 |

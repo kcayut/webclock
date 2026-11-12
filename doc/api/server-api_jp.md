@@ -131,7 +131,7 @@ webclock_state/              非公開の実行データ。Git に追加しな�
 }
 ```
 
-- `type`：`alarm`、`reminder`、`announcement`。時計ページが実行するのは `alarm` だけで、カレンダー予定や文字リマインダーは自動でアラームになりません。
+- `type`：`alarm` のみ受け付けます。廃止した `reminder`／`announcement` は拒否し、保存データの読み込み時に自動削除します。
 - `rule`：毎日の `{}`、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}` のいずれかです。
 - `skip_holidays`：毎日・曜日・指定日の休日を除外します。振替出勤日は勤務日です。`holiday_only=true` との併用は 400 を返します。
 - `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar`、`silent`。旧ハードウェアの音声項目とは独立しています。

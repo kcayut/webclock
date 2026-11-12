@@ -1,6 +1,7 @@
 """Server-owned schedules, persistence and deterministic occurrence calculation."""
 
 import copy
+import logging
 import math
 import re
 from datetime import date, datetime, time, timedelta, timezone
@@ -53,7 +54,7 @@ def validate_schedule(data):
     if not isinstance(result.get('name'), str) or not 1 <= len(result['name'].strip()) <= 120:
         raise ValueError('Schedule name is required (maximum 120 characters)')
     result['name'] = result['name'].strip()
-    if result['type'] not in ('alarm', 'reminder', 'announcement'):
+    if result['type'] != 'alarm':
         raise ValueError('Invalid schedule type')
     if not isinstance(result.get('time'), str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', result['time']):
         raise ValueError('Time must use HH:MM')
@@ -121,11 +122,20 @@ def validate_schedule(data):
 def read_schedules(directory):
     """Expose only server fields while accepting the previous prototype's records."""
     with storage_lock:
-        rows = load_json(Path(directory) / 'schedules.json', [])
+        path = Path(directory) / 'schedules.json'
+        rows = load_json(path, [])
         if not isinstance(rows, list) or len(rows) > 1000:
             raise ValueError('Invalid stored schedules')
         if any(not isinstance(row, dict) or not row.get('id') for row in rows):
             raise ValueError('Stored schedule is missing an ID')
+        # Reminder/announcement schedules were retired. Remove them from disk on
+        # first read so old installations cannot keep unmanageable records.
+        alarms = [row for row in rows if row.get('type', 'alarm') == 'alarm']
+        if len(alarms) != len(rows):
+            logging.getLogger(__name__).warning(
+                'Removing %d retired reminder/announcement schedule(s) from %s', len(rows) - len(alarms), path)
+            save_json(path, alarms)
+            rows = alarms
         validated = [validate_schedule({key: value for key, value in row.items()
                                         if key not in LEGACY_DEVICE_FIELDS}) for row in rows]
         if len({row['id'] for row in validated}) != len(validated):
