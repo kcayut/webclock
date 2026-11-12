@@ -478,7 +478,6 @@
             renderDisplay(draft);
             chooser.invalidate(changedSources);
             status('calendar-status', 'calendar_saved');
-            $('calendar-source-settings').open = false;
             refreshList();
         });
     });

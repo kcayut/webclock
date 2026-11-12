@@ -15,6 +15,8 @@ assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
 assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
 assert.ok(template.indexOf("time-inputs.js") < template.indexOf("schedules.js"));
 assert.ok(template.indexOf("group-assignment.js") < template.indexOf("schedules.js"));
+assert.match(template, /data-tab-group="devices"/);
+assert.match(template, /id="devices-tab-groups"/);
 assert.ok(template.indexOf("schedules.js") < template.indexOf("management.js"), "Language controls wait for the schedule translation hook");
 const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "07:30", rule: {},
     skipped_occurrences: [], next_occurrence: "2026-10-01T07:30:00+08:00"};
@@ -126,7 +128,8 @@ const context = vm.createContext({
         getElementById: id => elements.get(id) || null, createElement: element, addEventListener() {},
         querySelectorAll(selector) {
             if (selector === '[data-management-panel]') return [$("alarms-panel"), $("devices-panel")];
-            if (selector === '[data-management-link]' || selector.startsWith('[data-schedule-')) return [];
+            if (selector === '[data-management-link]' || selector.startsWith('[data-schedule-')
+                || selector === '[data-management-tab]' || selector === '[data-management-tab-panel]') return [];
             if (selector === '[name="calendar-source"]:checked') return descendants($("schedule-calendar-sources")).filter(input => input.name === "calendar-source" && input.checked);
             assert.ok(['[name="weekday"]', '[name="weekday"]:checked'].includes(selector));
             return selector.endsWith(":checked") ? weekdays.filter(input => input.checked) : weekdays;

@@ -15,19 +15,27 @@ function checkNavigation(initial, names) {
             classList: {toggle: (key, on) => { if (on) classes.add(key); else classes.delete(key); }}};
     }
     const panels = names.map(name => element(name, 'data-management-panel'));
-    const links = ['display', 'calendar', 'alarms', 'devices', 'backup'].map(name => element(name, 'data-management-link'));
+    const systemGroup = {open: false};
+    const links = ['display', 'calendar', 'alarms', 'devices', 'backup'].map(name => {
+        const link = element(name, 'data-management-link');
+        link.closest = selector => selector === 'details.management-nav-group' && (name === 'display' || name === 'backup') ? systemGroup : null;
+        return link;
+    });
     const events = {};
     let scrollY = 110;
     const frames = [];
     const window = {location: {hash: ''}, addEventListener: (name, fn) => { events[name] = fn; },
         requestAnimationFrame: fn => frames.push(fn), scrollTo(x, y) { scrollY = y; }};
     const context = {window, document: {body: {getAttribute: () => initial}, getElementById: () => null,
-        querySelectorAll: selector => selector === '[data-management-panel]' ? panels : links}};
+        querySelectorAll: selector => selector === '[data-management-panel]' ? panels
+            : selector === '[data-management-link]' ? links : []}};
     vm.runInNewContext(source, context);
     function selected(name) {
         assert.equal(panels.find(panel => !panel.hidden).getAttribute('data-management-panel'), name);
         assert.equal(panels.filter(panel => !panel.hidden).length, 1);
         assert.equal(links.find(link => link.getAttribute('aria-current')).getAttribute('data-management-link'), name);
+        if (name === 'display' || name === 'backup') assert.equal(systemGroup.open, true, 'A grouped current link must reveal its system group.');
+        else assert.equal(systemGroup.open, false, 'Groups without the current item must stay collapsed.');
         assert.ok(panels.every(panel => panel.draft === 'keep unsaved input'));
     }
     selected(initial);

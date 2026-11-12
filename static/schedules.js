@@ -826,7 +826,21 @@
     $('device-target-select').addEventListener('change', () => {
         deviceTarget = $('device-target-select').value;
         if (deviceTarget.startsWith('group:') && window.WebClockGroups) window.WebClockGroups.choose(deviceTarget.slice(6));
+        const tab = document.getElementById(deviceTarget.startsWith('group:') ? 'devices-tab-groups' : 'devices-tab-devices');
+        if (tab && tab.click) tab.click();
         renderDevices();
+    });
+    ['devices', 'groups'].forEach(name => {
+        const button = document.getElementById('devices-tab-' + name);
+        if (!button) return;
+        button.addEventListener('click', () => {
+            const select = $('device-target-select'), value = select.value;
+            const wrongTab = name === 'groups' ? value && !value.startsWith('group:') : value.startsWith('group:');
+            if (wrongTab) {
+                select.value = '';
+                select.dispatchEvent(new Event('change'));
+            }
+        });
     });
     window.WebClockDeviceTargets = {
         refresh: renderDeviceTargets,

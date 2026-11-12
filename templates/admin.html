@@ -107,6 +107,13 @@
                 <p class="page-description" data-i18n="management_display_hint">{{ translations[language].management_display_hint }}</p>
             </div>
         </div>
+    <div class="management-tabs" data-tab-group="display" role="tablist" aria-label="{{ translations[language].management_display }}">
+        <button type="button" id="display-tab-common" role="tab" aria-controls="display-panel-common" aria-selected="true" tabindex="0" data-tab-group="display" data-management-tab="common" data-i18n="display_common">{{ translations[language].display_common }}</button>
+        <button type="button" id="display-tab-advanced" role="tab" aria-controls="display-panel-advanced" aria-selected="false" tabindex="-1" data-tab-group="display" data-management-tab="advanced" data-i18n="display_advanced">{{ translations[language].display_advanced }}</button>
+    </div>
+    <p id="settings-status" class="save-status" role="status" aria-live="polite"></p>
+
+    <div id="display-panel-common" class="management-tab-panel is-current" role="tabpanel" aria-labelledby="display-tab-common" data-tab-group="display" data-management-tab-panel="common">
     <div class="panel">
         <h2 data-i18n="display_control">{{ translations[language].display_control }}</h2>
         <div class="fields display-fields">
@@ -128,7 +135,14 @@
                 <span data-i18n="bright">{{ translations[language].bright }}</span>
             </div>
         </div>
+        </div>
+    </div>
+    </div>
 
+    <div id="display-panel-advanced" class="management-tab-panel" role="tabpanel" aria-labelledby="display-tab-advanced" data-tab-group="display" data-management-tab-panel="advanced" hidden>
+    <div class="panel">
+        <h2 data-i18n="settings_advanced">{{ translations[language].settings_advanced }}</h2>
+        <div class="fields display-fields">
         <div class="field">
             <label for="timezone-select" data-i18n="timezone">{{ translations[language].timezone }}</label>
             <select id="timezone-select" onchange="setTimezone(this.value)">
@@ -174,7 +188,6 @@
                 <option value="12h" data-i18n="time_format_12">{{ translations[language].time_format_12 }}</option>
             </select>
             <p class="help" data-i18n="time_format_hint">{{ translations[language].time_format_hint }}</p>
-            <p id="time-format-status" role="status" aria-live="polite"></p>
         </div>
         </div>
     </div>
@@ -198,9 +211,11 @@
         </div>
     </form>
 
-    <div class="panel">
-        <p id="settings-status" role="status" aria-live="polite"></p>
+    <details class="inline-help settings-maintenance">
+        <summary data-i18n="settings_maintenance">{{ translations[language].settings_maintenance }}</summary>
+        <p class="help" data-i18n="settings_reload_hint">{{ translations[language].settings_reload_hint }}</p>
         <button id="settings-reload" type="button" onclick="reloadSettings()" data-i18n="settings_reload">{{ translations[language].settings_reload }}</button>
+    </details>
     </div>
     </section>
 
@@ -211,12 +226,21 @@
             <p class="page-description" data-i18n="calendar_hint">{{ translations[language].calendar_hint }}</p>
         </div>
     </div>
+    <div class="management-tabs" data-tab-group="calendar" role="tablist" aria-label="{{ translations[language].calendar_title }}">
+        <button type="button" id="calendar-tab-notes" role="tab" aria-controls="calendar-panel-notes" aria-selected="true" tabindex="0" data-tab-group="calendar" data-management-tab="notes" data-i18n="calendar_tab_notes">{{ translations[language].calendar_tab_notes }}</button>
+        <button type="button" id="calendar-tab-display" role="tab" aria-controls="calendar-panel-display" aria-selected="false" tabindex="-1" data-tab-group="calendar" data-management-tab="display" data-i18n="calendar_tab_display">{{ translations[language].calendar_tab_display }}</button>
+        <button type="button" id="calendar-tab-sources" role="tab" aria-controls="calendar-panel-sources" aria-selected="false" tabindex="-1" data-tab-group="calendar" data-management-tab="sources" data-i18n="calendar_tab_sources">{{ translations[language].calendar_tab_sources }}</button>
+    </div>
+    <div id="calendar-panel-display" class="management-tab-panel" role="tabpanel" aria-labelledby="calendar-tab-display" data-tab-group="calendar" data-management-tab-panel="display" hidden>
     <form id="calendar-display-form" class="panel calendar-display-settings">
         <h2 data-i18n="calendar_display_sources">{{ translations[language].calendar_display_sources }}</h2>
         <p class="help" data-i18n="calendar_display_hint">{{ translations[language].calendar_display_hint }}</p>
-        <p class="help group-range-hint" data-i18n="group_range_hint">{{ translations[language].group_range_hint }}</p>
-        <p class="help" data-i18n="group_calendar_parent_hint">{{ translations[language].group_calendar_parent_hint }}</p>
-        <p class="help" data-i18n="group_calendar_window">{{ translations[language].group_calendar_window }}</p>
+        <details class="inline-help">
+            <summary data-i18n="calendar_selection_help">{{ translations[language].calendar_selection_help }}</summary>
+            <p class="help group-range-hint" data-i18n="group_range_hint">{{ translations[language].group_range_hint }}</p>
+            <p class="help" data-i18n="group_calendar_parent_hint">{{ translations[language].group_calendar_parent_hint }}</p>
+            <p class="help" data-i18n="group_calendar_window">{{ translations[language].group_calendar_window }}</p>
+        </details>
         <fieldset id="calendar-display-fields" disabled>
             <div id="calendar-display-list" class="calendar-display-list"></div>
             <div class="actions"><button id="calendar-display-save" type="submit" data-i18n="calendar_save_display">{{ translations[language].calendar_save_display }}</button></div>
@@ -225,6 +249,8 @@
         <p id="calendar-source-errors" class="form-error" role="status" aria-live="polite"></p>
         <button id="calendar-retry" type="button" data-i18n="calendar_retry" hidden>{{ translations[language].calendar_retry }}</button>
     </form>
+    </div>
+    <div id="calendar-panel-notes" class="management-tab-panel is-current" role="tabpanel" aria-labelledby="calendar-tab-notes" data-tab-group="calendar" data-management-tab-panel="notes">
     <section class="panel">
     <h2 id="announcements-title" data-i18n="manual_events">{{ translations[language].manual_events }}</h2>
     <p class="help" data-i18n="manual_events_hint">{{ translations[language].manual_events_hint }}</p>
@@ -269,25 +295,36 @@
             <span data-note-group-summary="{{ note.id }}" class="content-group-summary"></span>
             {% endif %}
             <div class="note-actions">
+                <button type="button" class="btn" onclick="document.getElementById('edit-note-{{ note.id }}').showModal()" data-i18n="edit_note">{{ translations[language].edit_note }}</button>
                 <form action="{{ url_for('toggle', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
                 <form action="{{ url_for('delete', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
             </div>
-            <details {% if editing_id == note.id %}open{% endif %}>
-                <summary data-i18n="edit_note">{{ translations[language].edit_note }}</summary>
+            <dialog id="edit-note-{{ note.id }}" class="management-dialog"{% if editing_id == note.id %} data-editing="1"{% endif %} aria-labelledby="edit-note-title-{{ note.id }}" onclick="if (event.target === this) this.close()">
+                <div class="management-dialog-header">
+                    <h2 id="edit-note-title-{{ note.id }}" data-i18n="edit_note">{{ translations[language].edit_note }}</h2>
+                    <button type="button" class="management-dialog-close" onclick="this.closest('dialog').close()" aria-label="{{ translations[language].notice_close }}" data-i18n-aria-label="notice_close">&times;</button>
+                </div>
                 <form action="{{ url_for('schedule', id=note.id) }}" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="management-dialog-body">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
                     {% if not note.get('announcement_targets') %}<div data-note-assignment-wrapper {% if editing_id == note.id and request.form.get('announcement') == '1' %}hidden{% endif %}><div data-note-group-editor="{{ note.id }}"></div></div>{% endif %}
-                    <div class="actions"><button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button></div>
+                    </div>
+                    <div class="management-dialog-actions">
+                        <button type="button" onclick="this.closest('dialog').close()" data-i18n="cancel">{{ translations[language].cancel }}</button>
+                        <button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button>
+                    </div>
                 </form>
-            </details>
+            </dialog>
         </li>
         {% else %}
         <li id="calendar-current-empty" class="empty" data-i18n="no_notes">{{ translations[language].no_notes }}</li>
         {% endfor %}
     </ul>
-    <details id="calendar-source-settings" class="panel calendar-source-settings">
+    </div>
+    <div id="calendar-panel-sources" class="management-tab-panel" role="tabpanel" aria-labelledby="calendar-tab-sources" data-tab-group="calendar" data-management-tab-panel="sources" hidden>
+    <details id="calendar-source-settings" class="panel calendar-source-settings" open>
         <summary>
             <span data-i18n="calendar_sources">{{ translations[language].calendar_sources }}</span>
             <span id="calendar-source-summary" role="status" aria-live="polite"></span>
@@ -309,6 +346,7 @@
         <p id="calendar-status" role="status" aria-live="polite"></p>
     </form>
     </details>
+    </div>
     </section>
 
     <section class="management-panel" data-management-panel="backup" aria-labelledby="backup-title">
@@ -375,7 +413,7 @@
         <p class="help" data-i18n="backup_hint">{{ translations[language].backup_hint }}</p>
         <section>
         <h2 data-i18n="backup_export">{{ translations[language].backup_export }}</h2>
-        <p><a class="btn primary" href="{{ url_for('backup') }}" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
+        <p><a class="btn" href="{{ url_for('backup') }}" download="webclock-backup.json" data-i18n="backup_export">{{ translations[language].backup_export }}</a></p>
         </section>
         <section>
         <h2 data-i18n="backup_import">{{ translations[language].backup_import }}</h2>
@@ -512,7 +550,6 @@
             return postSettings({time_format: format}, true).then(function (result) {
                 if (result) {
                     applyTimeFormat(format);
-                    document.getElementById('time-format-status').textContent = t('saved');
                 }
                 select.disabled = false;
             });
@@ -574,7 +611,7 @@
                     ['enabled', 'black'].forEach(function (key) { document.getElementById('night-' + key).checked = night[key]; });
                     ['start', 'end', 'brightness'].forEach(function (key) { document.getElementById('night-' + key).value = night[key]; });
                     document.getElementById('night-value').textContent = night.brightness;
-                    document.getElementById('night-status').textContent = document.getElementById('time-format-status').textContent = '';
+                    document.getElementById('night-status').textContent = '';
                     applyTimeFormat(settings.time_format);
                 }).catch(function () {
                     settingsMessage = 'settings_load_error';
@@ -646,6 +683,9 @@
                 select.disabled = false;
             });
         }
+
+        var editingDialog = document.querySelector('dialog[data-editing="1"]');
+        if (editingDialog) editingDialog.showModal();
 
     </script>
     <script defer src="{{ url_for('static', filename='calendar-chooser.js') }}"></script>

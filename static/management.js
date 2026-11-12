@@ -1,6 +1,44 @@
 /* Shared management navigation. Switching sections keeps the existing form DOM. */
 (function () {
     'use strict';
+    var tabs = document.querySelectorAll('[data-management-tab]');
+    var tabPanels = document.querySelectorAll('[data-management-tab-panel]');
+    function activateTab(group, name) {
+        var i;
+        for (i = 0; i < tabs.length; i++) {
+            if (tabs[i].getAttribute('data-tab-group') !== group) continue;
+            var selected = tabs[i].getAttribute('data-management-tab') === name;
+            tabs[i].setAttribute('aria-selected', String(selected));
+            tabs[i].setAttribute('tabindex', selected ? '0' : '-1');
+        }
+        for (i = 0; i < tabPanels.length; i++) {
+            if (tabPanels[i].getAttribute('data-tab-group') !== group) continue;
+            var current = tabPanels[i].getAttribute('data-management-tab-panel') === name;
+            tabPanels[i].hidden = !current;
+            tabPanels[i].classList.toggle('is-current', current);
+        }
+    }
+    for (var t = 0; t < tabs.length; t++) {
+        tabs[t].addEventListener('click', function () {
+            activateTab(this.getAttribute('data-tab-group'), this.getAttribute('data-management-tab'));
+        });
+        tabs[t].addEventListener('keydown', function (event) {
+            var key = event.key;
+            if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') return;
+            var group = this.getAttribute('data-tab-group'), groupTabs = [];
+            for (var i = 0; i < tabs.length; i++) {
+                if (tabs[i].getAttribute('data-tab-group') === group) groupTabs.push(tabs[i]);
+            }
+            var index = groupTabs.indexOf(this);
+            if (index < 0) return;
+            if (key === 'Home') index = 0;
+            else if (key === 'End') index = groupTabs.length - 1;
+            else index = (index + (key === 'ArrowRight' ? 1 : -1) + groupTabs.length) % groupTabs.length;
+            event.preventDefault();
+            groupTabs[index].focus();
+            activateTab(group, groupTabs[index].getAttribute('data-management-tab'));
+        });
+    }
     var panels = document.querySelectorAll('[data-management-panel]');
     var links = document.querySelectorAll('[data-management-link]');
     var aliases = {'calendar-title': 'calendar', 'announcements-title': 'calendar', 'devices-title': 'devices'};
@@ -81,11 +119,18 @@
             panels[j].classList.toggle('is-current', current);
             panels[j].hidden = !current;
         }
+        var activeGroup = null, groups = [];
         for (var k = 0; k < links.length; k++) {
+            var group = links[k].closest ? links[k].closest('details.management-nav-group') : null;
+            if (group && groups.indexOf(group) < 0) groups.push(group);
             var active = links[k].getAttribute('data-management-link') === selected;
-            if (active) links[k].setAttribute('aria-current', 'page');
-            else links[k].removeAttribute('aria-current');
+            if (active) {
+                links[k].setAttribute('aria-current', 'page');
+                if (group) activeGroup = group;
+            } else links[k].removeAttribute('aria-current');
         }
+        // Only the group that contains the current item stays expanded.
+        for (var g = 0; g < groups.length; g++) groups[g].open = groups[g] === activeGroup;
         if (scroll) window.scrollTo(0, 0);
     }
     window.addEventListener('hashchange', function () { showPanel(true); });

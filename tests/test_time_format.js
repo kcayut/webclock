@@ -74,7 +74,7 @@ assert.equal(ui.date.hidden, true); assert.equal(ui.date.disabled, true); assert
 // Conditional saves serialize this page's writes and retain drafts on conflicts.
 const admin = fs.readFileSync(path.join(__dirname, '../templates/admin.html'), 'utf8');
 async function checkSettings() {
-    const fields = Object.fromEntries(['time-format-select', 'settings-reload', 'settings-status', 'time-format-status'].map(id => [id, {value:'12h', disabled:false, textContent:''}]));
+    const fields = Object.fromEntries(['time-format-select', 'settings-reload', 'settings-status'].map(id => [id, {value:'12h', disabled:false, textContent:''}]));
     fields['csrf-token'] = {content:'settings-csrf-token'};
     let mode = 'failure', requests = [], reloaded = false;
     const context = {currentTimeFormat:'24h', settingsRevision:'first', settingsQueue:Promise.resolve(), settingsConflict:false,
