@@ -266,10 +266,18 @@
 
     <h2 class="section-title" data-i18n="current_list">{{ translations[language].current_list }}</h2>
     <p class="help" data-i18n="calendar_window_timezone">{{ translations[language].calendar_window_timezone }}</p>
-    <div class="actions"><button id="calendar-list-refresh" type="button" data-i18n="calendar_list_refresh">{{ translations[language].calendar_list_refresh }}</button><span id="calendar-list-status" role="status" aria-live="polite"></span></div>
-    <ul id="calendar-current-list" class="note-list cards">
+    <div class="management-toolbar">
+        <div class="management-filter" data-filter-group="calendar" role="group" aria-label="{{ translations[language].current_list }}">
+            <button type="button" data-filter-group="calendar" data-filter-value="all" aria-pressed="true" data-i18n="filter_all">{{ translations[language].filter_all }}</button>
+            <button type="button" data-filter-group="calendar" data-filter-value="reminder" aria-pressed="false" data-i18n="calendar_tab_notes">{{ translations[language].calendar_tab_notes }}</button>
+            <button type="button" data-filter-group="calendar" data-filter-value="announcement" aria-pressed="false" data-i18n="announcements">{{ translations[language].announcements }}</button>
+        </div>
+        <button id="calendar-list-refresh" type="button" data-i18n="calendar_list_refresh">{{ translations[language].calendar_list_refresh }}</button>
+    </div>
+    <p id="calendar-list-status" class="help" role="status" aria-live="polite"></p>
+    <ul id="calendar-current-list" class="note-list cards" data-filter-list="calendar" data-filter-active="all">
         {% for note in notes + announcements %}
-        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}">
+        <li class="note-card{{ ' paused' if not note.get('enabled', True) else '' }}" data-note-id="{{ note.id }}" data-sort-time="{{ note.due_date }}" data-filter-kind="{{ 'announcement' if note.get('announcement_targets') else 'reminder' }}">
             <div class="note-text">
                 {% if note.due_date %}<span class="time-tag" data-time-value="{{ note.due_date }}">{{ note.due_date }}</span>{% endif %}
                 <b>{{ note.text }}</b>
@@ -295,24 +303,24 @@
             <span data-note-group-summary="{{ note.id }}" class="content-group-summary"></span>
             {% endif %}
             <div class="note-actions">
-                <button type="button" class="btn" onclick="document.getElementById('edit-note-{{ note.id }}').showModal()" data-i18n="edit_note">{{ translations[language].edit_note }}</button>
+                <button type="button" class="btn" data-dialog-open="edit-note-{{ note.id }}" data-i18n="edit_note">{{ translations[language].edit_note }}</button>
                 <form action="{{ url_for('toggle', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn" data-i18n="{{ 'pause' if note.get('enabled', True) else 'resume' }}">{{ translations[language]['pause' if note.get('enabled', True) else 'resume'] }}</button></form>
                 <form action="{{ url_for('delete', id=note.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn danger" data-i18n="delete">{{ translations[language].delete }}</button></form>
             </div>
-            <dialog id="edit-note-{{ note.id }}" class="management-dialog"{% if editing_id == note.id %} data-editing="1"{% endif %} aria-labelledby="edit-note-title-{{ note.id }}" onclick="if (event.target === this) this.close()">
-                <div class="management-dialog-header">
+            <dialog id="edit-note-{{ note.id }}" class="management-dialog"{% if editing_id == note.id %} data-editing="1"{% endif %} aria-labelledby="edit-note-title-{{ note.id }}">
+                <div class="management-overlay-header">
                     <h2 id="edit-note-title-{{ note.id }}" data-i18n="edit_note">{{ translations[language].edit_note }}</h2>
-                    <button type="button" class="management-dialog-close" onclick="this.closest('dialog').close()" aria-label="{{ translations[language].notice_close }}" data-i18n-aria-label="notice_close">&times;</button>
+                    <button type="button" class="management-overlay-close" data-dialog-close aria-label="{{ translations[language].notice_close }}" data-i18n-aria-label="notice_close">&times;</button>
                 </div>
                 <form action="{{ url_for('schedule', id=note.id) }}" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div class="management-dialog-body">
+                    <div class="management-overlay-body">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
                     {% if not note.get('announcement_targets') %}<div data-note-assignment-wrapper {% if editing_id == note.id and request.form.get('announcement') == '1' %}hidden{% endif %}><div data-note-group-editor="{{ note.id }}"></div></div>{% endif %}
                     </div>
-                    <div class="management-dialog-actions">
-                        <button type="button" onclick="this.closest('dialog').close()" data-i18n="cancel">{{ translations[language].cancel }}</button>
+                    <div class="management-overlay-actions">
+                        <button type="button" data-dialog-close data-i18n="cancel">{{ translations[language].cancel }}</button>
                         <button type="submit" class="primary" data-i18n="save">{{ translations[language].save }}</button>
                     </div>
                 </form>

@@ -11,6 +11,8 @@ assert.ok(admin.indexOf('class="note-list cards"') < admin.indexOf('id="calendar
 assert.match(admin, /<details id="calendar-source-settings" class="panel calendar-source-settings" open>/);
 assert.match(admin, /data-tab-group="display"/);
 assert.match(admin, /data-tab-group="calendar"/);
+assert.match(admin, /data-filter-list="calendar"/);
+assert.match(admin, /data-filter-kind="\{\{ 'announcement' if note\.get\('announcement_targets'\) else 'reminder' \}\}"/);
 assert.match(admin, /<dialog id="edit-note-\{\{ note\.id \}\}" class="management-dialog"/);
 assert.doesNotMatch(admin, /<summary data-i18n="edit_note">/);
 assert.doesNotMatch(source, /localStorage|sessionStorage/);

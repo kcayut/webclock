@@ -102,6 +102,14 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .management-tabs button[aria-selected="true"] { background: var(--tint); color: var(--tint-ink); }
 .management-tabs button:focus-visible { outline-offset: 1px; }
 .management-tab-panel { min-width: 0; }
+.management-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin: 0 0 12px; }
+.management-filter { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.management-filter button { min-height: 36px; padding: 6px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; }
+.management-filter button:hover { background: var(--hover); border-color: transparent; color: var(--ink); }
+.management-filter button[aria-pressed="true"] { background: var(--tint); color: var(--tint-ink); }
+[data-filter-active="reminder"] > [data-filter-kind]:not([data-filter-kind="reminder"]),
+[data-filter-active="announcement"] > [data-filter-kind]:not([data-filter-kind="announcement"]),
+[data-filter-active="alarm"] > [data-filter-kind]:not([data-filter-kind="alarm"]) { display: none !important; }
 h2 { margin: 0 0 14px; font-size: 19px; font-weight: 600; line-height: 1.4; }
 h3 { margin: 0 0 10px; font-size: 17px; font-weight: 600; line-height: 1.5; }
 p { margin: 8px 0; }
@@ -131,8 +139,9 @@ input[type="range"] { accent-color: var(--accent); width: 100%; min-width: 0; }
 .settings-maintenance { margin: 0 0 18px; padding: 0 2px; }
 .error, .form-error { color: var(--danger); }
 [role="status"]:empty, .form-error:empty, .error:empty { display: none; }
-#status { background: var(--tint); color: var(--tint-ink); border: 1px solid var(--line); padding: 12px 18px; border-radius: 6px; margin: 0 0 22px; }
-#status.error { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-line); }
+.management-toast:not(:empty) { position: fixed; top: 76px; right: 24px; z-index: 40; width: max-content; max-width: min(440px, calc(100% - 32px)); margin: 0; padding: 12px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 14px 36px rgba(23, 37, 43, .18); }
+.management-toast.error { border-color: var(--danger-line); background: var(--danger-bg); color: var(--danger); }
+@media (max-width: 760px) { .management-toast:not(:empty) { top: 66px; right: 12px; max-width: calc(100% - 24px); } }
 fieldset { min-width: 0; margin: 16px 0; padding: 0; border: 0; }
 legend { font-size: 15px; font-weight: 600; padding: 0; margin-bottom: 8px; }
 .mode-controls, .btn-group { display: flex; gap: 10px; margin-bottom: 18px; }
@@ -170,13 +179,23 @@ legend { font-size: 15px; font-weight: 600; padding: 0; margin-bottom: 8px; }
 .note-actions form { margin: 0; }
 .management-dialog { width: min(760px, calc(100% - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); overflow: auto; }
 .management-dialog::backdrop { background: #17252b80; }
-.management-dialog-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 22px; border-bottom: 1px solid var(--line); background: var(--surface); }
-.management-dialog-header h2 { margin: 0; font-size: 19px; }
-.management-dialog-close { width: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; }
-.management-dialog-close:hover { background: var(--hover); border-color: transparent; color: var(--ink); }
-.management-dialog-body { padding: 20px 22px 4px; }
-.management-dialog-actions { position: sticky; bottom: 0; z-index: 2; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: var(--surface); }
-.management-dialog-actions button { min-width: 88px; }
+.management-overlay-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 22px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.management-overlay-header h2, .management-overlay-header h3 { margin: 0; font-size: 19px; }
+.management-overlay-close { width: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; }
+.management-overlay-close:hover { background: var(--hover); border-color: transparent; color: var(--ink); }
+.management-overlay-body { padding: 20px 22px 4px; }
+.management-overlay-actions { position: sticky; bottom: 0; z-index: 2; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: var(--surface); }
+.management-overlay-actions button { min-width: 88px; }
+body.drawer-open { overflow: hidden; }
+.device-details { margin-top: 12px; }
+.device-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--accent); font-size: 15px; font-weight: 600; list-style: none; cursor: pointer; }
+.device-details > summary::-webkit-details-marker { display: none; }
+.device-details > summary::after { content: "›"; font-size: 22px; line-height: 1; transform: rotate(90deg); }
+.device-details > summary:hover { background: var(--hover); }
+.device-details[open] > summary { border-color: var(--accent); }
+.device-details[open]::before { content: ""; position: fixed; inset: 0; z-index: 29; background: #17252b80; }
+.device-details[open] > .management-drawer-body { position: fixed; top: 0; right: 0; bottom: 0; z-index: 30; width: min(680px, calc(100% - 24px)); max-width: 100%; overflow: auto; padding: 0 22px 22px; background: var(--surface); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(23, 37, 43, .18); }
+.device-details[open] > .management-drawer-body > .management-overlay-header { margin: 0 -22px; }
 .delete-btn { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid var(--danger-line); border-radius: 6px; text-decoration: none; font-size: 15px; }
 .paused { border-left: 3px solid #9aabb1; }
 .time-tag, .window-tag { display: block; font-size: 14px; color: var(--muted); margin: 4px 0; }
@@ -255,12 +274,15 @@ details[open] > summary { margin-bottom: 10px; }
     .page-heading > button { margin-top: 0; }
     .management-tabs { margin-bottom: 14px; padding: 3px; }
     .management-tabs button { min-height: 42px; padding: 7px 13px; font-size: 14px; }
+    .management-filter button { min-height: 34px; padding: 5px 12px; font-size: 13px; }
     .panel, .control-panel { padding: 18px; margin-bottom: 16px; }
     .fields, .window-fields, .backup-actions { grid-template-columns: 1fr; gap: 14px; }
     .note-card { padding: 18px; }
     .management-dialog { width: calc(100% - 16px); max-height: calc(100% - 16px); }
-    .management-dialog-header, .management-dialog-actions { padding-left: 16px; padding-right: 16px; }
-    .management-dialog-body { padding: 16px 16px 4px; }
+    .management-overlay-header, .management-overlay-actions { padding-left: 16px; padding-right: 16px; }
+    .management-overlay-body { padding: 16px 16px 4px; }
+    .device-details[open] > .management-drawer-body { width: calc(100% - 12px); padding: 0 14px 18px; }
+    .device-details[open] > .management-drawer-body > .management-overlay-header { margin: 0 -14px; padding-left: 14px; padding-right: 14px; }
     .calendar-url-row { gap: 6px; }
     .calendar-url-row button { padding: 10px; }
     .calendar-url-row button svg { width: 18px; }

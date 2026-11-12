@@ -17,6 +17,7 @@ assert.ok(template.indexOf("time-inputs.js") < template.indexOf("schedules.js"))
 assert.ok(template.indexOf("group-assignment.js") < template.indexOf("schedules.js"));
 assert.match(template, /data-tab-group="devices"/);
 assert.match(template, /id="devices-tab-groups"/);
+assert.match(template, /data-filter-list="other-schedules"/);
 assert.ok(template.indexOf("schedules.js") < template.indexOf("management.js"), "Language controls wait for the schedule translation hook");
 const row = {id: "alarm", name: "Morning", type: "alarm", enabled: true, time: "07:30", rule: {},
     skipped_occurrences: [], next_occurrence: "2026-10-01T07:30:00+08:00"};
@@ -129,7 +130,10 @@ const context = vm.createContext({
         querySelectorAll(selector) {
             if (selector === '[data-management-panel]') return [$("alarms-panel"), $("devices-panel")];
             if (selector === '[data-management-link]' || selector.startsWith('[data-schedule-')
-                || selector === '[data-management-tab]' || selector === '[data-management-tab-panel]') return [];
+                || selector === '[data-management-tab]' || selector === '[data-management-tab-panel]'
+                || selector === '[data-filter-value]' || selector === '[data-filter-list]'
+                || selector === '[data-dialog-open]' || selector === '[data-dialog-close]'
+                || selector === 'dialog.management-dialog') return [];
             if (selector === '[name="calendar-source"]:checked') return descendants($("schedule-calendar-sources")).filter(input => input.name === "calendar-source" && input.checked);
             assert.ok(['[name="weekday"]', '[name="weekday"]:checked'].includes(selector));
             return selector.endsWith(":checked") ? weekdays.filter(input => input.checked) : weekdays;
@@ -242,7 +246,13 @@ const completionTimeout = setTimeout(() => {
     assert.match(content($("other-schedule-list")), /Device reminder/);
     assert.doesNotMatch(content($("other-schedule-list")), /Morning/);
     assert.match(content($("device-list")), /config_revision.*unknown.*schedule_revision.*unknown.*holiday_revision.*unknown/);
-    assert.equal(descendants($("device-list")).filter(item => item.tag === "button").length, 2);
+    assert.equal(descendants($("device-list")).filter(item => item.tag === "button").length, 3);
+    const deviceDetails = descendants($("device-list")).find(item => item.getAttribute("data-device-details") === "desk");
+    assert.ok(deviceDetails, "Device summaries expose a details drawer");
+    deviceDetails.open = true; deviceDetails.trigger("toggle");
+    assert.equal(body.classList.contains("drawer-open"), true);
+    deviceDetails.open = false; deviceDetails.trigger("toggle");
+    assert.equal(body.classList.contains("drawer-open"), false);
     assert.equal(button("schedule-list", "disable").attributes.role, "switch");
     assert.equal(button("schedule-list", "disable").attributes["aria-checked"], "true");
     assert.equal($("next-event").textContent, "Tomorrow 07:30 · Morning");

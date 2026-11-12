@@ -33,14 +33,33 @@ const panels = [
     element('two', 'data-management-tab-panel', 'sample'),
     element('other', 'data-management-tab-panel', 'second')
 ];
+const filterButtons = ['all', 'reminder', 'announcement'].map(value => {
+    const button = element(value, 'data-filter-value', 'calendar');
+    button.setAttribute('data-filter-group', 'calendar');
+    return button;
+});
+const filterLists = [element('calendar', 'data-filter-list', 'calendar')];
+const dialog = element('edit-note-1', 'data-dialog', 'dialog');
+dialog.open = false;
+dialog.showModal = () => { dialog.open = true; };
+dialog.close = () => { dialog.open = false; };
+const dialogOpener = element('open', 'data-dialog-open', 'dialog');
+dialogOpener.setAttribute('data-dialog-open', 'edit-note-1');
+const dialogCloser = element('close', 'data-dialog-close', 'dialog');
+dialogCloser.closest = () => dialog;
 const window = {location: {hash: ''}, addEventListener() {}, requestAnimationFrame() {}, scrollTo() {}};
 const document = {
     body: {getAttribute: () => 'display'},
     documentElement: {setAttribute() {}, getAttribute() { return 'light'; }},
-    getElementById: () => null,
+    getElementById: id => id === 'edit-note-1' ? dialog : null,
     querySelectorAll(selector) {
         if (selector === '[data-management-tab]') return tabs;
         if (selector === '[data-management-tab-panel]') return panels;
+        if (selector === '[data-filter-value]') return filterButtons;
+        if (selector === '[data-filter-list]') return filterLists;
+        if (selector === '[data-dialog-open]') return [dialogOpener];
+        if (selector === '[data-dialog-close]') return [dialogCloser];
+        if (selector === 'dialog.management-dialog') return [dialog];
         return [];
     }
 };
@@ -70,4 +89,20 @@ assert.equal(panels[1].hidden, false);
 tabs[1].trigger('keydown', {key: 'Home', preventDefault() {}});
 assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
 assert.equal(panels[0].hidden, false);
-console.log('Management tabs switch panels, keep groups independent and support keyboard navigation.');
+
+filterButtons[1].trigger('click');
+assert.equal(filterButtons[0].getAttribute('aria-pressed'), 'false');
+assert.equal(filterButtons[1].getAttribute('aria-pressed'), 'true');
+assert.equal(filterLists[0].getAttribute('data-filter-active'), 'reminder');
+filterButtons[0].trigger('click');
+assert.equal(filterButtons[1].getAttribute('aria-pressed'), 'false');
+assert.equal(filterLists[0].getAttribute('data-filter-active'), 'all');
+
+dialogOpener.trigger('click');
+assert.equal(dialog.open, true);
+dialogCloser.trigger('click');
+assert.equal(dialog.open, false);
+dialogOpener.trigger('click');
+dialog.trigger('click', {target: dialog});
+assert.equal(dialog.open, false);
+console.log('Management tabs, filters and dialogs switch content, keep groups independent and support keyboard navigation.');

@@ -39,7 +39,7 @@
         element.textContent = key ? t(key) : '';
         if (key) element.setAttribute('data-i18n', key);
         else element.removeAttribute('data-i18n');
-        element.className = failed ? 'form-error' : '';
+        element.className = failed ? 'form-error' : 'help';
     }
     function controls() {
         $('calendar-source-fields').disabled = busy || !saved;
@@ -241,6 +241,7 @@
     function newCard(item) {
         var card = {item: item, labels: [], drafts: {}, element: node('li', undefined, 'note-card calendar-entry')};
         card.element.setAttribute('data-calendar-item', item.id);
+        card.element.setAttribute('data-filter-kind', 'calendar');
         card.title = node('strong'); card.meta = node('p', undefined, 'help'); card.missing = node('p', undefined, 'help');
         var details = node('details'), summary = node('summary');
         card.labels.push({element: summary, key: 'display_window'});

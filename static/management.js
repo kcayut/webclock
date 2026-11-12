@@ -1,4 +1,4 @@
-/* Shared management navigation. Switching sections keeps the existing form DOM. */
+/* Shared management navigation, tabs, filters, dialogs and overlay controls. Switching sections keeps the existing form DOM. */
 (function () {
     'use strict';
     var tabs = document.querySelectorAll('[data-management-tab]');
@@ -37,6 +37,43 @@
             event.preventDefault();
             groupTabs[index].focus();
             activateTab(group, groupTabs[index].getAttribute('data-management-tab'));
+        });
+    }
+    var filterButtons = document.querySelectorAll('[data-filter-value]');
+    var filterLists = document.querySelectorAll('[data-filter-list]');
+    function activateFilter(group, value) {
+        var i;
+        for (i = 0; i < filterButtons.length; i++) {
+            if (filterButtons[i].getAttribute('data-filter-group') !== group) continue;
+            filterButtons[i].setAttribute('aria-pressed', String(filterButtons[i].getAttribute('data-filter-value') === value));
+        }
+        for (i = 0; i < filterLists.length; i++) {
+            if (filterLists[i].getAttribute('data-filter-list') === group) filterLists[i].setAttribute('data-filter-active', value);
+        }
+    }
+    for (var f = 0; f < filterButtons.length; f++) {
+        filterButtons[f].addEventListener('click', function () {
+            activateFilter(this.getAttribute('data-filter-group'), this.getAttribute('data-filter-value'));
+        });
+    }
+    var dialogOpeners = document.querySelectorAll('[data-dialog-open]');
+    for (var d = 0; d < dialogOpeners.length; d++) {
+        dialogOpeners[d].addEventListener('click', function () {
+            var dialog = document.getElementById(this.getAttribute('data-dialog-open'));
+            if (dialog && dialog.showModal) dialog.showModal();
+        });
+    }
+    var dialogClosers = document.querySelectorAll('[data-dialog-close]');
+    for (var c = 0; c < dialogClosers.length; c++) {
+        dialogClosers[c].addEventListener('click', function () {
+            var dialog = this.closest ? this.closest('dialog') : null;
+            if (dialog) dialog.close();
+        });
+    }
+    var dialogs = document.querySelectorAll('dialog.management-dialog');
+    for (var g = 0; g < dialogs.length; g++) {
+        dialogs[g].addEventListener('click', function (event) {
+            if (event.target === this) this.close();
         });
     }
     var panels = document.querySelectorAll('[data-management-panel]');

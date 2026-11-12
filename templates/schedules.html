@@ -25,7 +25,7 @@
     {% set t = schedule_translations %}
     {% include 'management_nav.html' %}
     <main id="management-main" class="management-content" tabindex="-1">
-        <p id="status" role="status" aria-live="polite"></p>
+        <p id="status" class="management-toast" role="status" aria-live="polite"></p>
         <section id="alarms-panel" data-management-panel="alarms" class="is-current" aria-labelledby="schedules-title">
             <div class="page-heading">
                 <div><h1 id="schedules-title" data-schedule-i18n="title">{{ t.title }}</h1><p class="page-description" data-schedule-i18n="management_hint">{{ t.management_hint }}</p></div>
@@ -157,7 +157,14 @@
             <section id="other-schedules-section" class="other-schedules" aria-labelledby="other-schedules-title">
                 <div class="section-heading"><h2 id="other-schedules-title" data-schedule-i18n="other_schedules">{{ t.other_schedules }}</h2><button id="add-other-schedule" type="button" data-schedule-i18n="add_other">{{ t.add_other }}</button></div>
                 <p class="help"><span data-schedule-i18n="other_hint">{{ t.other_hint }}</span> <a href="{{ url_for('admin', _anchor='calendar-title') }}" data-schedule-i18n="calendar_settings">{{ t.calendar_settings }}</a></p>
-                <ul id="other-schedule-list" class="schedule-list" data-schedule-aria-label="other_schedules" aria-label="{{ t.other_schedules }}"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
+                <div class="management-toolbar">
+                    <div class="management-filter" data-filter-group="other-schedules" role="group" aria-label="{{ t.other_schedules }}">
+                        <button type="button" data-filter-group="other-schedules" data-filter-value="all" aria-pressed="true" data-schedule-i18n="filter_all">{{ t.filter_all }}</button>
+                        <button type="button" data-filter-group="other-schedules" data-filter-value="reminder" aria-pressed="false" data-schedule-i18n="reminder">{{ t.reminder }}</button>
+                        <button type="button" data-filter-group="other-schedules" data-filter-value="announcement" aria-pressed="false" data-schedule-i18n="announcement">{{ t.announcement }}</button>
+                    </div>
+                </div>
+                <ul id="other-schedule-list" class="schedule-list" data-schedule-aria-label="other_schedules" aria-label="{{ t.other_schedules }}" data-filter-list="other-schedules" data-filter-active="all"><li class="empty" data-schedule-i18n="loading">{{ t.loading }}</li></ul>
             </section>
             <details id="legacy-devices" class="panel legacy-devices" hidden>
                 <summary id="legacy-devices-summary"></summary>

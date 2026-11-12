@@ -13,6 +13,7 @@
     const deviceNamesSaving = new Set();
     const deviceRevoking = new Set();
     const deviceGroupDrafts = new Map(), deviceAuthorizationSaving = new Set(), deviceAuthorizationMessages = new Map();
+    const openDeviceDetails = new Set();
     let deviceDataStale = false;
     let deviceTarget = '', operatingDevice = null;
     const deviceSettings = window.WebClockDeviceSettings ? window.WebClockDeviceSettings.create({
@@ -166,7 +167,7 @@
     }
     function notice(text, error) {
         $("status").textContent = text;
-        $("status").className = error ? "error" : "";
+        $("status").classList.toggle("error", !!error);
     }
     async function api(path, options) {
         options = Object.assign({cache: "no-store"}, options);
@@ -295,6 +296,7 @@
             const enabled = schedule.enabled && !paused;
             if (skip) nextPauseEnd = nextPauseEnd === null ? Date.parse(skip) : Math.min(nextPauseEnd, Date.parse(skip));
             const row = node("li", undefined, "schedule-row" + (enabled ? "" : " disabled"));
+            row.setAttribute("data-filter-kind", schedule.type);
             const details = node("div", undefined, "schedule-details");
             const description = ruleText(schedule.rule, schedule.skip_holidays, schedule.calendar_link) + " · " +
                 (schedule.type === "alarm" ? t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%" : t(schedule.type));
@@ -932,6 +934,9 @@
             return element;
         }
         list.replaceChildren(); legacyList.replaceChildren();
+        const currentDeviceIds = new Set(devices.map(device => device.id));
+        openDeviceDetails.forEach(id => { if (!currentDeviceIds.has(id)) openDeviceDetails.delete(id); });
+        document.body.classList.toggle("drawer-open", openDeviceDetails.size > 0);
         devices.forEach(device => {
             const card = node("li", undefined, "panel card"), heading = node("div", undefined, "card-heading");
             card.hidden = !!deviceTarget && deviceTarget !== 'device:' + device.id;
@@ -939,8 +944,34 @@
             const connection = typeof device.online === "boolean" ? (device.online ? "online" : "offline") : "unknown";
             heading.append(node("h3", device.name || device.id), node("span", t(connection), "badge" + (device.online ? "" : " offline")));
             card.append(heading);
-            if (device.reported === false) card.append(node("p", t("device_not_reported"), "help"));
-            const details = node("dl");
+            const summaryLine = node("p", t("last_seen") + ": " + (device.last_seen ? eventTime(device.last_seen) : t("unknown")), "help");
+            if (device.group_name) summaryLine.textContent += " · " + t("device_group") + ": " + device.group_name;
+            if (device.reported === false) summaryLine.textContent = t("device_not_reported");
+            card.append(summaryLine);
+            const details = node("details", undefined, "device-details");
+            details.setAttribute("data-device-details", device.id);
+            details.open = openDeviceDetails.has(device.id);
+            details.addEventListener("toggle", () => {
+                if (details.open) openDeviceDetails.add(device.id);
+                else openDeviceDetails.delete(device.id);
+                document.body.classList.toggle("drawer-open", openDeviceDetails.size > 0);
+            });
+            details.addEventListener("click", event => { if (event.target === details) details.open = false; });
+            const drawer = node("div", undefined, "management-drawer-body");
+            drawer.setAttribute("role", "dialog");
+            drawer.setAttribute("aria-modal", "true");
+            drawer.setAttribute("aria-label", t("device_manage"));
+            const drawerHeader = node("div", undefined, "management-overlay-header");
+            const drawerTitle = node("h3", (device.name || device.id) + " · " + t("device_manage"), "management-overlay-title");
+            const close = node("button", "×", "management-overlay-close");
+            close.type = "button";
+            close.setAttribute("aria-label", t("device_close"));
+            close.addEventListener("click", () => { details.open = false; });
+            drawerHeader.append(drawerTitle, close);
+            drawer.append(drawerHeader);
+            details.append(node("summary", t("device_manage")), drawer);
+            card.append(details);
+            const facts = node("dl");
             const values = {
                 reported_name: device.reported_name, device_type: device.device_type,
                 registered_at: device.registered_at ? eventTime(device.registered_at) : null,
@@ -951,17 +982,17 @@
                 const text = value == null ? t("unknown") : String(value);
                 const detail = node("dd", key.endsWith("_revision") ? text.slice(0, 12) : text);
                 if (key.endsWith("_revision")) detail.title = text;
-                details.append(node("dt", t(key)), detail);
+                facts.append(node("dt", t(key)), detail);
             });
-            details.append(node("dt", t("capabilities")), node("dd", capabilityText(device.capabilities)),
-                           node("dt", t("capabilities_reported_at")),
-                           node("dd", device.capabilities_reported_at ? eventTime(device.capabilities_reported_at) : t("unknown")));
-            card.append(details);
+            facts.append(node("dt", t("capabilities")), node("dd", capabilityText(device.capabilities)),
+                         node("dt", t("capabilities_reported_at")),
+                         node("dd", device.capabilities_reported_at ? eventTime(device.capabilities_reported_at) : t("unknown")));
+            drawer.append(facts);
             const sync = device.sync_status || {state: (device.commands || []).length ? "pending" : "idle"};
             let syncText = t("sync_" + sync.state);
             if (sync.requested_at) syncText += " · " + t("sync_requested_at") + ": " + eventTime(sync.requested_at);
             if (sync.acknowledged_at) syncText += " · " + t("sync_acknowledged_at") + ": " + eventTime(sync.acknowledged_at);
-            card.append(node("p", t("sync_status") + ": " + syncText, "meta device-sync-status"));
+            drawer.append(node("p", t("sync_status") + ": " + syncText, "meta device-sync-status"));
             if (device.can_revoke === true && device.authorization_status) {
                 const authorization = node("div", undefined, "device-authorization-editor");
                 authorization.append(node("p", t("device_group") + ": " + (device.group_name || device.group_id || t("unknown")), "help"));
@@ -993,7 +1024,7 @@
                     authorization.append(node("p", t(message === "device_authorization_failed" || deviceAuthorizationSaving.has(device.id) ? message : pending ? "device_group_pending" : message || ""),
                         message === "device_authorization_failed" ? "form-error" : "help"));
                 }
-                card.append(authorization);
+                drawer.append(authorization);
             }
             if (manageableDevice(device)) {
                 [deviceSettings, deviceContent].forEach(component => {
@@ -1002,7 +1033,7 @@
                         deviceRevoking.has(device.id) || !!(other && other.busy(device.id)));
                     if (editor) {
                         if (active && editor.contains(active)) refocus = active;
-                        card.append(editor);
+                        drawer.append(editor);
                     }
                 });
             }
@@ -1036,7 +1067,7 @@
             }, "primary");
             saveName.disabled = device.reported === false || deviceNamesSaving.has(device.id) || deviceRevoking.has(device.id) || deviceBusy(device.id);
             rename.append(label, saveName);
-            card.append(rename);
+            drawer.append(rename);
             if (activeDevice === device.id) refocus = input;
             const actions = node("div", undefined, "actions");
             const syncButton = action(t("sync"), async () => {
@@ -1052,7 +1083,7 @@
                 revoke.disabled = deviceRevoking.has(device.id) || deviceNamesSaving.has(device.id) || deviceBusy(device.id);
                 actions.append(revoke);
             }
-            card.append(actions);
+            drawer.append(actions);
             if (device.can_revoke === false) { legacyList.append(card); legacyCount++; }
             else list.append(card);
         });
