@@ -102,7 +102,7 @@ jobs:
           node homeassistant/tests/test_cards.js
           python -m unittest discover -s tests -p 'test_*.py'
           for test in tests/test_*.js; do node "$test"; done
-          for script in *.sh scripts/*.sh scripts/update/*.sh homeassistant/*.sh tests/rehearsal/*.sh; do bash -n "$script"; done
+          for script in *.sh scripts/*.sh scripts/update/*.sh tools/*.sh homeassistant/*.sh tests/rehearsal/*.sh; do bash -n "$script"; done
           git diff --check
 
   app:

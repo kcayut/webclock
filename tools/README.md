@@ -2,6 +2,8 @@
 
 這裡放開發與發佈使用的工具，不放安裝後需要執行的程式，也不包含在 Server Release 或 Docker 映像中。
 
+Proxmox 三台測試主機：[`create_proxmox_lab.sh`](create_proxmox_lab.sh)，使用方式與安裝步驟見[測試主機指南](../doc/development/proxmox-lab.md)。
+
 在專案根目錄執行：
 
 ```bash

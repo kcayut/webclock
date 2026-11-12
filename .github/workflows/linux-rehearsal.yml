@@ -49,7 +49,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/rehearsal-tools/bin/python" -m unittest discover -s tests -p 'test_*.py'
           for test in tests/test_*.js; do node "$test"; done
-          for script in *.sh scripts/*.sh scripts/update/*.sh; do bash -n "$script"; done
+          for script in *.sh scripts/*.sh scripts/update/*.sh tools/*.sh; do bash -n "$script"; done
           git diff --check
       - name: Rehearse real systemd upgrade, backup, restore and failure recovery
         run: |

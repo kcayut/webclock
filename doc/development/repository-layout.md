@@ -64,7 +64,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 for test in tests/test_*.js; do node "$test"; done
 python3 -m unittest discover -s homeassistant/tests -p 'test_*.py'
 node homeassistant/tests/test_cards.js
-for script in *.sh scripts/*.sh scripts/update/*.sh homeassistant/*.sh tests/rehearsal/*.sh; do bash -n "$script"; done
+for script in *.sh scripts/*.sh scripts/update/*.sh tools/*.sh homeassistant/*.sh tests/rehearsal/*.sh; do bash -n "$script"; done
 ```
 
 HA Python 測試需安裝 CI 所列的 Home Assistant 依賴；需要監聽本機 HTTP/HTTPS 的測試應在允許本機連線的環境執行。完整發行包的入口與 Docker／HA build context 由 `tests/test_distribution_layout.py` 驗證。
