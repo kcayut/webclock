@@ -24,12 +24,12 @@
             <option value="daily" {% if mode == 'daily' %}selected{% endif %} data-i18n="daily_mode">{{ translations[language].daily_mode }}</option>
         </select>
         <div class="range-picker" data-range-picker {% if mode != 'range' %}hidden{% endif %}>
-            <button type="button" class="range-picker-toggle" data-range-toggle aria-expanded="false" aria-controls="range-panel-{{ suffix }}">
+            <button type="button" class="range-picker-toggle" data-range-toggle aria-expanded="{{ 'true' if mode == 'range' else 'false' }}" aria-controls="range-panel-{{ suffix }}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>
                 <span data-i18n="range_pick">{{ translations[language].range_pick }}</span>
                 <span class="range-picker-summary" data-range-summary></span>
             </button>
-            <div id="range-panel-{{ suffix }}" class="range-picker-panel" data-range-panel hidden>
+            <div id="range-panel-{{ suffix }}" class="range-picker-panel" data-range-panel {% if mode != 'range' %}hidden{% endif %}>
                 <div class="range-picker-times">
                     <div class="range-picker-when">
                         <div class="field">
@@ -617,7 +617,14 @@
             });
             if (picker) {
                 picker.hidden = daily;
-                if (!daily && window.WebClockRangePicker) window.WebClockRangePicker.refresh(picker);
+                if (daily) {
+                    var panel = picker.querySelector('[data-range-panel]');
+                    var toggle = picker.querySelector('[data-range-toggle]');
+                    if (panel) panel.hidden = true;
+                    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+                } else if (window.WebClockRangePicker) {
+                    window.WebClockRangePicker.open(picker);
+                }
             }
             applyTimeFormat(currentTimeFormat);
         }

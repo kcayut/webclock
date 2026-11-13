@@ -458,17 +458,21 @@
             commit();
             render();
         });
+        function openPanel() {
+            panel.hidden = false;
+            toggle.setAttribute('aria-expanded', 'true');
+            readInputs();
+            render();
+        }
         root.querySelector('[data-range-done]').addEventListener('click', function () {
             panel.hidden = true;
             toggle.setAttribute('aria-expanded', 'false');
         });
         toggle.addEventListener('click', function () {
-            var open = panel.hidden;
-            panel.hidden = !open;
-            toggle.setAttribute('aria-expanded', String(open));
-            if (open) {
-                readInputs();
-                render();
+            if (panel.hidden) openPanel();
+            else {
+                panel.hidden = true;
+                toggle.setAttribute('aria-expanded', 'false');
             }
         });
         function applyTimes() {
@@ -512,18 +516,27 @@
         startDate.addEventListener('change', function () { applyDates('start'); });
         endDate.addEventListener('change', function () { applyDates('end'); });
         readInputs();
+        if (!panel.hidden) render();
         return {
             refresh: function () { readInputs(); if (!panel.hidden) render(); },
+            open: openPanel,
             applyLanguage: function () { paintSummary(); if (!panel.hidden) render(); }
         };
     }
 
     roots.forEach(function (root) { root._rangePicker = create(root); });
+    function resolvePicker(element) {
+        return element && element.matches && element.matches('[data-range-picker]') ? element :
+            element && element.querySelector ? element.querySelector('[data-range-picker]') : null;
+    }
     window.WebClockRangePicker = {
         refresh: function (element) {
-            var root = element && element.matches && element.matches('[data-range-picker]') ? element :
-                element && element.querySelector ? element.querySelector('[data-range-picker]') : null;
+            var root = resolvePicker(element);
             if (root && root._rangePicker) root._rangePicker.refresh();
+        },
+        open: function (element) {
+            var root = resolvePicker(element);
+            if (root && root._rangePicker) root._rangePicker.open();
         },
         applyLanguage: function () {
             roots.forEach(function (root) { if (root._rangePicker) root._rangePicker.applyLanguage(); });

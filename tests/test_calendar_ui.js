@@ -21,6 +21,8 @@ assert.match(admin, /range-picker\.js/);
 assert.match(admin, /data-range-view="month"/);
 assert.match(admin, /data-range-date-field="start"/);
 assert.match(admin, /data-range-date-field="end"/);
+assert.match(admin, /aria-expanded="\{\{ 'true' if mode == 'range' else 'false' \}\}"/);
+assert.match(admin, /WebClockRangePicker\.open\(picker\)/);
 assert.match(admin, /data-i18n="range_start_date"/);
 assert.match(admin, /data-i18n="range_end_date"/);
 assert.match(admin, /data-filter-kind="\{\{ 'announcement' if note\.get\('announcement_targets'\) else 'reminder' \}\}"/);
