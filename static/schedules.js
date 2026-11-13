@@ -278,6 +278,16 @@
         notice(result.next_event && isRecurringAlarm(schedule) ? resumeMessage(result.skipped.datetime) : format("skipped", {datetime: eventTime(result.skipped.datetime)}));
         await loadSchedules();
     }
+    async function resumeSchedule(schedule) {
+        const now = serverNow();
+        const skipped = now === null ? [] :
+            (schedule.skipped_occurrences || []).filter(value => Date.parse(value) < now);
+        const updated = await api("/schedules/" + encodeURIComponent(schedule.id),
+            json("PUT", {enabled: true, skipped_occurrences: skipped}));
+        acceptScheduleChange(schedule.id, updated);
+        notice(t("resume_next_saved"));
+        await loadSchedules();
+    }
     async function deleteSchedule(schedule, afterDelete) {
         if (!window.confirm(format("delete_confirm", {name: schedule.name}))) return false;
         await api("/schedules/" + encodeURIComponent(schedule.id), {method: "DELETE"});
@@ -342,11 +352,17 @@
             toggle.setAttribute("aria-checked", String(enabled));
             toggle.setAttribute("aria-label", t("enabled") + " · " + schedule.name);
             toggle.title = t(enabled ? "disable" : "enable");
-            const quickSkip = action(t("skip_next"), () => skipSchedule(schedule, schedule.next_occurrence));
-            quickSkip.disabled = !enabled || !schedule.next_occurrence || !!pendingSkip(schedule);
-            quickSkip.title = t("skip_next");
-            actions.append(toggle, quickSkip, action(t("edit"), () => edit(schedule)),
+            const primary = node("div", undefined, "schedule-row-primary");
+            const secondary = node("div", undefined, "schedule-row-secondary");
+            const quick = skip ?
+                action(t("resume_next"), () => resumeSchedule(schedule), "resume") :
+                action(t("skip_next"), () => skipSchedule(schedule, schedule.next_occurrence));
+            quick.title = t(skip ? "resume_next" : "skip_next");
+            if (!skip) quick.disabled = !enabled || !schedule.next_occurrence;
+            primary.append(toggle, quick);
+            secondary.append(action(t("edit"), () => edit(schedule)),
                 action(t("delete"), () => deleteSchedule(schedule), "danger"));
+            actions.append(primary, secondary);
             const byEvent = schedule.calendar_link && schedule.calendar_link.mode === "event";
             const shownTime = byEvent ? t("calendar_event_time") : displayTime(schedule.time);
             const time = node("p", undefined, "schedule-time" + (byEvent ? " calendar-time" : ""));

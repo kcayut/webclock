@@ -1095,11 +1095,17 @@ const completionTimeout = setTimeout(() => {
     await flush();
     scheduleReply(take("/schedules"), [{...targeted, next_occurrence: nextDate, skipped_occurrences: [targeted.next_occurrence]}]);
     await quickSkipping;
-    assert.equal(button("schedule-list", "skip_next").disabled, true, "A pending skip disables the quick action");
-    const resetAfterSkip = qa.loadSchedules();
+    assert.equal(descendants($("schedule-list")).some(item => item.tag === "button" && item.textContent === "skip_next"), false, "The skip action becomes a resume action");
+    const resume = button("schedule-list", "resume_next");
+    assert.equal(resume.disabled, false);
+    const resuming = resume.trigger("click");
+    const resumeQuickRequest = take("/schedules/" + targeted.id, "PUT");
+    assert.deepEqual(JSON.parse(resumeQuickRequest.options.body), {enabled: true, skipped_occurrences: []});
+    reply(resumeQuickRequest, targeted);
+    await flush();
     scheduleReply(take("/schedules"), [targeted]);
-    await resetAfterSkip;
-    assert.equal(button("schedule-list", "skip_next").disabled, false);
+    await resuming;
+    assert.equal(button("schedule-list", "skip_next").disabled, false, "Resuming restores the skip action");
 
     const quickDeleting = button("schedule-list", "delete").trigger("click");
     reply(take("/schedules/" + targeted.id, "DELETE"), {ok: true});
