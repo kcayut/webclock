@@ -154,8 +154,7 @@
         }
         function weekRange() {
             var start = 8, end = 22;
-            if (state.start && state.end) {
-                if (!sameDay(state.start, state.end)) return {start: 0, end: 24};
+            if (state.start && state.end && sameDay(state.start, state.end)) {
                 start = Math.min(start, Math.floor((state.start.getHours() * 60 + state.start.getMinutes()) / 60));
                 end = Math.max(end, Math.ceil((state.end.getHours() * 60 + state.end.getMinutes()) / 60));
             }

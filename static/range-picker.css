@@ -37,12 +37,12 @@
 .range-week-column { position: relative; display: grid; grid-auto-rows: 34px; background-color: var(--surface); background-image: linear-gradient(to bottom, transparent 49%, var(--line) 49%, var(--line) 50%, transparent 50%); background-size: 100% 34px; background-repeat: repeat-y; touch-action: pan-y; user-select: none; }
 .range-week-column.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
 .range-week-hour { border-bottom: 1px solid var(--line); }
-.range-week-selection { position: absolute; left: 0; right: 0; z-index: 2; background: var(--tint); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); pointer-events: none; }
-.range-week-selection.is-start { border-top: 2px solid var(--accent); }
-.range-week-selection.is-end { border-bottom: 2px solid var(--accent); }
+.range-week-selection { position: absolute; left: 0; right: 0; z-index: 2; background: var(--tint); pointer-events: none; }
+.range-week-selection.is-start { border-left: 2px solid var(--accent); border-top: 2px solid var(--accent); }
+.range-week-selection.is-end { border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); }
 .range-year-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.range-year-month { display: block; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: left; }
-.range-year-month.is-selected { border-color: var(--accent); background: var(--tint); color: var(--tint-ink); }
+.range-year-month { display: block; overflow: hidden; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: left; }
+.range-year-month.is-selected .range-year-title { color: var(--accent); }
 .range-year-title { display: block; width: 100%; min-height: 0; margin: 0 0 6px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font-size: 14px; }
 .range-year-title:hover { border-color: transparent; background: transparent; color: var(--accent); }
 .range-year-title strong { display: block; }
@@ -53,8 +53,8 @@
 .range-year-day:hover { border-color: transparent; background: var(--hover); color: var(--ink); }
 .range-year-day.is-outside { opacity: .35; }
 .range-year-day.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
-.range-year-day.is-selected { background: var(--tint); color: var(--tint-ink); }
-.range-year-day.is-start, .range-year-day.is-end { background: var(--accent); color: var(--accent-ink); }
+.range-year-day.is-selected { background: var(--tint); color: var(--tint-ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.range-year-day.is-start, .range-year-day.is-end { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
 .range-picker-times { margin: 0 0 14px; }
 .range-picker-times .field { margin-bottom: 0; }
 .range-picker-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
