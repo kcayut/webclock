@@ -63,7 +63,7 @@
                 </div>
             </div>
         </div>
-        <div class="window-fields fields" {% if mode == 'range' %}hidden{% endif %}>
+        <div class="window-fields fields display-window-fields" {% if mode == 'range' %}hidden{% endif %}>
             <div class="field">
                 <label for="display-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
                 <input id="display-start-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_start" value="{{ values.get('display_start', '') }}">
