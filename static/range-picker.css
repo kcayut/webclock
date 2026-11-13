@@ -56,6 +56,8 @@
 .range-picker-times { margin: 0 0 14px; }
 .range-picker-times .field { margin-bottom: 0; }
 .range-picker-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.range-picker-tooltip { position: fixed; z-index: 100; max-width: 260px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); box-shadow: 0 8px 22px rgba(23, 37, 43, .18); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; pointer-events: none; }
+.range-picker-tooltip[hidden] { display: none; }
 .range-picker-panel .help { margin: 8px 0 0; }
 @media (max-width: 760px) {
     .range-picker-toggle { align-items: flex-start; flex-wrap: wrap; }
@@ -69,4 +71,5 @@
     .range-picker-times { grid-template-columns: 1fr; }
     .range-year-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .range-day { min-height: 36px; }
+    .range-picker-tooltip { max-width: 220px; font-size: 11px; }
 }

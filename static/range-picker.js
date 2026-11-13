@@ -55,6 +55,45 @@
         return start && end ? formatValue(start) + ' → ' + formatValue(end) : label('range_none');
     }
     function sameDay(left, right) { return left && right && dayKey(left) === dayKey(right); }
+    var tooltip = null;
+    function ensureTooltip(host) {
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.className = 'range-picker-tooltip';
+            tooltip.setAttribute('aria-hidden', 'true');
+            tooltip.hidden = true;
+        }
+        if (tooltip.parentNode !== host) host.appendChild(tooltip);
+        return tooltip;
+    }
+    function positionTooltip(event) {
+        if (!tooltip || tooltip.hidden) return;
+        var width = tooltip.offsetWidth, height = tooltip.offsetHeight;
+        var left = event.clientX + 14, top = event.clientY + 16;
+        if (left + width > window.innerWidth - 8) left = event.clientX - width - 14;
+        if (top + height > window.innerHeight - 8) top = event.clientY - height - 16;
+        tooltip.style.left = Math.max(8, left) + 'px';
+        tooltip.style.top = Math.max(8, top) + 'px';
+    }
+    function hideTooltip() { if (tooltip) tooltip.hidden = true; }
+    function tooltipText(start, end, view) {
+        if (!start || !end) return '';
+        if (view !== 'week') {
+            return formatDate(start, {year: 'numeric', month: 'numeric', day: 'numeric'}) + ' → ' +
+                formatDate(end, {year: 'numeric', month: 'numeric', day: 'numeric'});
+        }
+        var hour12 = window.currentTimeFormat === '12h';
+        var sameYear = start.getFullYear() === end.getFullYear();
+        var startOptions = {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: hour12};
+        if (!sameYear) startOptions.year = 'numeric';
+        var endOptions = {hour: '2-digit', minute: '2-digit', hour12: hour12};
+        if (!sameDay(start, end)) {
+            endOptions = {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: hour12};
+            if (!sameYear) endOptions.year = 'numeric';
+        }
+        return new Intl.DateTimeFormat(language(), startOptions).format(start) + ' → ' +
+            new Intl.DateTimeFormat(language(), endOptions).format(end);
+    }
     function timeControl(root) {
         if (!window.WebClockTimeInputs) return;
         window.WebClockTimeInputs.refresh(root, window.currentTimeFormat || '24h', language());
@@ -85,6 +124,15 @@
         function paintSummary() {
             summary.textContent = state.start && state.end ? rangeText(state.start, state.end) : '';
             summary.hidden = !(state.start && state.end);
+            if (state.selecting && tooltip && !tooltip.hidden) {
+                tooltip.textContent = tooltipText(state.start, state.end, state.view);
+            }
+        }
+        function showTooltip(event) {
+            ensureTooltip(root.closest('dialog[open]') || document.body);
+            tooltip.hidden = false;
+            tooltip.textContent = tooltipText(state.start, state.end, state.view);
+            positionTooltip(event);
         }
         function readInputs() {
             state.start = parseValue(startInput.value);
@@ -269,9 +317,11 @@
             if (event && typeof event.clientX === 'number' && typeof event.clientY === 'number') updateSelection(event);
             state.selecting = false;
             state.container = null;
+            hideTooltip();
             if (state.start && state.end) commit();
         }
         root.addEventListener('pointerdown', function (event) {
+            if (event.button > 0) return;
             var day = event.target.closest('[data-range-date]');
             if (!day) return;
             var container = monthView.contains(day) ? monthView : (yearView.contains(day) ? yearView : null);
@@ -288,9 +338,11 @@
             state.selecting = true;
             if (container === monthView) paintMonthSelection(); else paintYearSelection();
             paintSummary();
+            showTooltip(event);
         });
         function updateSelection(event) {
             if (!state.selecting || !state.anchor || !state.container) return;
+            positionTooltip(event);
             var element = document.elementFromPoint(event.clientX, event.clientY);
             if (state.container === weekView) {
                 var column = element && element.closest ? element.closest('[data-week-column]') : null;
@@ -332,6 +384,7 @@
         document.addEventListener('pointerup', finishSelection);
         document.addEventListener('pointercancel', function () { finishSelection(); });
         weekView.addEventListener('pointerdown', function (event) {
+            if (event.button > 0) return;
             var column = event.target.closest('[data-week-column]');
             if (!column || !weekView.contains(column)) return;
             var date = parseDay(column.getAttribute('data-range-date'));
@@ -345,6 +398,7 @@
             state.container = weekView;
             paintWeekSelection();
             paintSummary();
+            showTooltip(event);
         });
         monthView.addEventListener('click', function (event) {
             var day = event.target.closest('[data-range-date]');
