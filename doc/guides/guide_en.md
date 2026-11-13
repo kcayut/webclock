@@ -114,7 +114,7 @@ Each alarm can independently select one or more calendar sources, including serv
 - **Alarm at event time:** trigger 0–1440 minutes before a timed event; all-day events are ignored.
 - **Alarm if the day has an event:** trigger at the alarm's fixed time when any selected source has an event that day; all-day and multi-day events count.
 
-Alarm selection is independent from clock display selection. Weekday, explicit-date, and Taiwan holiday conditions still apply and are evaluated against the actual alarm date in Taiwan. A failed or removed source produces no alarms, while other readable sources continue to work.
+Alarm selection is independent from clock display selection. Calendar-linked alarms do not use separate repeat or holiday conditions; the selected calendars determine ring dates and count. A failed or removed source produces no alarms, while other readable sources continue to work.
 
 After selecting sources, you can target one event and choose an occurrence or the entire recurring series. Without a target, the alarm follows all events from the selected sources. Occurrence links keep the original event identity across rescheduling and do not switch to another event after cancellation; series links follow that series. Subscription changes may take up to about five minutes to refresh; check the next-ring preview afterward.
 

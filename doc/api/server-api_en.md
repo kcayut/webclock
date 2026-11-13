@@ -152,7 +152,7 @@ An alarm may include `calendar_link`; omit it or use `null` for a fixed-time sch
 - `source_ids` contains stable source IDs; `local` means server-local reminders managed in `/admin`, not browser-local reminders in the clock panel. Alarm selection is independent from clock display selection.
 - Optional `target` selects an event: `{"source_id":"work","uid":"meeting","scope":"occurrence","recurrence_id":"2026-09-30T02:30:00+00:00","title":"Weekly meeting"}`. Use `scope=occurrence` for one occurrence or `scope=series` for the recurring series; no target follows all selected-source events.
 - Get stable identifiers from the event catalog below. `recurrence_id` is empty for a nonrecurring event or a series, and is the original `RECURRENCE-ID` for an occurrence, even after rescheduling. `title` is display-only; current calendar data determines rescheduling and cancellation. Subscription caching may delay changes by up to five minutes.
-- Weekday, explicit-date, and holiday filters use the actual alarm date in Taiwan. Preview searches up to 366 days.
+- Calendar-linked alarms do not use separate repeat or holiday filters; `rule` is normalized to an empty object and `skip_holidays` to `false`. Preview searches up to 366 days.
 - Persistent local text without a date or fixed window does not participate. Missing or unreadable sources do not fall back to daily alarms or stale data.
 - The server computes linked alarms for browser use. Schema 2 device responses exclude them so old hardware does not misread them as daily alarms.
 

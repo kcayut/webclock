@@ -74,7 +74,6 @@ const englishLabels = {
     repeat_summary_skip: " · Skips Taiwan holidays", once_on: "Once · {date}",
     once: "Once", every_day: "Every day", weekdays_label: "Selected weekdays", workday_only: "Workdays (including make-up days)",
     holiday_only: "Holidays", dates: "Specific dates", weekly_summary: "Weekly {days}",
-    event_once_notice: "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.",
     once_date_past: "This date has passed. Choose today or a later date.",
     preview_waiting: "Finish the settings above first.",
     calendar_none_hint: "Rings at the fixed time; calendars are not used.",
@@ -916,8 +915,7 @@ const completionTimeout = setTimeout(() => {
     assert.equal(inputRefreshes.at(-1).disabled, true, "Event mode also disables the visible time controls");
     assert.equal($("schedule-offset-field").hidden, false);
     assert.equal($("calendar-source-field").hidden, false);
-    assert.equal($("schedule-repeat-mode").value, "every_day", "Event mode changes one-time repeat to every day");
-    assert.equal($("repeat-notice").textContent, "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.");
+    assert.equal($("schedule-repeat-section").hidden, true, "Calendar-linked alarms hide repeat settings");
     await $("schedule-form").trigger("submit");
     assert.equal($("calendar-source-error").textContent, "Choose at least one available calendar source.");
     assert.equal(pending.length, 0);
@@ -930,9 +928,12 @@ const completionTimeout = setTimeout(() => {
     $("schedule-time").value = "";
     const linking = $("schedule-form").trigger("submit");
     const linkedRequest = take("/schedules", "POST");
-    assert.equal(JSON.parse(linkedRequest.options.body).time, "07:30", "An event-relative alarm does not require an unused fixed time");
+    const linkedBody = JSON.parse(linkedRequest.options.body);
+    assert.equal(linkedBody.time, "07:30", "An event-relative alarm does not require an unused fixed time");
+    assert.deepEqual(linkedBody.rule, {}, "Calendar-linked alarms do not store a repeat rule");
+    assert.equal(linkedBody.skip_holidays, false, "Calendar-linked alarms do not store holiday exclusions");
     const link = {mode: "event", source_ids: ["local", "work"], offset_minutes: 15};
-    assert.deepEqual(JSON.parse(linkedRequest.options.body).calendar_link, link);
+    assert.deepEqual(linkedBody.calendar_link, link);
     const linked = {...row, name: "Linked alarm", calendar_link: link};
     reply(linkedRequest, linked);
     await flush();
@@ -958,9 +959,13 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("schedule-time").disabled, false);
     assert.equal(inputRefreshes.at(-1).required, true);
     assert.equal($("schedule-offset-field").hidden, true);
+    assert.equal($("schedule-repeat-section").hidden, true, "Day-linked alarms hide repeat settings");
     const changingDay = $("schedule-form").trigger("submit");
     const dayRequest = take("/schedules/alarm", "PUT");
-    assert.deepEqual(JSON.parse(dayRequest.options.body).calendar_link, {mode: "day", source_ids: ["work"], offset_minutes: 0});
+    const dayBody = JSON.parse(dayRequest.options.body);
+    assert.deepEqual(dayBody.rule, {}, "Day-linked alarms do not store a repeat rule");
+    assert.equal(dayBody.skip_holidays, false);
+    assert.deepEqual(dayBody.calendar_link, {mode: "day", source_ids: ["work"], offset_minutes: 0});
     const dayLinked = {...linked, calendar_link: {mode: "day", source_ids: ["work"], offset_minutes: 0}};
     const withoutPreview = {...dayLinked}; delete withoutPreview.next_occurrence;
     reply(dayRequest, withoutPreview);
@@ -979,6 +984,7 @@ const completionTimeout = setTimeout(() => {
     assert.equal(pending.length, 0);
     $("schedule-calendar-mode").value = "none";
     await $("schedule-calendar-mode").trigger("change");
+    assert.equal($("schedule-repeat-section").hidden, false, "Returning to fixed time shows repeat settings");
     const unlinking = $("schedule-form").trigger("submit");
     const unlinkRequest = take("/schedules/alarm", "PUT");
     assert.equal(JSON.parse(unlinkRequest.options.body).calendar_link, null, "Returning to fixed time explicitly clears the stored link");
@@ -995,27 +1001,12 @@ const completionTimeout = setTimeout(() => {
     assert.doesNotMatch(content($("schedule-list")), /once/, "A linked date may contain multiple events and must not promise one ring");
     await button("schedule-list", "edit").trigger("click");
     assert.equal($("schedule-calendar-mode").value, "event", "Opening an existing linked-date alarm preserves its meaning");
-    assert.equal($("schedule-repeat-mode").value, "dates", "A linked date opens in specific-dates mode");
-    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-01"]});
+    assert.equal($("schedule-repeat-section").hidden, true, "Calendar-linked alarms hide repeat settings");
+    assert.deepEqual(plain(qa.scheduleData().rule), {}, "Calendar-linked alarms ignore and drop stored repeat filters");
     assert.deepEqual(plain(qa.scheduleData().calendar_link), link);
-    $("schedule-repeat-mode").value = "weekdays";
-    await $("schedule-repeat-mode").trigger("change");
-    weekdays[0].checked = true;
-    await weekdays[0].trigger("change");
-    assert.equal($("schedule-calendar-mode").value, "event", "Changing repeat mode preserves the calendar link");
-    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1]});
-    assert.deepEqual(plain(qa.scheduleData().calendar_link), link);
-    $("schedule-repeat-mode").value = "dates";
-    await $("schedule-repeat-mode").trigger("change");
-    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-01"]}, "The dates draft survives a mode round trip");
-    await $("clear-schedule-dates").trigger("click");
-    assert.throws(() => qa.scheduleData(), /Enter a valid date/, "An empty dates mode is invalid, not silently one-time");
-    $("schedule-dates-picker").value = "2026-10-02";
-    await $("add-schedule-date").trigger("click");
-    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-02"]});
-    assert.deepEqual(plain(qa.scheduleData().calendar_link), link, "Date changes never remove the calendar link");
     $("schedule-calendar-mode").value = "none";
     await $("schedule-calendar-mode").trigger("change");
+    assert.equal($("schedule-repeat-section").hidden, false, "Fixed-time alarms show repeat settings again");
     assert.equal($("schedule-time").disabled, false);
     assert.equal(qa.scheduleData().calendar_link, null, "Only changing the trigger clears the old link");
     await $("cancel-edit").trigger("click");
@@ -1023,10 +1014,7 @@ const completionTimeout = setTimeout(() => {
     await $("add-schedule").trigger("click");
     $("schedule-calendar-mode").value = "event";
     await $("schedule-calendar-mode").trigger("change");
-    $("schedule-repeat-mode").value = "once";
-    await $("schedule-repeat-mode").trigger("change");
-    assert.equal($("schedule-repeat-mode").value, "every_day", "Event mode cannot promise a single ring");
-    assert.equal($("repeat-notice").textContent, "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.");
+    assert.equal($("schedule-repeat-section").hidden, true, "Event mode has no repeat settings");
     calendarInput("work").checked = true;
     $("schedule-offset").value = "10";
     const meeting = {source_id: "work", uid: "weekly-meeting", recurring: true, recurrence_id: "2026-10-02T01:00:00+00:00",
@@ -1056,12 +1044,8 @@ const completionTimeout = setTimeout(() => {
     // Changing language must preserve the entire draft, including calendar target identity.
     $("schedule-name").value = "Draft meeting alarm";
     $("schedule-volume").value = "37";
-    $("schedule-repeat-mode").value = "weekdays";
-    await $("schedule-repeat-mode").trigger("change");
-    weekdays[0].checked = true;
-    await weekdays[0].trigger("change");
-    $("schedule-skip-holidays").checked = true;
     $("schedule-enabled").checked = false;
+    assert.equal($("schedule-repeat-section").hidden, true);
     const languageDraft = plain(qa.scheduleData());
     for (const language of ["zh-TW", "en"]) {
         const languageCalls = assignmentLanguages;
@@ -1070,8 +1054,7 @@ const completionTimeout = setTimeout(() => {
         assert.equal(assignmentLanguages, languageCalls + 1, "The assignment editor uses the active management language");
         assert.equal(assignmentSummaries.size, 1, "Rebuilt lists release old assignment badges");
         assert.equal($("editor").hidden, false);
-        assert.equal($("schedule-repeat-mode").value, "weekdays");
-        assert.equal($("schedule-skip-holidays").checked, true);
+        assert.equal($("schedule-repeat-section").hidden, true);
         assert.deepEqual(plain(qa.scheduleData()), languageDraft);
         reply(take("/calendar-events?source_id=work"), {events: calendarEvents});
         await flush();

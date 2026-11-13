@@ -47,7 +47,7 @@
     const capabilityFields = ["display", "audio", "notifications", "background", "calendar"];
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
-    let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null, repeatNoticeKey = "";
+    let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null;
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
     const assignmentSummaries = new Map();
     const assignments = window.WebClockAssignments ? window.WebClockAssignments.create({
@@ -203,12 +203,12 @@
         });
         return button;
     }
-    function ruleText(rule, skipHolidays, calendarLink) {
+    function ruleText(rule, skipHolidays) {
         let text = t("every_day");
         if (rule.workday_only) text = t("workday_only");
         else if (rule.holiday_only) text = t("holiday_only");
         else if (rule.weekdays) text = format("weekly_summary", {days: rule.weekdays.map(day => t("weekdays")[day - 1]).join(" / ")});
-        else if (rule.dates) text = (rule.dates.length === 1 && !calendarLink ? t("once") + " · " : "") + rule.dates.join(", ");
+        else if (rule.dates) text = (rule.dates.length === 1 ? t("once") + " · " : "") + rule.dates.join(", ");
         return text + (skipHolidays ? " · " + t("skip_holidays") : "");
     }
     function renderNextEvent() {
@@ -303,10 +303,10 @@
             if (skip) nextPauseEnd = nextPauseEnd === null ? Date.parse(skip) : Math.min(nextPauseEnd, Date.parse(skip));
             const row = node("li", undefined, "schedule-row" + (enabled ? "" : " disabled"));
             const details = node("div", undefined, "schedule-details");
-            const description = ruleText(schedule.rule, schedule.skip_holidays, schedule.calendar_link) + " · " +
+            const repeat = schedule.calendar_link ? calendarText(schedule.calendar_link) : ruleText(schedule.rule, schedule.skip_holidays);
+            const description = repeat + " · " +
                 t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%";
             details.append(node("h3", schedule.name), node("p", description));
-            if (schedule.calendar_link) details.append(node("p", calendarText(schedule.calendar_link)));
             const next = nextTime(schedule.next_occurrence);
             if (paused) details.append(node("p", resumeMessage(paused, "resume_at"), "schedule-next"));
             details.append(node("p", format("next_ring", {datetime: next}), "schedule-next"));
@@ -436,7 +436,6 @@
         if (!$("editor").hidden) {
             $("editor-title").textContent = t($("schedule-id").value ? "edit_alarm" : "add_alarm");
             renderCalendarSources(selectedCalendarSources());
-            showRepeatNotice(repeatNoticeKey);
             renderDateList();
             setCalendarMode();
             queuePreview();
@@ -448,10 +447,6 @@
     const dateValues = () => ($("schedule-dates").value || "").split(",").map(value => value.trim()).filter(Boolean);
     const skipHolidaysVisible = () => ["every_day", "weekdays", "dates"].includes(repeatMode()) ||
         (repeatMode() === "once" && !!$("schedule-date-picker").value);
-    function showRepeatNotice(key) {
-        repeatNoticeKey = key || "";
-        $("repeat-notice").textContent = repeatNoticeKey ? t(repeatNoticeKey) : "";
-    }
     function setDateValues(values) {
         $("schedule-dates").value = Array.from(new Set(values)).sort().join(", ");
         renderDateList();
@@ -644,12 +639,8 @@
             mode === "day" ? t("calendar_day_hint") : t("calendar_none_hint");
         $("schedule-offset-error").textContent = "";
         $("schedule-time-error").textContent = "";
-        if (mode === "event" && repeatMode() === "once") {
-            $("schedule-repeat-mode").value = "every_day";
-            showRepeatNotice("event_once_notice");
-        } else if (mode !== "event" && repeatNoticeKey === "event_once_notice") {
-            showRepeatNotice("");
-        }
+        $("schedule-repeat-section").hidden = mode !== "none";
+        $("repeat-error").textContent = "";
         if (mode === "none") $("calendar-source-error").textContent = "";
         renderRepeat();
         loadCalendarTargets();
@@ -663,9 +654,8 @@
         $("editor-next").textContent = "";
         $("editor-countdown").textContent = "";
         if (!schedule) $("schedule-time").value = "07:30";
-        ["form-error", "repeat-error", "repeat-notice", "calendar-source-error", "schedule-offset-error", "schedule-time-error"]
+        ["form-error", "repeat-error", "calendar-source-error", "schedule-offset-error", "schedule-time-error"]
             .forEach(id => { $(id).textContent = ""; });
-        repeatNoticeKey = "";
         $("schedule-date-picker").value = "";
         $("schedule-dates").value = "";
         document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
@@ -675,8 +665,8 @@
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
         $("schedule-volume").value = String(schedule && schedule.browser_volume != null ? schedule.browser_volume : 100);
         $("schedule-volume-value").textContent = $("schedule-volume").value + "%";
-        $("schedule-skip-holidays").checked = !!(schedule && schedule.skip_holidays);
         const link = schedule && schedule.calendar_link;
+        $("schedule-skip-holidays").checked = !!(schedule && !link && schedule.skip_holidays);
         calendarEvents = [];
         calendarTarget = link && link.target ? Object.assign({}, link.target) : null;
         $("schedule-calendar-scope").value = calendarTarget ? calendarTarget.scope : "all";
@@ -691,25 +681,27 @@
         if (schedule) {
             ["name", "time"].forEach(key => $("schedule-" + key).value = schedule[key]);
             $("schedule-enabled").checked = schedule.enabled;
-            const rule = schedule.rule;
-            let mode = "every_day";
-            if (rule.weekdays) {
-                document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = rule.weekdays.includes(Number(input.value)));
-                mode = rule.weekdays.length === 7 ? "every_day" : "weekdays";
-            } else if (rule.workday_only) mode = "workday_only";
-            else if (rule.holiday_only) mode = "holiday_only";
-            else if (rule.dates) {
-                if (rule.dates.length === 1 && (!link || link.mode !== "event")) {
-                    mode = "once";
-                    $("schedule-date-picker").value = rule.dates[0];
-                } else {
-                    mode = "dates";
-                    setDateValues(rule.dates);
+            if (!link) {
+                const rule = schedule.rule;
+                let mode = "every_day";
+                if (rule.weekdays) {
+                    document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = rule.weekdays.includes(Number(input.value)));
+                    mode = rule.weekdays.length === 7 ? "every_day" : "weekdays";
+                } else if (rule.workday_only) mode = "workday_only";
+                else if (rule.holiday_only) mode = "holiday_only";
+                else if (rule.dates) {
+                    if (rule.dates.length === 1) {
+                        mode = "once";
+                        $("schedule-date-picker").value = rule.dates[0];
+                    } else {
+                        mode = "dates";
+                        setDateValues(rule.dates);
+                    }
                 }
+                $("schedule-repeat-mode").value = mode;
             }
-            $("schedule-repeat-mode").value = mode;
         }
-        if (repeatMode() === "every_day") document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
+        if (!link && repeatMode() === "every_day") document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
         $("editor").hidden = false;
         renderAssignments();
         setCalendarMode();
@@ -724,12 +716,6 @@
     $("cancel-edit").addEventListener("click", closeEditor);
     $("schedule-repeat-mode").addEventListener("change", () => {
         $("repeat-error").textContent = "";
-        if (repeatMode() === "once" && $("schedule-calendar-mode").value === "event") {
-            $("schedule-repeat-mode").value = "every_day";
-            showRepeatNotice("event_once_notice");
-        } else {
-            showRepeatNotice("");
-        }
         renderRepeat();
         queuePreview();
     });
@@ -824,24 +810,25 @@
     });
     function scheduleData() {
         const id = $("schedule-id").value, mode = repeatMode();
-        const errorKey = repeatErrorKey();
-        if (errorKey) throw fail(errorKey, "repeat");
+        const calendarMode = $("schedule-calendar-mode").value, linked = calendarMode !== "none";
         let rule = {};
-        if (mode === "weekdays") {
-            const days = selectedWeekdays().sort((a, b) => a - b);
-            rule = {weekdays: days};
-        } else if (mode === "workday_only") {
-            rule = {workday_only: true};
-        } else if (mode === "holiday_only") {
-            rule = {holiday_only: true};
-        } else if (mode === "dates") {
-            const dates = dateValues();
-            rule = {dates: dates.sort()};
+        if (!linked) {
+            const errorKey = repeatErrorKey();
+            if (errorKey) throw fail(errorKey, "repeat");
+            if (mode === "weekdays") {
+                rule = {weekdays: selectedWeekdays().sort((a, b) => a - b)};
+            } else if (mode === "workday_only") {
+                rule = {workday_only: true};
+            } else if (mode === "holiday_only") {
+                rule = {holiday_only: true};
+            } else if (mode === "dates") {
+                rule = {dates: dateValues().sort()};
+            }
         }
         const data = {
             rule: rule,
             enabled: $("schedule-enabled").checked || !!editorPausedUntil,
-            skip_holidays: skipHolidaysVisible() && $("schedule-skip-holidays").checked
+            skip_holidays: !linked && skipHolidaysVisible() && $("schedule-skip-holidays").checked
         };
         if (editorPausedUntil && $("schedule-enabled").checked) {
             const schedule = schedules.find(item => item.id === id);
@@ -852,10 +839,9 @@
         data.name = data.name.trim() || t("alarm");
         data.browser_sound = $("schedule-sound").value;
         data.browser_volume = Number($("schedule-volume").value);
-        const calendarMode = $("schedule-calendar-mode").value;
         if (calendarMode === "event" && !data.time) data.time = "07:30";
         if (calendarMode !== "event" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.time) || ($("schedule-time")._clockTimeControl || {}).invalid)) throw fail("select_time", "time");
-        if (mode === "once") {
+        if (!linked && mode === "once") {
             const chosen = $("schedule-date-picker").value;
             if (chosen) {
                 data.rule = {dates: [chosen]};
@@ -867,7 +853,9 @@
                 data.rule = {dates: [new Date(target + 8 * 3600000 + (target < now ? 86400000 : 0)).toISOString().slice(0, 10)]};
             }
         }
-        if (calendarMode !== "none") {
+        if (linked) {
+            data.rule = {};
+            data.skip_holidays = false;
             const sourceIds = selectedCalendarSources();
             if (!sourceIds.length || sourceIds.some(id => !calendarSources.some(source => source.id === id))) throw fail("select_calendar_source", "calendar");
             if (calendarMode === "event" && !/^\d+$/.test($("schedule-offset").value)) throw fail("calendar_offset_error", "offset");

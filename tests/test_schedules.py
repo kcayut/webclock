@@ -141,14 +141,16 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(provider.call_args.kwargs['start'].isoformat(), '2026-09-30T00:10:00+08:00')
         self.assertEqual(provider.call_args.kwargs['end'] - provider.call_args.kwargs['start'], timedelta(days=366))
 
-    def test_calendar_advance_filters_actual_taiwan_ring_day(self):
-        # Friday's event rings Thursday night; weekday and holiday filters apply to Thursday.
+    def test_calendar_links_ignore_repeat_and_holiday_filters(self):
+        # Calendar-linked alarms follow the calendar; weekday, date and holiday
+        # filters are not part of the model.
         provider = Mock(return_value=[self.calendar_event('2026-09-25T00:15:20+08:00')])
         now = datetime.fromisoformat('2026-09-24T23:00:00+08:00')
-        schedule = self.linked(offset=30, rule={'weekdays': [4]}, skip_holidays=True)
-        self.assertEqual(next_occurrence(schedule, self.holidays, now, provider)['datetime'], '2026-09-24T23:45:20+08:00')
-        schedule['rule'] = {'weekdays': [5]}
-        self.assertIsNone(next_occurrence(schedule, self.holidays, now, provider))
+        schedule = self.linked(offset=30, rule={'weekdays': [5]}, skip_holidays=True)
+        self.assertEqual(schedule['rule'], {})
+        self.assertFalse(schedule['skip_holidays'])
+        self.assertEqual(next_occurrence(schedule, self.holidays, now, provider)['datetime'],
+                         '2026-09-24T23:45:20+08:00')
 
     def test_calendar_target_follows_occurrence_move_or_series_and_never_other_events(self):
         now = datetime.fromisoformat('2026-09-30T07:00:00+08:00')
@@ -212,8 +214,13 @@ class ScheduleTests(unittest.TestCase):
             for provider in (None, Mock(return_value=[]), Mock(side_effect=OSError('unavailable'))):
                 self.assertIsNone(next_occurrence(schedule, self.holidays, now, provider))
         unknown = self.linked(mode='day', skip_holidays=True)
+        self.assertEqual(unknown['rule'], {})
+        self.assertFalse(unknown['skip_holidays'])
         provider = Mock(return_value=[self.calendar_event('2028-01-03T08:00:00+08:00')])
-        self.assertIsNone(next_occurrence(unknown, self.holidays, datetime.fromisoformat('2028-01-03T07:00:00+08:00'), provider))
+        self.assertEqual(next_occurrence(unknown, self.holidays,
+                                         datetime.fromisoformat('2028-01-03T07:00:00+08:00'), provider)['datetime'],
+                         '2028-01-03T07:30:00+08:00',
+                         'Calendar-linked alarms do not depend on holiday-data coverage')
         disabled = self.linked(enabled=False)
         next_occurrence(disabled, self.holidays, now, provider)
         self.assertEqual(provider.call_count, 1, 'Disabled schedules must not fetch calendars')

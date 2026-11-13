@@ -80,7 +80,7 @@
                                 <p class="help" data-schedule-i18n="calendar_rule_hint">{{ t.calendar_rule_hint }}</p>
                             </fieldset>
                         </section>
-                        <section class="form-section" aria-labelledby="schedule-repeat-section-title">
+                        <section id="schedule-repeat-section" class="form-section" aria-labelledby="schedule-repeat-section-title">
                             <h3 id="schedule-repeat-section-title" class="section-title" data-schedule-i18n="repeat_section">{{ t.repeat_section }}</h3>
                             <div class="field setting-row">
                                 <label for="schedule-repeat-mode" data-schedule-i18n="repeat_mode">{{ t.repeat_mode }}</label>
@@ -116,7 +116,6 @@
                             </div>
                             <label id="skip-holidays-field" class="check setting-switch" hidden><span data-schedule-i18n="skip_holidays">{{ t.skip_holidays }}</span><input id="schedule-skip-holidays" type="checkbox" role="switch" aria-describedby="skip-holidays-hint"></label>
                             <p id="skip-holidays-hint" class="help" data-schedule-i18n="skip_holidays_hint" hidden>{{ t.skip_holidays_hint }}</p>
-                            <p id="repeat-notice" class="help" role="status"></p>
                             <p id="repeat-error" class="error" role="alert"></p>
                             <p id="repeat-summary" class="repeat-summary" role="status" aria-live="polite"></p>
                         </section>

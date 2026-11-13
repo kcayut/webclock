@@ -101,6 +101,11 @@ def validate_schedule(data):
     if result['skip_holidays'] and rule.get('holiday_only'):
         raise ValueError('Holiday-only schedules cannot also skip holidays')
     result['rule'] = dict(rule)
+    if result.get('calendar_link'):
+        # Calendar-linked alarms follow the selected calendar. Repeat rules and
+        # holiday exclusions are not part of that model.
+        result['rule'] = {}
+        result['skip_holidays'] = False
     skipped = result['skipped_occurrences']
     if not isinstance(skipped, list) or len(skipped) > 3660:
         raise ValueError('Invalid skipped occurrences')
@@ -183,7 +188,7 @@ def matches_date(schedule, holidays, value):
     return True
 
 
-def next_calendar_occurrence(schedule, holidays, now, calendar_events):
+def next_calendar_occurrence(schedule, now, calendar_events):
     """Resolve selected calendar sources on the server; never fall back to daily."""
     if not callable(calendar_events):
         return None
@@ -232,7 +237,7 @@ def next_calendar_occurrence(schedule, holidays, now, calendar_events):
             continue
     skipped = set(schedule['skipped_occurrences'])
     for stamp in sorted(candidates):
-        if stamp < now or stamp.isoformat() in skipped or not matches_date(schedule, holidays, stamp.date()):
+        if stamp < now or stamp.isoformat() in skipped:
             continue
         result = copy.deepcopy(schedule)
         result['datetime'] = stamp.isoformat()
@@ -249,7 +254,7 @@ def next_occurrence(schedule, holidays, now, calendar_events=None):
         return None
     now = now.astimezone(TAIPEI)
     if schedule.get('calendar_link'):
-        return next_calendar_occurrence(schedule, holidays, now, calendar_events)
+        return next_calendar_occurrence(schedule, now, calendar_events)
     rule = schedule['rule']
     skipped = set(schedule['skipped_occurrences'])
     if 'dates' in rule:
