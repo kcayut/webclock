@@ -55,7 +55,6 @@
         return start && end ? formatValue(start) + ' → ' + formatValue(end) : label('range_none');
     }
     function sameDay(left, right) { return left && right && dayKey(left) === dayKey(right); }
-    function hourLabel(minutes) { return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60); }
     function timeControl(root) {
         if (!window.WebClockTimeInputs) return;
         window.WebClockTimeInputs.refresh(root, window.currentTimeFormat || '24h', language());
@@ -153,18 +152,48 @@
                 card.classList.toggle('is-selected', !!(state.start && state.end && state.end >= first && state.start < next));
             });
         }
+        function weekRange() {
+            var start = 8, end = 22;
+            if (state.start && state.end) {
+                if (!sameDay(state.start, state.end)) return {start: 0, end: 24};
+                start = Math.min(start, Math.floor((state.start.getHours() * 60 + state.start.getMinutes()) / 60));
+                end = Math.max(end, Math.ceil((state.end.getHours() * 60 + state.end.getMinutes()) / 60));
+            }
+            start = Math.max(0, Math.min(23, start));
+            end = Math.max(start + 1, Math.min(24, end));
+            return {start: start, end: end};
+        }
+        function weekMinutes(event, column) {
+            var grid = weekView.querySelector('[data-week-grid]');
+            var startHour = Number(grid.getAttribute('data-week-start-hour'));
+            var endHour = Number(grid.getAttribute('data-week-end-hour'));
+            var row = Number(grid.getAttribute('data-week-row-height')) || 34;
+            var rect = column.getBoundingClientRect();
+            var slot = Math.floor((event.clientY - rect.top) / (row / 2));
+            slot = Math.max(0, Math.min((endHour - startHour) * 2 - 1, slot));
+            return startHour * 60 + slot * SLOT;
+        }
         function paintWeekSelection() {
-            if (!state.start || !state.end) return;
-            var start = state.start.getTime(), end = state.end.getTime();
-            weekView.querySelectorAll('[data-range-slot]').forEach(function (cell) {
-                var date = parseDay(cell.getAttribute('data-range-date'));
-                var minutes = Number(cell.getAttribute('data-range-minutes'));
-                if (!date || isNaN(minutes)) return;
-                var stamp = withTime(date, minutes).getTime(), next = stamp + SLOT * 60000;
-                var selected = stamp < end && next > start;
-                cell.classList.toggle('is-selected', selected);
-                cell.classList.toggle('is-start', stamp === start);
-                cell.classList.toggle('is-end', next === end);
+            var grid = weekView.querySelector('[data-week-grid]');
+            if (!grid) return;
+            var startHour = Number(grid.getAttribute('data-week-start-hour'));
+            var row = Number(grid.getAttribute('data-week-row-height')) || 34;
+            weekView.querySelectorAll('[data-week-column]').forEach(function (column) {
+                var overlay = column.querySelector('[data-week-selection]');
+                if (!overlay) return;
+                var date = parseDay(column.getAttribute('data-range-date'));
+                if (!state.start || !state.end || !date) { overlay.hidden = true; return; }
+                var dayStart = withTime(date, 0), dayEnd = withTime(addDays(date, 1), 0);
+                var start = Math.max(state.start.getTime(), dayStart.getTime());
+                var end = Math.min(state.end.getTime(), dayEnd.getTime());
+                if (end <= start) { overlay.hidden = true; return; }
+                var top = ((start - dayStart.getTime()) / 60000 / 60 - startHour) * row;
+                var height = ((end - start) / 60000 / 60) * row;
+                overlay.hidden = false;
+                overlay.style.top = top + 'px';
+                overlay.style.height = Math.max(3, height) + 'px';
+                overlay.classList.toggle('is-start', start === state.start.getTime());
+                overlay.classList.toggle('is-end', end === state.end.getTime());
             });
         }
         function renderMonth() {
@@ -185,36 +214,28 @@
             paintMonthSelection();
         }
         function renderWeek() {
-            var first = startOfWeek(state.cursor);
+            var first = startOfWeek(state.cursor), range = weekRange(), row = 34;
             var html = '<div class="range-week-head"><span></span>';
             for (var d = 0; d < 7; d++) {
                 var day = addDays(first, d);
                 html += '<span class="' + (sameDay(day, new Date()) ? 'is-today' : '') + '">' +
                     formatDate(day, {weekday: 'short', day: 'numeric'}) + '</span>';
             }
-            html += '</div><div class="range-week-scroll"><div class="range-week-body"><div class="range-time-axis">';
-            for (var minute = 0; minute < 1440; minute += SLOT) {
-                html += '<span class="' + (minute % 60 ? 'is-half' : '') + '">' +
-                    (minute % 60 ? '' : hourLabel(minute)) + '</span>';
+            html += '</div><div class="range-week-body"><div class="range-time-axis">';
+            for (var hour = range.start; hour < range.end; hour++) {
+                html += '<span>' + pad(hour) + ':00</span>';
             }
-            html += '</div><div class="range-week-grid">';
-            for (var slot = 0; slot < 1440; slot += SLOT) {
-                for (var dayIndex = 0; dayIndex < 7; dayIndex++) {
-                    var slotDate = addDays(first, dayIndex);
-                    var slotClass = 'range-slot' + (slot % 60 ? ' is-half' : '') +
-                        (sameDay(slotDate, new Date()) ? ' is-today' : '');
-                    html += '<button type="button" class="' + slotClass + '" data-range-slot="' + dayKey(slotDate) + '-' + slot + '" data-range-date="' + dayKey(slotDate) +
-                        '" data-range-minutes="' + slot + '" aria-label="' +
-                        formatDate(withTime(slotDate, slot), {dateStyle: 'medium', timeStyle: 'short'}) + '"></button>';
-                }
+            html += '</div><div class="range-week-grid" data-week-grid data-week-start-hour="' + range.start +
+                '" data-week-end-hour="' + range.end + '" data-week-row-height="' + row + '">';
+            for (var dayIndex = 0; dayIndex < 7; dayIndex++) {
+                var columnDate = addDays(first, dayIndex);
+                html += '<div class="range-week-column' + (sameDay(columnDate, new Date()) ? ' is-today' : '') +
+                    '" data-week-column data-range-date="' + dayKey(columnDate) + '">';
+                for (var cell = range.start; cell < range.end; cell++) html += '<div class="range-week-hour"></div>';
+                html += '<div class="range-week-selection" data-week-selection hidden></div></div>';
             }
-            weekView.innerHTML = html + '</div></div></div>';
+            weekView.innerHTML = html + '</div></div>';
             paintWeekSelection();
-            var scroll = weekView.querySelector('.range-week-scroll');
-            if (scroll) {
-                var start = state.start || withTime(state.cursor, 8 * 60);
-                scroll.scrollTop = Math.max(0, (start.getHours() * 60 + start.getMinutes()) / SLOT * 22 - 44);
-            }
         }
         function renderYear() {
             var year = state.cursor.getFullYear(), html = '<div class="range-year-grid">';
@@ -271,6 +292,21 @@
         document.addEventListener('pointermove', function (event) {
             if (!state.selecting || !state.anchor || !state.container) return;
             var element = document.elementFromPoint(event.clientX, event.clientY);
+            if (state.container === weekView) {
+                var column = element && element.closest ? element.closest('[data-week-column]') : null;
+                if (!column || !weekView.contains(column)) return;
+                var currentDate = parseDay(column.getAttribute('data-range-date'));
+                if (!currentDate) return;
+                var currentMinute = weekMinutes(event, column);
+                var current = withTime(currentDate, currentMinute);
+                var start = current < state.anchor ? current : state.anchor;
+                var end = current < state.anchor ? state.anchor : current;
+                state.start = start;
+                state.end = new Date(end.getTime() + SLOT * 60000);
+                paintWeekSelection();
+                paintSummary();
+                return;
+            }
             var day = element && element.closest ? element.closest('[data-range-date]') : null;
             if (!day || !state.container.contains(day)) return;
             var date = parseDay(day.getAttribute('data-range-date'));
@@ -289,33 +325,17 @@
         document.addEventListener('pointerup', finishSelection);
         document.addEventListener('pointercancel', finishSelection);
         weekView.addEventListener('pointerdown', function (event) {
-            var slot = event.target.closest('[data-range-slot]');
-            if (!slot) return;
+            var column = event.target.closest('[data-week-column]');
+            if (!column || !weekView.contains(column)) return;
+            var date = parseDay(column.getAttribute('data-range-date'));
+            if (!date) return;
             event.preventDefault();
             state.lastPointer = Date.now();
-            var date = parseDay(slot.getAttribute('data-range-date'));
-            var minutes = Number(slot.getAttribute('data-range-minutes'));
-            if (!date || isNaN(minutes)) return;
-            state.anchor = withTime(date, minutes);
+            state.anchor = withTime(date, weekMinutes(event, column));
             state.start = state.anchor;
             state.end = new Date(state.anchor.getTime() + SLOT * 60000);
             state.selecting = true;
-            paintWeekSelection();
-            paintSummary();
-        });
-        document.addEventListener('pointermove', function (event) {
-            if (!state.selecting || !state.anchor) return;
-            var element = document.elementFromPoint(event.clientX, event.clientY);
-            var slot = element && element.closest ? element.closest('[data-range-slot]') : null;
-            if (!slot || !weekView.contains(slot)) return;
-            var date = parseDay(slot.getAttribute('data-range-date'));
-            var minutes = Number(slot.getAttribute('data-range-minutes'));
-            if (!date || isNaN(minutes)) return;
-            var current = withTime(date, minutes);
-            var start = current < state.anchor ? current : state.anchor;
-            var end = current < state.anchor ? state.anchor : current;
-            state.start = start;
-            state.end = new Date(end.getTime() + SLOT * 60000);
+            state.container = weekView;
             paintWeekSelection();
             paintSummary();
         });

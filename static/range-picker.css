@@ -30,17 +30,16 @@
 .range-week-head { min-width: 620px; display: grid; grid-template-columns: 56px repeat(7, minmax(72px, 1fr)); gap: 2px; margin-bottom: 4px; color: var(--muted); font-size: 12px; text-align: center; }
 .range-week-head span:first-child { text-align: left; }
 .range-week-head .is-today { color: var(--accent); font-weight: 600; }
-.range-week-scroll { min-width: 620px; max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
 .range-week-body { display: grid; grid-template-columns: 56px minmax(0, 1fr); min-width: 620px; }
-.range-time-axis { display: grid; grid-auto-rows: 22px; padding-right: 6px; color: var(--muted); font-size: 11px; text-align: right; }
-.range-time-axis span { line-height: 22px; }
-.range-time-axis .is-half { color: transparent; }
-.range-week-grid { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); grid-auto-rows: 22px; gap: 1px; background: var(--line); touch-action: pan-y; user-select: none; }
-.range-slot { min-height: 22px; padding: 0; border: 0; border-radius: 0; background: var(--surface); }
-.range-slot:hover { border-color: transparent; background: var(--hover); }
-.range-slot.is-half { background: var(--canvas); }
-.range-slot.is-selected { background: var(--tint); }
-.range-slot.is-start, .range-slot.is-end { background: var(--accent); }
+.range-time-axis { display: grid; grid-auto-rows: 34px; padding-right: 6px; color: var(--muted); font-size: 11px; text-align: right; }
+.range-time-axis span { line-height: 34px; }
+.range-week-grid { position: relative; display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); gap: 1px; background: var(--line); }
+.range-week-column { position: relative; display: grid; grid-auto-rows: 34px; background-color: var(--surface); background-image: linear-gradient(to bottom, transparent 49%, var(--line) 49%, var(--line) 50%, transparent 50%); background-size: 100% 34px; background-repeat: repeat-y; touch-action: pan-y; user-select: none; }
+.range-week-column.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
+.range-week-hour { border-bottom: 1px solid var(--line); }
+.range-week-selection { position: absolute; left: 0; right: 0; z-index: 2; background: var(--tint); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); pointer-events: none; }
+.range-week-selection.is-start { border-top: 2px solid var(--accent); }
+.range-week-selection.is-end { border-bottom: 2px solid var(--accent); }
 .range-year-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .range-year-month { display: block; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: left; }
 .range-year-month.is-selected { border-color: var(--accent); background: var(--tint); color: var(--tint-ink); }
