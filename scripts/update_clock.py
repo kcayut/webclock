@@ -204,9 +204,14 @@ def http_json(url, data=None, headers=None, tls_handler=None):
 
 
 def settings_match(saved, expected):
-    # Older releases omit the 24-hour display default; leave their files intact.
-    return (isinstance(saved, dict) and isinstance(expected, dict)
-            and {'time_format': '24h', **saved} == {'time_format': '24h', **expected})
+    # Newer releases may add default display fields not present in an older
+    # running server's snapshot. Every key captured before the update must
+    # still match, while newly introduced defaults may be merged in.
+    if not isinstance(saved, dict) or not isinstance(expected, dict):
+        return False
+    saved = {'time_format': '24h', **saved}
+    expected = {'time_format': '24h', **expected}
+    return all(saved.get(key) == value for key, value in expected.items())
 
 
 def check_public_health(url, deployment_mode='managed', tls_handler=None):
@@ -490,8 +495,10 @@ DeviceAccessService(state / 'device-access.json', auth.invite_secret, validate_s
 def check_saved_data(current, target, snapshot):
     current, target = active_data_layout(current), active_data_layout(target)
     required = {'mode', 'brightness', 'timezone_offset', 'language'}
+    optional = {'night', 'time_format', 'show_seconds', 'show_date', 'date_format',
+                'show_weekday', 'message_duration', 'message_transition'}
     if (not isinstance(snapshot, dict) or not required <= set(snapshot)
-            or set(snapshot) - (required | {'night', 'time_format'})
+            or set(snapshot) - (required | optional)
             or snapshot.get('time_format', '24h') not in ('24h', '12h')):
         raise RuntimeError('Could not capture current display settings.')
     for state in {current[0], target[0]}:

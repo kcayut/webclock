@@ -24,6 +24,10 @@ import update_clock as updater
 ROOT = Path(__file__).resolve().parents[1]
 # Pin the last single-file server, so this still tests migration after a commit.
 LEGACY_REVISION = '49969dcc16fe5d8d48cb73bfd5241df766f93174'
+NEW_DISPLAY_DEFAULTS = {
+    'show_seconds': False, 'show_date': True, 'date_format': 'm/d',
+    'show_weekday': True, 'message_duration': 5, 'message_transition': 'fade',
+}
 SERVER = '''
 import sys
 import app
@@ -201,7 +205,8 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
         for name, content in self.before.items():
             self.assertEqual((self.project / name).read_bytes(), content, name)
         self.assertEqual(json.loads((self.project / 'webclock_state/manual_notes.json').read_text()), self.notes)
-        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], dict(self.settings, time_format='24h'))
+        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'],
+                         dict(self.settings, time_format='24h', **NEW_DISPLAY_DEFAULTS))
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
         self.assertEqual(updater.http_json(self.url + '/api/v1/schedules')['schedules'], [])
         schedule = updater.http_json(self.url + '/api/v1/schedules', {
@@ -218,7 +223,7 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
 
         def fail_after_writing(project, url, layout, expected_notes, configuration, tls_handler=None):
             real_verify(project, url, layout, expected_notes, configuration, tls_handler=tls_handler)
-            changed_settings = dict(self.settings, brightness=72, time_format='12h')
+            changed_settings = dict(self.settings, brightness=72, time_format='12h', **NEW_DISPLAY_DEFAULTS)
             changed_notes = [dict(self.notes[0], text='新版已改寫提醒')]
             self.assertEqual(updater.http_json(url + '/api/backup', {
                 'version': 1, 'settings': changed_settings, 'notes': changed_notes,
@@ -275,7 +280,8 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
             self.assertEqual((self.project / name).read_bytes(), content, name)
         self.assertEqual(notes.read_bytes(), self.before['manual_notes.json'])
         self.assertEqual(json.loads((state / 'settings.json').read_text()), self.settings)
-        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], dict(self.settings, time_format='24h'))
+        self.assertEqual(updater.http_json(self.url + '/api/status')['settings'],
+                         dict(self.settings, time_format='24h', **NEW_DISPLAY_DEFAULTS))
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
         schedule = updater.http_json(self.url + '/api/v1/schedules', {
             'name': '外部資料目錄排程', 'time': '07:00',
