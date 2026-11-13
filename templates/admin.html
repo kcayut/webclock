@@ -30,14 +30,26 @@
                 <span class="range-picker-summary" data-range-summary></span>
             </button>
             <div id="range-panel-{{ suffix }}" class="range-picker-panel" data-range-panel hidden>
-                <div class="range-picker-times fields">
-                    <div class="field">
-                        <label for="range-time-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
-                        <input id="range-time-start-{{ suffix }}" type="time" data-range-time="start">
+                <div class="range-picker-times">
+                    <div class="range-picker-when">
+                        <div class="field">
+                            <label for="range-date-start-{{ suffix }}" data-i18n="range_start_date">{{ translations[language].range_start_date }}</label>
+                            <input id="range-date-start-{{ suffix }}" type="date" data-range-date-field="start">
+                        </div>
+                        <div class="field">
+                            <label for="range-time-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
+                            <input id="range-time-start-{{ suffix }}" type="time" data-range-time="start">
+                        </div>
                     </div>
-                    <div class="field">
-                        <label for="range-time-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
-                        <input id="range-time-end-{{ suffix }}" type="time" data-range-time="end">
+                    <div class="range-picker-when">
+                        <div class="field">
+                            <label for="range-date-end-{{ suffix }}" data-i18n="range_end_date">{{ translations[language].range_end_date }}</label>
+                            <input id="range-date-end-{{ suffix }}" type="date" data-range-date-field="end">
+                        </div>
+                        <div class="field">
+                            <label for="range-time-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
+                            <input id="range-time-end-{{ suffix }}" type="time" data-range-time="end">
+                        </div>
                     </div>
                 </div>
                 <div class="range-picker-toolbar">

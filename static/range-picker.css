@@ -53,7 +53,9 @@
 .range-year-day.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
 .range-year-day.is-selected { background: var(--tint); color: var(--tint-ink); box-shadow: inset 0 0 0 1px var(--accent); }
 .range-year-day.is-start, .range-year-day.is-end { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
-.range-picker-times { grid-template-columns: minmax(0, 1fr); margin: 0 0 14px; }
+.range-picker-times { margin: 0 0 14px; }
+.range-picker-when { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
+.range-picker-when + .range-picker-when { margin-top: 12px; }
 .range-picker-times .field { margin-bottom: 0; }
 .range-picker-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .range-picker-tooltip { position: fixed; z-index: 100; max-width: 260px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); box-shadow: 0 8px 22px rgba(23, 37, 43, .18); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; pointer-events: none; }
@@ -68,7 +70,8 @@
     .range-picker-views button { flex: 1; }
     .range-picker-nav { width: 100%; justify-content: space-between; }
     .range-picker-label { flex: 1; }
-    .range-picker-times { grid-template-columns: 1fr; }
+    .range-picker-times { margin-bottom: 12px; }
+    .range-picker-when { grid-template-columns: 1fr; gap: 10px; }
     .range-year-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .range-day { min-height: 36px; }
     .range-picker-tooltip { max-width: 220px; font-size: 11px; }

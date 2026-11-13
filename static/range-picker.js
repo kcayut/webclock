@@ -112,6 +112,8 @@
         var yearView = root.querySelector('[data-range-view-panel="year"]');
         var startTime = root.querySelector('[data-range-time="start"]');
         var endTime = root.querySelector('[data-range-time="end"]');
+        var startDate = root.querySelector('[data-range-date-field="start"]');
+        var endDate = root.querySelector('[data-range-date-field="end"]');
         var viewButtons = root.querySelectorAll('[data-range-view]');
         var state = {view: 'month', cursor: startOfDay(new Date()), start: null, end: null,
             selecting: false, anchor: null, lastPointer: 0, container: null};
@@ -120,6 +122,10 @@
             startTime.value = timeOf(state.start);
             endTime.value = timeOf(state.end);
             timeControl(root);
+        }
+        function syncDates() {
+            startDate.value = state.start ? dayKey(state.start) : '';
+            endDate.value = state.end ? dayKey(state.end) : '';
         }
         function paintSummary() {
             summary.textContent = state.start && state.end ? rangeText(state.start, state.end) : '';
@@ -140,6 +146,7 @@
             if (state.start) state.cursor = startOfDay(state.start);
             paintSummary();
             syncTimes();
+            syncDates();
         }
         function commit() {
             startInput.value = state.start ? valueOf(state.start) : '';
@@ -151,6 +158,7 @@
             });
             paintSummary();
             syncTimes();
+            syncDates();
         }
         function responseTimes() {
             return {
@@ -466,16 +474,43 @@
         function applyTimes() {
             var startMinutes = parseTime(startTime.value), endMinutes = parseTime(endTime.value);
             if (startMinutes === null || endMinutes === null) return;
-            var startDate = state.start || state.cursor;
-            var endDate = state.end || state.cursor;
-            state.start = withTime(startDate, startMinutes);
-            state.end = withTime(endDate, endMinutes);
+            var startDay = parseDay(startDate.value) || state.start || state.cursor;
+            var endDay = parseDay(endDate.value) || state.end || state.cursor;
+            state.start = withTime(startDay, startMinutes);
+            state.end = withTime(endDay, endMinutes);
             if (state.end <= state.start) state.end = new Date(state.start.getTime() + SLOT * 60000);
+            commit();
+            render();
+        }
+        function applyDates(changed) {
+            var startDay = parseDay(startDate.value), endDay = parseDay(endDate.value);
+            if (!startDay && !endDay) {
+                state.start = state.end = null;
+                commit();
+                render();
+                return;
+            }
+            if (!startDay) startDay = endDay;
+            if (!endDay) endDay = startDay;
+            if (endDay < startDay) {
+                if (changed === 'end') startDay = endDay;
+                else endDay = startDay;
+            }
+            var times = responseTimes();
+            state.start = withTime(startDay, times.start);
+            state.end = withTime(endDay, times.end);
+            if (state.end <= state.start) {
+                if (changed === 'end') state.start = new Date(state.end.getTime() - SLOT * 60000);
+                else state.end = new Date(state.start.getTime() + SLOT * 60000);
+            }
+            state.cursor = startOfDay(state.start);
             commit();
             render();
         }
         startTime.addEventListener('change', applyTimes);
         endTime.addEventListener('change', applyTimes);
+        startDate.addEventListener('change', function () { applyDates('start'); });
+        endDate.addEventListener('change', function () { applyDates('end'); });
         readInputs();
         return {
             refresh: function () { readInputs(); if (!panel.hidden) render(); },
