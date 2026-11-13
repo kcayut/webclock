@@ -36,6 +36,12 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .schedule-editor { padding: 0; scroll-margin-top: 24px; }
 .schedule-editor > h2 { margin: 0; padding: 22px 28px; border-bottom: 1px solid var(--line); font-size: 20px; }
 .schedule-editor-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; max-width: 900px; padding: 8px 28px 28px; }
+#schedule-group-assignment { display: grid; grid-template-columns: 132px minmax(0, 1fr); column-gap: 16px; align-items: start; min-width: 0; margin: 0; padding: 24px 0; border-top: 1px solid var(--line); }
+#schedule-group-assignment > strong { grid-column: 1; padding-top: 7px; font-size: 15px; font-weight: 600; }
+#schedule-group-assignment > :not(strong) { grid-column: 2; min-width: 0; }
+#schedule-group-assignment .group-choice { min-height: 44px; }
+#schedule-group-assignment .help { margin: 4px 0 0; font-size: 14px; }
+#schedule-group-assignment .actions { margin: 0; }
 .form-section { min-width: 0; padding: 24px 0; border-bottom: 1px solid var(--line); }
 .form-section:last-of-type { border-bottom: 0; }
 .section-title { margin: 0 0 18px; font-size: 18px; font-weight: 650; }
@@ -124,11 +130,15 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
     .schedule-editor-body { padding: 24px; gap: 0; }
     #schedule-time-field .time-input-hour, #schedule-time-field .time-input-minute { flex-basis: 64px; width: 64px; font-size: 32px; }
     .setting-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    #schedule-group-assignment { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+    #schedule-group-assignment > strong { grid-column: 1; padding-top: 0; margin-bottom: 4px; }
+    #schedule-group-assignment > :not(strong) { grid-column: 1; }
 }
 @media (max-width: 760px) {
     .schedule-editor { scroll-margin-top: 180px; }
     .schedule-editor-body { padding: 20px; gap: 0; }
     .form-section { padding: 20px 0; }
+    #schedule-group-assignment { padding: 20px 0; }
     #schedule-time-field { max-width: 300px; }
     #schedule-time-field .time-input-hour, #schedule-time-field .time-input-minute { flex-basis: 84px; width: 84px; font-size: 48px; }
     .schedule-editor > h2 { padding: 20px; }

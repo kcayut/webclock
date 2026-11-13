@@ -402,10 +402,15 @@
             $("schedule-enabled").checked = schedule.enabled && !paused;
             editorPausedUntil = paused;
         }
-        const skip = action(t("skip_next"), () => saveEditor(true));
-        skip.disabled = saving || !$("schedule-enabled").checked || !previewTime;
-        try { skip.disabled = skip.disabled || !!pendingSkip(Object.assign({}, schedule, scheduleData())); }
-        catch (error) { skip.disabled = true; }
+        const skipped = pendingSkip(schedule);
+        const skip = skipped ?
+            action(t("resume_next"), () => resumeSchedule(schedule), "resume") :
+            action(t("skip_next"), () => saveEditor(true));
+        if (!skipped) {
+            skip.disabled = saving || !$("schedule-enabled").checked || !previewTime;
+            try { skip.disabled = skip.disabled || !!pendingSkip(Object.assign({}, schedule, scheduleData())); }
+            catch (error) { skip.disabled = true; }
+        }
         actions.append(skip, action(t("delete"), () => deleteSchedule(schedule, closeEditor), "danger"));
     }
     async function loadSchedules() {
