@@ -111,7 +111,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .management-device-filter label { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .management-device-filter select { width: auto; min-width: 150px; min-height: 38px; padding: 6px 10px; font-size: 14px; }
 [data-filter-active="reminder"] > [data-filter-kind]:not([data-filter-kind="reminder"]),
-[data-filter-active="announcement"] > [data-filter-kind]:not([data-filter-kind="announcement"]),
 [data-filter-active="alarm"] > [data-filter-kind]:not([data-filter-kind="alarm"]) { display: none !important; }
 h2 { margin: 0 0 14px; font-size: 19px; font-weight: 600; line-height: 1.4; }
 h3 { margin: 0 0 10px; font-size: 17px; font-weight: 600; line-height: 1.5; }
@@ -313,8 +312,8 @@ details[open] > summary { margin-bottom: 10px; }
 .group-choice { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; cursor: pointer; }
 .group-choice input { flex: 0 0 auto; margin: 4px 0 0; }
 .group-choice span { overflow-wrap: anywhere; min-width: 0; }
-.announcement-target-list { max-height: 240px; overflow-y: auto; }
-.announcement-summary { overflow-wrap: anywhere; }
+.target-list { max-height: 240px; overflow-y: auto; }
+.target-summary { overflow-wrap: anywhere; }
 .note-targets { margin-top: 18px; }
 .note-target-preview .field-label { display: block; margin-bottom: 6px; font-size: 15px; font-weight: 600; }
 .note-target-preview [data-target-preview] { margin: 0; white-space: pre-line; }

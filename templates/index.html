@@ -119,27 +119,8 @@
         }
 
         .force-black #clock-container,
-        .force-black #list-container,
-        .force-black #announcement-container {
+        .force-black #list-container {
             opacity: 0 !important;
-        }
-
-        #announcement-container {
-            display: none; width: 95%; max-height: 12vh; overflow-y: auto;
-            -webkit-flex: 0 0 auto; flex: 0 0 auto; text-align: center;
-            color: #ddd; font-size: 3.2vh; line-height: 1.35; word-wrap: break-word;
-        }
-        #announcement-container p { margin: 0 0 .2em; }
-        body.has-announcements { --clock-height: calc(var(--viewport-height) - 12vh - 16px); }
-        body.has-events.has-announcements { --clock-height: calc(var(--viewport-height) - 37vh - 16px); }
-        @supports not (font-size: min(1vw, 1vh)) {
-            @media (min-aspect-ratio: 4/3) {
-                body.has-announcements #time { font-size: 45vh; }
-                body.has-announcements #date-info, body.has-announcements:lang(en) #date-info { font-size: 16.7vh; }
-                body.has-events.has-announcements #time { font-size: 36vh; }
-                body.has-events.has-announcements #date-info, body.has-events.has-announcements:lang(en) #date-info { font-size: 13.3vh; }
-                body.has-announcements.uses-12-hour #time { font-size: 36vh; }
-            }
         }
 
         #event-counter {
@@ -327,7 +308,6 @@
     <div id="list-container">
         <div id="event-counter"></div>
     </div>
-    <div id="announcement-container" role="status" aria-live="polite" data-clock-i18n="announcements" data-clock-attribute="aria-label" aria-label="{{ translations[language].announcements }}"></div>
 
     <button id="connection-toggle" type="button" onclick="toggleConnectionPanel()" data-clock-i18n="connection_settings" data-clock-attribute="aria-label" aria-label="{{ translations[language].connection_settings }}" title="{{ translations[language].connection_settings }}">...</button>
     <div id="connection-panel" aria-live="polite">
@@ -382,7 +362,6 @@
     <script src="{{ url_for('static', filename='device-session.js') }}"></script>
     <script>window.WebClockEnrollmentTranslations = {{ device_enrollment_translations | tojson }};</script>
     <script src="{{ url_for('static', filename='time-format.js') }}"></script>
-    <script src="{{ url_for('static', filename='announcements.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
         var currentLanguage = {{ language | tojson }};
@@ -653,8 +632,6 @@
             document.body.classList.toggle('force-black', effective.mode === 'black');
             document.getElementById('clock-container').style.opacity = effective.brightness / 100;
             document.getElementById('list-container').style.opacity = effective.brightness / 100;
-            var announcements = document.getElementById('announcement-container');
-            if (announcements) announcements.style.opacity = effective.brightness / 100;
         }
 
         var timezoneOffset = 8;
@@ -681,8 +658,6 @@
             if (connectionMode === 'standalone') {
                 renderList(getLocalEventsForToday());
             }
-            // Optional announcement rendering must never stop the basic time/date.
-            try { if (window.WebClockAnnouncements) window.WebClockAnnouncements.tick(); } catch (error) {}
         }
 
         function setConnectionStatus(key, isOffline) {
@@ -698,8 +673,6 @@
         }
 
         function enterStandaloneMode(message) {
-            // Remove private content before reading optional local reminders.
-            try { if (window.WebClockAnnouncements) window.WebClockAnnouncements.clear(); } catch (error) {}
             if (connectionMode !== 'standalone') renderList([]);
             connectionMode = 'standalone';
             // Keep the latest live settings, even if saving them failed. The cache
@@ -733,7 +706,6 @@
             else dayPart.classList.remove('holiday-highlight');
 
             renderList(data.events);
-            try { if (window.WebClockAnnouncements) window.WebClockAnnouncements.set(data.announcements || [], data.server_timestamp, requestElapsed); } catch (error) {}
             updateClock();
             setConnectionStatus('connection_connected', false);
             if (window.WebClockEnrollmentRefresh) window.WebClockEnrollmentRefresh();

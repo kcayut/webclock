@@ -40,7 +40,7 @@ Each group has one six-character invitation, valid for 600 seconds with 5 slots 
 | `/api/v2/device/identity` | GET cookie round-trip confirmation; `pending` attempts omit group, while `active` returns `{status: "active", identity, group: {id, name}}` |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`; atomically consume capacity and enroll, returning 201 initially or 200 for the same committed attempt |
 | `/api/v2/device/leave` | POST `{}` with a cookie and same-origin CSRF only; remove this device's authorization and observations, return 200 `{status: "left"}`, and clear the cookie at the same path |
-| `/api/v2/device/display` | GET effective device/group settings, selected events, next event and targeted announcements |
+| `/api/v2/device/display` | GET effective device/group settings, selected events and next event |
 | `/api/v2/device/browser-alarms` | GET selected alarms and computed occurrences |
 | `/api/v2/device/status` | POST name, capabilities, revisions and command ACKs; credential determines identity, with no caller-supplied `id`/`group_id` |
 
@@ -50,7 +50,7 @@ Leaving and individual administrative revocation remove the selected device's au
 
 Display and alarms return `schema_version: 3`, `identity`, config/schedule/holiday revisions, millisecond `server_timestamp` and a `lease` of at most 300 seconds. Identity includes owner/device/group IDs, credential generation, assignment revision and `identity_revision`. Current authorization and content scope are rechecked before every response, including 304; a scope change during I/O returns 409 `display_scope_changed` instead of old content. ETag responses use `private, no-cache` and `Vary: Cookie, Authorization`; 304 renews through `X-WebClock-Server-Timestamp`, `X-WebClock-Lease-Expires-At` and `X-WebClock-Identity-Revision`. Enrollment/identity responses use `no-store`.
 
-Private caches are scoped to device identity. A 401/403, identity change or expired lease clears private events, announcements, and browser alarms; network failures may retain only unexpired data from the current run. Alarms use `Asia/Taipei`, independently from the group's display timezone. Missing linked sources suppress the affected alarm rather than falling back to daily ringing. This is not an ESP seven-day offline trigger list or proof of old-iPad, lock-screen audio or hardware acceptance.
+Private caches are scoped to device identity. A 401/403, identity change or expired lease clears private events and browser alarms; network failures may retain only unexpired data from the current run. Alarms use `Asia/Taipei`, independently from the group's display timezone. Missing linked sources suppress the affected alarm rather than falling back to daily ringing. This is not an ESP seven-day offline trigger list or proof of old-iPad, lock-screen audio or hardware acceptance.
 
 [繁體中文](server-api.md) · **English** · [日本語](server-api_jp.md) · [README](../../README_en.md)
 
@@ -75,15 +75,15 @@ Optional `content.calendar_exclusions` uses the same selectors as `calendar_targ
 `GET /api/calendar/display-items` returns selected events, safe source names, actual times, effective display windows, group assignments and missing states, sorted by full time. An explicitly selected series has one representative card; occurrence exceptions remain separate. Private subscription URLs are excluded. Fetch failure returns 503, not an empty selection. Host backups include these settings; admin version 1 JSON export still contains settings and notes only.
 
 
-### Targeted announcements
+### Targeted text reminders
 
-Announcements reuse `manual_notes.json` and the existing form routes: POST `/add` to create, POST `/schedule/<id>` to edit, POST `/toggle/<id>` to pause/resume, and POST `/delete/<id>` to delete. Existing management authentication and CSRF rules apply. Forms use `announcement=1` with repeated `announcement_group_ids`/`announcement_device_ids` fields. Optional `expires_at` is `YYYY-MM-DDTHH:MM`, converted from the management display timezone to an aware ISO 8601 value. Regular reminders use an empty `announcement` value and have no announcement expiry.
+Text reminders reuse `manual_notes.json` and the existing form routes: POST `/add` to create, POST `/schedule/<id>` to edit, POST `/toggle/<id>` to pause/resume, and POST `/delete/<id>` to delete. Existing management authentication and CSRF rules apply. Forms may include repeated `target_group_ids`/`target_device_ids` fields. With no explicit targets, the reminder follows the group content's `manual_note_ids` assignment.
 
-A stored note may include `announcement_targets: {group_ids: [], device_ids: []}` and `expires_at`. Each ID list accepts at most 100 entries, deduplicated on save; IDs contain 1–128 ASCII `[A-Za-z0-9_-]` characters. `expires_at` is an aware ISO 8601 string; an empty string removes the additional absolute deadline. A group or device match is sufficient, subject to current device/group authorization; empty targets deliver nowhere. Date, range/daily, weekday, enabled, and absolute-expiry conditions use the management timezone, independently of alarm calculations in `Asia/Taipei`.
+A stored note may include `targets: {group_ids: [], device_ids: []}`. Each ID list accepts at most 100 entries, deduplicated on save; IDs contain 1–128 ASCII `[A-Za-z0-9_-]` characters. A group or device match is sufficient, subject to current device/group authorization. Targeted reminders are excluded from the server-local calendar source and from the group content assignment catalog. Date, range/daily, weekday and enabled conditions use the management timezone, independently of alarm calculations in `Asia/Taipei`.
 
-`GET /api/v2/device/display` adds `announcements: [{id, text, visible_until}]`. The Unix-millisecond `visible_until` is the earliest of the current snapshot's 300-second limit, absolute expiry, and the end of the current display window; it does not shorten the overall display/alarm lease. Announcements are excluded from `events`, `next_event`, the server-local calendar source, and browser alarms, and do not use `schedules.type=announcement`. Legacy schemas 1/2 keep their contracts. Anonymous self-mode status returns no announcements; enrolled self-mode devices can use v2 to receive matching announcements. Browsers do not persist announcements and clear them on authorization loss, identity/scope changes, lease expiry, or individual expiry.
+`GET /api/v2/device/display` includes matching reminders in the normal `events` list. The response no longer has a separate `announcements` field or an announcement expiry. Announcement records in old backups or stored data are removed on first read and are never delivered or displayed.
 
-Forms allow saving empty targets without delivery, but reject missing or foreign-owner targets. Version 1 `/api/backup` retains announcement fields in `notes`; import validates structure and the ownership of existing recipients. Missing historical IDs may remain without granting access or creating recipients. Full host backups preserve the data, and historical restoration still revokes device credentials. See the [announcement guide](../guides/guide_en.md#announcements-for-selected-groups-or-devices) for management steps.
+Forms reject missing or foreign-owner targets. Version 1 `/api/backup` `notes` retains only regular reminders and `targets`; announcement fields in historical backups are ignored. Full host backups preserve the raw data, and historical restoration still revokes device credentials.
 
 ## Startup and layout
 

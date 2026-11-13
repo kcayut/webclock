@@ -11,7 +11,8 @@ assert.ok(admin.indexOf('class="note-list cards"') < admin.indexOf('id="calendar
 assert.match(admin, /<details id="calendar-source-settings" class="panel calendar-source-settings" open>/);
 assert.match(admin, /data-tab-group="display"/);
 assert.match(admin, /data-tab-group="calendar"/);
-assert.match(admin, /data-filter-list="calendar"/);
+assert.match(admin, /id="calendar-current-list"/);
+assert.match(admin, /data-note-targets/);
 assert.match(admin, /id="calendar-device-filter"/);
 assert.match(admin, /data-i18n="note_targets"/);
 assert.match(admin, /data-target-preview/);
@@ -25,7 +26,7 @@ assert.match(admin, /aria-expanded="\{\{ 'true' if mode == 'range' else 'false' 
 assert.match(admin, /WebClockRangePicker\.open\(picker\)/);
 assert.match(admin, /data-i18n="range_start_date"/);
 assert.match(admin, /data-i18n="range_end_date"/);
-assert.match(admin, /data-filter-kind="\{\{ 'announcement' if note\.get\('announcement_targets'\) else 'reminder' \}\}"/);
+assert.doesNotMatch(admin, /name="announcement"|announcement_targets|data-announcement/);
 assert.match(admin, /<dialog id="edit-note-\{\{ note\.id \}\}" class="management-dialog"/);
 assert.doesNotMatch(admin, /<summary data-i18n="edit_note">/);
 assert.doesNotMatch(source, /localStorage|sessionStorage/);
@@ -351,32 +352,25 @@ async function calendarWindows() {
     saveReply(patch); listReply([]);
     assert.equal(firstNote.input.value, 'Unsent manual note');
     assert.equal(laterNote.li.parentNode, $('calendar-current-list')); assert.equal(undated.li.parentNode, $('calendar-current-list'));
-    // Device filter matches announcement targets, hides calendar events, and resets to all devices.
+    // Device filter matches targeted reminders, hides other cards, and resets to all devices.
     const deviceFilter = $('calendar-device-filter');
     const allDevices = element('option'), deskDevice = element('option');
     allDevices.value = ''; allDevices.setAttribute('data-group', '');
     deskDevice.value = 'desk'; deskDevice.setAttribute('data-group', 'group-desk');
     deviceFilter.options = [allDevices, deskDevice]; deviceFilter.selectedIndex = 0; deviceFilter.value = '';
-    const announcementCard = element('li');
-    announcementCard.setAttribute('data-filter-kind', 'announcement');
-    announcementCard.setAttribute('data-announcement-devices', 'desk');
-    announcementCard.setAttribute('data-announcement-groups', '');
     const targetedReminder = element('li');
     targetedReminder.setAttribute('data-filter-kind', 'reminder');
     targetedReminder.setAttribute('data-target-devices', 'desk');
     targetedReminder.setAttribute('data-target-groups', '');
     const calendarCard = element('li');
     calendarCard.setAttribute('data-filter-kind', 'calendar');
-    $('calendar-current-list').appendChild(announcementCard);
     $('calendar-current-list').appendChild(targetedReminder);
     $('calendar-current-list').appendChild(calendarCard);
     deviceFilter.selectedIndex = 1; deviceFilter.value = 'desk'; deviceFilter.trigger('change');
-    assert.equal(announcementCard.hidden, false);
     assert.equal(targetedReminder.hidden, false);
     assert.equal(calendarCard.hidden, true);
     deskDevice.setAttribute('data-group', 'group-desk');
     deviceFilter.selectedIndex = 0; deviceFilter.value = ''; deviceFilter.trigger('change');
-    assert.equal(announcementCard.hidden, false);
     assert.equal(targetedReminder.hidden, false);
     assert.equal(calendarCard.hidden, false);
     assert.equal(requests.length, 0);

@@ -63,7 +63,7 @@ function checkNavigation(initial, names) {
     }
     window.location.hash = '#management-main'; events.hashchange(); selected(names[names.length - 1]);
     if (names.includes('calendar')) {
-        window.location.hash = '#announcements-title'; events.hashchange(); selected('calendar');
+        window.location.hash = '#notes-title'; events.hashchange(); selected('calendar');
     }
     window.location.hash = '#unknown'; events.hashchange(); selected(initial);
     window.location.hash = ''; events.hashchange(); selected(initial);

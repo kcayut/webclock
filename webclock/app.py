@@ -227,20 +227,27 @@ def load_notes():
             return []
         for note in data:
             note.setdefault('due_date', '')
-        return sorted(data, key=lambda note: note['due_date'] or '9999')
+        # Announcements were retired. Remove their records on first read so old
+        # installations cannot keep unmanageable notices or back them up again.
+        notes = [note for note in data if 'announcement_targets' not in note]
+        changed = len(notes) != len(data)
+        for note in notes:
+            if note.pop('expires_at', None) is not None:
+                changed = True
+        if changed:
+            save_json(notes_path(), notes)
+        return sorted(notes, key=lambda note: note['due_date'] or '9999')
 
 
 def save_note(text, due_date, display_start='', display_end='', display_mode='range', weekdays=None,
-              announcement_targets=None, expires_at='', targets=None):
+              targets=None):
     with settings_lock:
         notes = load_notes()
         new_id = 1 if not notes else max(n['id'] for n in notes) + 1
         notes.append({'id': new_id, 'text': text, 'due_date': due_date,
                       'display_start': display_start, 'display_end': display_end,
                       'display_mode': display_mode, 'weekdays': weekdays or [], 'enabled': True})
-        if announcement_targets is not None:
-            notes[-1].update(announcement_targets=announcement_targets, expires_at=expires_at)
-        elif targets is not None:
+        if targets is not None:
             notes[-1].update(targets=targets)
         save_json(notes_path(), notes)
 
@@ -263,7 +270,7 @@ def validate_targets(targets, label):
 def validate_note(note):
     if not isinstance(note, dict) or set(note) - {
         'id', 'text', 'due_date', 'display_start', 'display_end', 'display_mode', 'weekdays', 'enabled',
-        'announcement_targets', 'targets', 'expires_at'
+        'targets'
     }:
         raise ValueError('Invalid reminder')
     if not isinstance(note.get('text'), str) or not 1 <= len(note['text'].strip()) <= 1000:
@@ -281,32 +288,15 @@ def validate_note(note):
         raise ValueError('Invalid weekdays')
     if type(note.get('enabled', True)) is not bool:
         raise ValueError('Invalid enabled flag')
-    if 'announcement_targets' in note:
-        if 'targets' in note:
-            raise ValueError('Announcements cannot also have reminder targets')
-        targets = validate_targets(note['announcement_targets'], 'announcement')
-        expiry = note.get('expires_at', '')
-        if not isinstance(expiry, str) or len(expiry) > 40:
-            raise ValueError('Invalid announcement expiry')
-        if expiry:
-            parsed = datetime.fromisoformat(expiry)
-            if parsed.tzinfo is None or parsed.utcoffset() is None:
-                raise ValueError('Announcement expiry must include its timezone')
-            expiry = parsed.isoformat()
-        note = dict(note, announcement_targets=targets, expires_at=expiry)
-    elif 'targets' in note:
-        if 'expires_at' in note:
-            raise ValueError('Only announcements have an expiry')
+    if 'targets' in note:
         note = dict(note, targets=validate_targets(note['targets'], 'reminder'))
-    elif 'expires_at' in note:
-        raise ValueError('Only announcements have an expiry')
     return dict(note, text=note['text'].strip(), due_date=due, display_start=start, display_end=end,
                 display_mode=note.get('display_mode', 'range'), weekdays=sorted(set(days)),
                 enabled=note.get('enabled', True))
 
 
 def validate_note_ownership(note, allow_missing=False):
-    targets = note.get('announcement_targets') or note.get('targets')
+    targets = note.get('targets')
     if not targets:
         return
     with storage_lock:
@@ -337,30 +327,16 @@ def note_from_form(existing=None):
         note['weekdays'] = [int(day) for day in request.form.getlist('weekdays')]
     if note['display_mode'] != 'daily':
         note['weekdays'] = []
-    if 'announcement' in request.form:
-        if request.form['announcement'] == '1':
-            expiry = request.form.get('expires_at', '')
-            if expiry:
-                parsed = datetime.strptime(expiry, '%Y-%m-%dT%H:%M')
-                if parsed.isoformat(timespec='minutes') != expiry:
-                    raise ValueError('Invalid announcement expiry')
-                expiry = parsed.replace(tzinfo=get_local_now().tzinfo).isoformat()
-            note.pop('targets', None)
-            note.update(announcement_targets={
-                'group_ids': request.form.getlist('announcement_group_ids'),
-                'device_ids': request.form.getlist('announcement_device_ids')}, expires_at=expiry)
-        elif request.form['announcement'] == '':
-            note.pop('announcement_targets', None)
-            note.pop('expires_at', None)
-            targets = {
-                'group_ids': request.form.getlist('announcement_group_ids'),
-                'device_ids': request.form.getlist('announcement_device_ids')}
-            if targets['group_ids'] or targets['device_ids']:
-                note['targets'] = targets
-            else:
-                note.pop('targets', None)
+    if 'targets_present' in request.form or 'announcement' in request.form:
+        note.pop('announcement_targets', None)
+        note.pop('expires_at', None)
+        targets = {
+            'group_ids': request.form.getlist('target_group_ids') or request.form.getlist('announcement_group_ids'),
+            'device_ids': request.form.getlist('target_device_ids') or request.form.getlist('announcement_device_ids')}
+        if targets['group_ids'] or targets['device_ids']:
+            note['targets'] = targets
         else:
-            raise ValueError('Invalid announcement flag')
+            note.pop('targets', None)
     note = validate_note(note)
     validate_note_ownership(note)
     return note
@@ -368,8 +344,6 @@ def note_from_form(existing=None):
 
 def note_visible(note, now):
     if not note.get('enabled', True):
-        return False
-    if note.get('expires_at') and now >= datetime.fromisoformat(note['expires_at']):
         return False
     start, end = parse_display_window(note)
     if note.get('display_mode') == 'daily':
@@ -385,7 +359,7 @@ def note_visible(note, now):
 
 
 def next_note_time(note, now):
-    if 'announcement_targets' in note or not note.get('enabled', True):
+    if not note.get('enabled', True):
         return None
     start, _ = parse_display_window(note)
     if note.get('display_mode') == 'daily':
@@ -406,32 +380,6 @@ def next_note_time(note, now):
             if candidate > now and note_visible(note, candidate):
                 return candidate
     return None
-
-
-def announcement_snapshot(notes, now):
-    """Keep offline notices within both their visible window and the current lease."""
-    announcements = []
-    for note in notes:
-        if 'announcement_targets' not in note or not note_visible(note, now):
-            continue
-        until = now + timedelta(seconds=300)
-        if note.get('expires_at'):
-            until = min(until, datetime.fromisoformat(note['expires_at']))
-        start, end = parse_display_window(note)
-        if note.get('display_mode') == 'daily':
-            if start:
-                ending = datetime.strptime(now.strftime('%Y-%m-%d') + ' ' + end, '%Y-%m-%d %H:%M').replace(tzinfo=now.tzinfo)
-                if ending <= now:
-                    ending += timedelta(days=1)
-                until = min(until, ending)
-            elif note.get('weekdays'):
-                until = min(until, now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
-        elif start:
-            until = min(until, datetime.fromisoformat(end).replace(tzinfo=now.tzinfo))
-        elif note.get('due_date'):
-            until = min(until, now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
-        announcements.append(dict(id=note['id'], text=note['text'], visible_until=int(until.timestamp() * 1000)))
-    return announcements
 
 
 def normalize_calendar_url(value):
@@ -572,7 +520,7 @@ def local_calendar_events(start, end, zone=None):
     events = []
     zone = zone or get_local_now().tzinfo
     for note in load_notes():
-        if 'announcement_targets' in note or 'targets' in note or not note.get('enabled', True):
+        if 'targets' in note or not note.get('enabled', True):
             continue
         try:
             due = note.get('due_date', '')
@@ -839,7 +787,7 @@ def index():
         context.update(language=DEFAULT_SETTINGS['language'], time_format='24h')
     keys = ('app_title', 'loading', 'notice_close', 'weekdays', 'page_error',
             'status_parse_failed', 'server_unavailable', 'server_timeout',
-            'offline_ready', 'offline_unavailable', 'offline_failed', 'save', 'add', 'delete', 'announcements')
+            'offline_ready', 'offline_unavailable', 'offline_failed', 'save', 'add', 'delete')
     context['translations'] = {
         language: {key: value for key, value in pack.items() if key in keys or key.startswith(('alarm_', 'connection_', 'local_reminder'))}
         for language, pack in context['translations'].items()
@@ -853,18 +801,14 @@ def admin(error=None, editing_id=None):
         settings = {'night': DEFAULT_NIGHT, **active_settings()}
         settings_revision = revision(active_settings())
     notes = load_notes()
-    announcements = [dict(note, announcement_expires_local=(
-        datetime.fromisoformat(note['expires_at']).astimezone(get_local_now().tzinfo).isoformat(timespec='minutes')[:16]
-        if note.get('expires_at') else '')) for note in notes if 'announcement_targets' in note]
     access = group_service(read_only=True)
     owner = getattr(g, 'owner_id', None) or auth_service().owner_id()
     return render_template(
         'admin.html',
-        notes=[note for note in notes if 'announcement_targets' not in note],
-        announcements=announcements,
-        announcement_groups=[{key: row[key] for key in ('id', 'name', 'enabled')} for row in access.list_groups(owner)],
-        announcement_devices=[{key: row[key] for key in ('id', 'name', 'group_id', 'group_name')}
-                              for row in access.list_devices(owner)],
+        notes=notes,
+        target_groups=[{key: row[key] for key in ('id', 'name', 'enabled')} for row in access.list_groups(owner)],
+        target_devices=[{key: row[key] for key in ('id', 'name', 'group_id', 'group_name')}
+                        for row in access.list_devices(owner)],
         settings=settings,
         settings_revision=settings_revision,
         error=error,
@@ -974,11 +918,10 @@ def add():
         try:
             note = note_from_form()
         except (ValueError, TypeError):
-            return admin(error='invalid_announcement' if request.form.get('announcement') == '1' else 'window_error'), 400
+            return admin(error='window_error'), 400
         save_note(note['text'], note['due_date'], note['display_start'], note['display_end'],
-                  note['display_mode'], note['weekdays'], note.get('announcement_targets'), note.get('expires_at', ''),
-                  note.get('targets'))
-    return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in note else 'calendar-title'))
+                  note['display_mode'], note['weekdays'], note.get('targets'))
+    return redirect(url_for('admin', _anchor='calendar-title'))
 
 
 @app.route('/schedule/<int:id>', methods=['POST'])
@@ -991,12 +934,11 @@ def schedule(id):
         try:
             updated = note_from_form(note)
         except (ValueError, TypeError):
-            return admin(error='invalid_announcement' if request.form.get('announcement') == '1'
-                         or 'announcement_targets' in note else 'window_error', editing_id=id), 400
+            return admin(error='window_error', editing_id=id), 400
         note.clear()
         note.update(updated)
         save_json(notes_path(), notes)
-    return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in updated else 'calendar-title'))
+    return redirect(url_for('admin', _anchor='calendar-title'))
 
 
 @app.route('/toggle/<int:id>', methods=['POST'])
@@ -1008,7 +950,7 @@ def toggle(id):
             abort(404)
         note['enabled'] = not note.get('enabled', True)
         save_json(notes_path(), notes)
-    return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in note else 'calendar-title'))
+    return redirect(url_for('admin', _anchor='calendar-title'))
 
 
 @app.route('/api/backup', methods=['GET', 'POST'])
@@ -1075,9 +1017,8 @@ def service_worker():
 @app.route('/delete/<int:id>', methods=['POST'])
 def delete(id):
     with settings_lock:
-        note = next((note for note in load_notes() if note['id'] == id), {})
         delete_note(id)
-    return redirect(url_for('admin', _anchor='announcements-title' if 'announcement_targets' in note else 'calendar-title'))
+    return redirect(url_for('admin', _anchor='calendar-title'))
 
 
 def calendar_selected_occurrence(target, settings, zone, strict=False):
@@ -1303,8 +1244,6 @@ def calendar_display_items():
 def display_snapshot(now, notes, schedules, calendar, calendar_lookup):
     events, upcoming = [], []
     for note in notes:
-        if 'announcement_targets' in note:
-            continue
         try:
             if note_visible(note, now):
                 due = note.get('due_date', '')
@@ -1346,7 +1285,7 @@ def status():
     payload = display_snapshot(now, load_notes() if show_local else [],
                                read_legacy_schedules(content_directory()), calendar_display_events(now, calendar_settings), get_calendar_events)
     # Calendar I/O may take time; send a fresh timestamp after projection.
-    return jsonify(dict(payload, settings=active_settings(), announcements=[], server_timestamp=int(get_local_now().timestamp() * 1000)))
+    return jsonify(dict(payload, settings=active_settings(), server_timestamp=int(get_local_now().timestamp() * 1000)))
 
 
 @app.route('/api/time')
@@ -1387,7 +1326,7 @@ def group_service(read_only=False):
 
 def group_content_catalog():
     calendar = load_calendar_settings()
-    notes = [note for note in load_notes() if 'announcement_targets' not in note and 'targets' not in note]
+    notes = [note for note in load_notes() if 'targets' not in note]
     schedules = read_schedules(content_directory())
     return {
         'calendar_source_ids': [source['id'] for source in get_calendar_sources()],
@@ -1412,7 +1351,7 @@ def group_owner():
 def group_ui_catalog():
     return dict(calendar_sources=[{'id': row['id'], 'name': row['name']} for row in get_calendar_sources()],
                 manual_notes=[{'id': row['id'], 'text': row['text']} for row in load_notes()
-                              if 'announcement_targets' not in row and 'targets' not in row],
+                              if 'targets' not in row],
                 schedules=[{'id': row['id'], 'name': row['name']} for row in read_schedules(content_directory())],
                 defaults=dict(active_settings(), night=dict(DEFAULT_NIGHT, **active_settings().get('night', {}))))
 
@@ -1429,11 +1368,7 @@ def managed_content(identity):
         all_notes = load_notes()
         notes = []
         for row in all_notes:
-            if 'announcement_targets' in row:
-                targets = validate_note(row)['announcement_targets']
-                if identity['group_id'] in targets['group_ids'] or identity['device_id'] in targets['device_ids']:
-                    notes.append(row)
-            elif row.get('targets'):
+            if row.get('targets'):
                 targets = validate_note(row)['targets']
                 if identity['group_id'] in targets['group_ids'] or identity['device_id'] in targets['device_ids']:
                     notes.append(row)
@@ -1450,11 +1385,9 @@ def managed_content(identity):
             source for row in schedules for source in (row.get('calendar_link') or {}).get('source_ids', [])}
         # This server-only digest detects deletion/replacement during calendar I/O.
         dependencies = [[row for row in source_rows if row['id'] in needed],
-                        [note for note in all_notes if 'announcement_targets' not in note and 'targets' not in note] if 'local' in needed else []]
+                        [note for note in all_notes if 'targets' not in note] if 'local' in needed else []]
         if NATIVE_CALENDAR_SOURCE in needed:
             dependencies.append(native_event_rows(identity['owner_id']))
-        if any('announcement_targets' in note for note in notes):
-            dependencies.append(active_settings().get('timezone_offset', 8))
         rules = [target for target in calendar_settings.get('calendar_targets', []) if target['source_id'] in needed]
         # Management display rules/timezone can change while calendar I/O is running.
         if rules:
@@ -1506,7 +1439,6 @@ def managed_display(identity):
                                        group['content'].get('calendar_exclusions', []))
     payload = display_snapshot(now, notes, schedules, calendar, managed_calendar_events)
     payload['settings'] = settings
-    payload['announcements'] = announcement_snapshot(notes, get_local_now())
     return managed_response(identity, group, notes, schedules, source_revision, payload)
 
 
@@ -1546,17 +1478,21 @@ def validate_backup_content(files):
         if name.rsplit('/', 1)[-1] == 'manual_notes.json':
             if not isinstance(data, list) or len(data) > 1000:
                 raise ValueError('Invalid reminders')
-            notes = [validate_note(row) for row in data]
+            # Retired announcement records are ignored on read. Accept them in
+            # historical backups without validating or restoring their targets.
+            rows = [row for row in data
+                    if not (isinstance(row, dict) and ('announcement_targets' in row or 'expires_at' in row))]
+            notes = [validate_note(row) for row in rows]
             ids = [row.get('id') for row in notes]
             if any(type(value) is not int or value < 1 for value in ids) or len(set(ids)) != len(ids):
                 raise ValueError('Invalid reminder IDs')
             owner = name.split('/')[1] if name.startswith('owners/') else files['auth.json']['data_owner_id']
             for note in notes:
                 for key, collection in (('group_ids', 'groups'), ('device_ids', 'devices')):
-                    for target in note.get('announcement_targets', {}).get(key, []):
+                    for target in note.get('targets', {}).get(key, []):
                         row = access.get(collection, {}).get(target)
                         if row and row['owner_id'] != owner:
-                            raise ValueError('Announcement target belongs to another account')
+                            raise ValueError('Reminder target belongs to another account')
         elif name.rsplit('/', 1)[-1] == 'calendar.json':
             if not isinstance(data, dict):
                 raise ValueError('Invalid calendar settings')

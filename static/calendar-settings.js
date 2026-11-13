@@ -241,11 +241,7 @@
             if (!kind) return;
             var visible = true;
             if (device) {
-                if (kind === 'announcement') {
-                    var devices = (item.getAttribute('data-announcement-devices') || '').split(/\s+/);
-                    var groups = (item.getAttribute('data-announcement-groups') || '').split(/\s+/);
-                    visible = devices.indexOf(device) >= 0 || !!(group && groups.indexOf(group) >= 0);
-                } else if (kind === 'reminder') {
+                if (kind === 'reminder') {
                     var targetDevices = (item.getAttribute('data-target-devices') || '').split(/\s+/).filter(Boolean);
                     var targetGroups = (item.getAttribute('data-target-groups') || '').split(/\s+/).filter(Boolean);
                     if (targetDevices.length || targetGroups.length) {

@@ -70,8 +70,8 @@ class ManagedDisplayTest(unittest.TestCase):
             'username': 'owner', 'password': 'a-long-test-password', 'csrf_token': token})
         token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
         response = client.post('/add', base_url='https://localhost', data={
-            'csrf_token': token, 'note_text': 'targeted reminder', 'announcement': '',
-            'announcement_group_ids': [group['id']], 'announcement_device_ids': []})
+            'csrf_token': token, 'note_text': 'targeted reminder', 'targets_present': '1',
+            'target_group_ids': [group['id']], 'target_device_ids': []})
         self.assertEqual(response.status_code, 302)
         note = clock.load_notes()[-1]
         self.assertEqual(note['targets'], {'group_ids': [group['id']], 'device_ids': []})
@@ -91,6 +91,7 @@ class ManagedDisplayTest(unittest.TestCase):
         ])
         self.assertEqual([event['text'] for event in self.get(client_a).json['events']], ['group-target'])
         self.assertEqual([event['text'] for event in self.get(client_b).json['events']], ['device-target'])
+        self.assertNotIn('announcements', self.get(client_a).json)
 
     def test_global_windows_use_management_zone_without_widening_group_grants(self):
         settings = clock.load_calendar_settings()

@@ -40,7 +40,7 @@ Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](../home-assis
 | `/api/v2/device/identity` | GET 確認 Cookie 往返；`pending` 嘗試不含 group，`active` 回 `{status: "active", identity, group: {id, name}}` |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`；原子扣額並加入，首次 201、同一已提交嘗試重試 200 |
 | `/api/v2/device/leave` | POST `{}`，僅限 Cookie 與同源 CSRF；移除自身授權與觀察記錄，200 回 `{status: "left"}` 並清除同路徑 Cookie |
-| `/api/v2/device/display` | GET 單台／群組有效設定、已選事件、下一個事件與目標公告 |
+| `/api/v2/device/display` | GET 單台／群組有效設定、已選事件與下一個事件 |
 | `/api/v2/device/browser-alarms` | GET 已選鬧鐘及計算結果 |
 | `/api/v2/device/status` | POST 名稱、能力、revision 與指令 ACK；身份由憑證決定，不接受自填 `id`／`group_id` |
 
@@ -62,7 +62,7 @@ Home Assistant 的安裝與卡片操作見 [Home Assistant 指南](../home-assis
 
 display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision`、`schedule_revision`、`holiday_revision`、Unix 毫秒 `server_timestamp` 與最長 300 秒的 `lease`。身份含 owner／device／group、憑證世代、指派 revision 與 `identity_revision`。每次回應（含 304）前重新確認目前授權與內容範圍；I/O 期間範圍變更回 409 `display_scope_changed`，不送出舊內容。ETag 回應使用 `private, no-cache`、`Vary: Cookie, Authorization`，304 以 `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` 續期；加入／身份回應為 `no-store`。
 
-私人快取依裝置身份隔離；401／403、身份改變或租期到期會清除私人事件、公告與網頁鬧鐘。短暫網路錯誤只能沿用尚未過期的本次資料。鬧鐘依 `Asia/Taipei` 計算，顯示時區另依群組設定；聯動來源缺失會排除相應鬧鐘，不退回每天響鈴。此流程未提供 ESP 的七天離線觸發清單，也不代表舊 iPad、鎖屏音訊或硬體已驗收。
+私人快取依裝置身份隔離；401／403、身份改變或租期到期會清除私人事件與網頁鬧鐘。短暫網路錯誤只能沿用尚未過期的本次資料。鬧鐘依 `Asia/Taipei` 計算，顯示時區另依群組設定；聯動來源缺失會排除相應鬧鐘，不退回每天響鈴。此流程未提供 ESP 的七天離線觸發清單，也不代表舊 iPad、鎖屏音訊或硬體已驗收。
 
 **繁體中文** · [English](server-api_en.md) · [日本語](server-api_jp.md) · [回到 README](../../README.md)
 
@@ -87,15 +87,15 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 `GET /api/calendar/display-items` 回傳已選行程、安全來源名稱、實際時間、有效顯示區間、群組指派與缺席狀態，依完整時間排序；明確選取的系列集中為一張卡，單次例外另列。私人來源 URL 不下發；讀取失敗回 503，不能當作空選取。主機備份包含這些設定，管理頁 version 1 JSON 匯出仍只包含 settings 與 notes。
 
 
-### 指定對象的公告
+### 指定對象的文字提醒
 
-公告沿用 `manual_notes.json` 與既有表單路由：POST `/add` 新增、POST `/schedule/<id>` 編輯、POST `/toggle/<id>` 暫停／恢復、POST `/delete/<id>` 刪除。管理者認證與 CSRF 規則保持。表單以 `announcement=1` 指定公告，重複的 `announcement_group_ids`／`announcement_device_ids` 欄位列出對象；`expires_at` 為選填 `YYYY-MM-DDTHH:MM`，伺服器以管理顯示時區轉存含時區的 ISO 8601。一般文字提醒使用空的 `announcement` 值，不帶公告到期設定。
+文字提醒沿用 `manual_notes.json` 與既有表單路由：POST `/add` 新增、POST `/schedule/<id>` 編輯、POST `/toggle/<id>` 暫停／恢復、POST `/delete/<id>` 刪除。管理者認證與 CSRF 規則保持。表單可用重複的 `target_group_ids`／`target_device_ids` 欄位指定群組或裝置；未指定對象時沿用群組內容的 `manual_note_ids` 指派。
 
-儲存的 note 可加 `announcement_targets: {group_ids: [], device_ids: []}` 與 `expires_at`。兩個 ID 陣列各最多 100 筆，ID 為 1–128 字元的 ASCII `[A-Za-z0-9_-]`，保存時去重；`expires_at` 為含時區的 ISO 8601 字串，空字串表示沒有額外的絕對到期限制。指定群組或指定裝置任一命中即可，但仍須通過目前裝置／群組授權；空對象不投遞。日期、range／daily、星期、enabled 及絕對到期都使用管理時區判定，與鬧鐘的 `Asia/Taipei` 規則分開。
+儲存的 note 可加 `targets: {group_ids: [], device_ids: []}`。兩個 ID 陣列各最多 100 筆，ID 為 1–128 字元的 ASCII `[A-Za-z0-9_-]`，保存時去重；指定群組或指定裝置任一命中即可，但仍須通過目前裝置／群組授權。指定對象的提醒不會成為伺服器 local 行事曆來源，也不列入群組內容的可指派清單。日期、range／daily、星期與 enabled 都使用管理時區判定，與鬧鐘的 `Asia/Taipei` 規則分開。
 
-`GET /api/v2/device/display` 增加 `announcements: [{id, text, visible_until}]`，`visible_until` 為 Unix 毫秒，取目前快照最長 300 秒、絕對到期及本次顯示時段結束的最早值；不縮短整份 display／鬧鐘租約。公告不混入 `events`、`next_event`、伺服器 local 行事曆來源或 browser-alarms，也不使用 `schedules.type=announcement`。舊 schema 1／2 維持原契約；匿名 self 狀態的公告為空，已加入的 self 裝置可使用 v2 取得符合目標的公告。瀏覽器不持久化公告，失權、身份／範圍變更、租約或個別期限到期均清除。
+`GET /api/v2/device/display` 會把符合對象的提醒放入一般 `events`。回應不再提供獨立 `announcements` 欄位，也沒有公告到期時間；舊備份或舊資料中的公告記錄會在第一次讀取時移除，不投遞也不顯示。
 
-表單允許先保存空對象，但不投遞；拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 保留公告欄位，匯入驗證結構及已存在對象的歸屬；已不存在的歷史 ID 可保留，但不授權或建立對象。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。管理頁使用方式見[公告指南](../guides/guide.md#指定群組或裝置的公告)。
+表單拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 只保留一般提醒與 `targets`；歷史備份中的公告欄位會被忽略。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。
 
 ## 啟動與目錄
 

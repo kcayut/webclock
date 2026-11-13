@@ -31,7 +31,7 @@ Expand **Content assignments and preview for this device** in the same card. Cal
 
 Shared display settings, group settings, per-item group assignments and device content saves check their loaded versions. A change elsewhere rejects the stale save and retains the draft. Confirm discarding it before loading the latest settings and editing again. Polling and language changes retain drafts, as do edits made while a reload is pending. Full host backups preserve device overrides, while historical restoration still invalidates old credentials. Admin JSON backups do not include group or device settings.
 
-An enrolled clock receives display settings resolved as device > group > shared defaults; each content category uses its explicit device selection or its group assignment. During a short outage, private data loaded in this session may remain until its authorization lease expires, at most 5 minutes. Confirmed authorization failure or lease expiry clears private events, announcements, and queued alarms and stops current browser ringing; time/date and browser-local reminders remain available. This does not guarantee offline reopening or background/lock-screen alarms. First-generation iPad mini/iOS 9 and the new identity flow in ESP firmware require separate acceptance.
+An enrolled clock receives display settings resolved as device > group > shared defaults; each content category uses its explicit device selection or its group assignment. During a short outage, private data loaded in this session may remain until its authorization lease expires, at most 5 minutes. Confirmed authorization failure or lease expiry clears private events and queued alarms and stops current browser ringing; time/date and browser-local reminders remain available. This does not guarantee offline reopening or background/lock-screen alarms. First-generation iPad mini/iOS 9 and the new identity flow in ESP firmware require separate acceptance.
 
 [README](../../README_en.md) · [繁體中文](guide.md) · [日本語](guide_jp.md) · [Device API](../api/server-api_en.md)
 
@@ -93,15 +93,13 @@ Manual reminders can use a specific date and time or a daily/weekly display wind
 
 Expired reminders are hidden rather than deleted. Pausing preserves the content but stops display until resumed. During a brief server disconnection, the loaded clock continues with saved display settings and browser-local reminders; calendars and server reminders return after reconnection.
 
-### Announcements for selected groups or devices
+### Targeted text reminders
 
-In **Text reminders and announcements** at `/admin#announcements-title`, choose **Announcements**, enter the text, and select groups or devices. You may save without recipients first; no announcement is delivered until recipients are selected. Group targets follow each device's current membership; device targets follow its identity. Only currently authorized recipients receive an announcement, and a device matching both target types displays it once. Announcements use their own recipient selection instead of a regular reminder's **Save applied groups** control.
+In the **Text reminder** form, select groups or devices under **Display targets**. With no targets selected, the reminder follows its **Group content** assignment; with targets, it is delivered only to matching groups or devices. Group targets follow each device's current membership, and device targets follow its identity. Only currently authorized recipients receive it, and a device matching both target types displays it once.
 
-Announcements reuse specific dates, date ranges, daily/weekly windows, pause, and resume. An optional expiry date-time is saved in the admin timezone. Leaving it blank removes only the additional absolute deadline; display windows and pause still apply. Expiry hides the item without deleting it. An editor retains deleted targets with a warning until they are deselected; failed saves preserve text, recipients, and expiry drafts.
+Targeted reminders appear in the event list and next-event countdown like any other reminder. They are excluded from the server-local calendar source and from the group content assignment catalog. Reminders have no separate expiry time; use the display window, pause, or delete to stop showing one. An editor retains deleted targets with a warning until they are deselected and saved.
 
-The clock receives announcements through its existing polling and displays them in a separate area that leaves the time and event carousel visible. Announcements do not sound an alarm, and brightness and black-screen settings apply to them. They remain only in memory during the current page session and clear at expiry, the end of their display window, loss of authorization, or lease expiry. An offline snapshot lasts at most five minutes and cannot be restored by reopening the page. Anonymous clocks, public Pages, and legacy schema 2/ESP schedules do not receive announcements. Physical testing on the first-generation iPad mini/iOS 9 remains pending.
-
-Admin JSON backups retain recipients and expiry inside `notes`, but contain no groups, device authorization, or private source URLs. Importing into another installation does not create recipients for missing IDs. Full host backups retain the related data; historical restoration still invalidates old device credentials.
+Announcement records from older versions are removed on first read and are no longer delivered or displayed. Admin JSON backups retain only regular reminders and their targets; full host backups preserve the raw files, and historical restoration still invalidates old device credentials.
 
 ### Browser-local reminders and the connection panel
 

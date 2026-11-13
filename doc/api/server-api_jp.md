@@ -40,7 +40,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 | `/api/v2/device/identity` | GET Cookie 往復確認。`pending` 試行は group を含まず、`active` は `{status: "active", identity, group: {id, name}}` を返す |
 | `/api/v2/device/join` | POST `{"attempt_id":"…","code":"ABC234"}`。枠消費と参加を原子的に保存。初回 201、同じ確定済み試行の再送は 200 |
 | `/api/v2/device/leave` | POST `{}`。Cookie と同一オリジンの CSRF のみ。この端末の認可と観測記録を削除し、200 `{status: "left"}` を返して同じパスの Cookie を削除する |
-| `/api/v2/device/display` | GET 端末／グループの有効設定、選択済み予定、次の予定、対象のお知らせ |
+| `/api/v2/device/display` | GET 端末／グループの有効設定、選択済み予定、次の予定 |
 | `/api/v2/device/browser-alarms` | GET 選択済みアラームと計算結果 |
 | `/api/v2/device/status` | POST 名前・能力・revision・指令 ACK。認証情報から端末を決定し、`id`・`group_id` の自己指定は不可 |
 
@@ -50,7 +50,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 
 display・alarms は `schema_version: 3`、`identity`、config・schedule・holiday revision、ミリ秒 `server_timestamp`、最大 300 秒の `lease` を返します。identity は owner・device・group ID、認証世代、割り当て revision、`identity_revision` を含みます。304 を含む応答の直前に現在の認証と内容範囲を再確認し、I/O 中の範囲変更は古い内容ではなく 409 `display_scope_changed` を返します。ETag 応答は `private, no-cache` と `Vary: Cookie, Authorization` を使い、304 は `X-WebClock-Server-Timestamp`、`X-WebClock-Lease-Expires-At`、`X-WebClock-Identity-Revision` で期限を更新します。参加・identity 応答は `no-store` です。
 
-非公開キャッシュは端末認証の範囲で分離します。401・403、認証の変更、期限切れで非公開予定・お知らせ・ブラウザーアラームを消去し、通信エラー時はその実行中の期限内データだけを維持できます。アラームはグループの表示タイムゾーンと独立して `Asia/Taipei` で計算します。連動参照元が欠ける場合は該当アラームを除外し、毎日発音へ戻しません。ESP の 7 日間オフライン発生一覧や、旧 iPad・ロック画面音声・実機検収を意味する機能ではありません。
+非公開キャッシュは端末認証の範囲で分離します。401・403、認証の変更、期限切れで非公開予定・ブラウザーアラームを消去し、通信エラー時はその実行中の期限内データだけを維持できます。アラームはグループの表示タイムゾーンと独立して `Asia/Taipei` で計算します。連動参照元が欠ける場合は該当アラームを除外し、毎日発音へ戻しません。ESP の 7 日間オフライン発生一覧や、旧 iPad・ロック画面音声・実機検収を意味する機能ではありません。
 
 [繁體中文](server-api.md) · [English](server-api_en.md) · **日本語** · [README](../../README_jp.md)
 
@@ -75,15 +75,15 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 `GET /api/calendar/display-items` は選択済み予定、安全な参照元名、時刻、表示区間、グループ割り当て、未検出状態を時刻順に返します。明示的に選んだ系列は代表カード1件にまとめ、個別例外は別に表示します。非公開URLを含まず、取得失敗は空の選択ではなく503です。ホストバックアップには保存されますが、管理画面のversion 1 JSONは引き続きsettingsとnotesのみです。
 
 
-### 対象を指定するお知らせ
+### 対象を指定するテキスト通知
 
-お知らせは `manual_notes.json` と既存のフォームルートを使います。POST `/add` で追加、POST `/schedule/<id>` で編集、POST `/toggle/<id>` で一時停止・再開、POST `/delete/<id>` で削除します。管理認証と CSRF の規則は従来どおりです。フォームは `announcement=1` と複数の `announcement_group_ids`／`announcement_device_ids` を送ります。任意の `expires_at` は `YYYY-MM-DDTHH:MM` で、管理表示タイムゾーンからタイムゾーン付き ISO 8601 に変換します。通常のリマインダーは `announcement` を空にし、お知らせの期限を持ちません。
+テキスト通知は `manual_notes.json` と既存のフォームルートを使います。POST `/add` で追加、POST `/schedule/<id>` で編集、POST `/toggle/<id>` で一時停止・再開、POST `/delete/<id>` で削除します。管理認証と CSRF の規則は従来どおりです。フォームは複数の `target_group_ids`／`target_device_ids` を送信できます。対象を指定しない場合は、グループ内容の `manual_note_ids` 割り当てに従います。
 
-保存する note に `announcement_targets: {group_ids: [], device_ids: []}` と `expires_at` を追加できます。各 ID 配列は最大 100 件で、保存時に重複を除きます。ID は ASCII `[A-Za-z0-9_-]` の 1–128 文字です。`expires_at` はタイムゾーン付き ISO 8601 文字列で、空文字列は追加の絶対期限なしを意味します。グループまたは端末のどちらかに一致し、現在の端末・グループ認可が有効なら配信します。空の対象には配信しません。日付、range／daily、曜日、enabled、絶対期限は管理タイムゾーンで判定し、アラームの `Asia/Taipei` 規則とは独立しています。
+保存する note に `targets: {group_ids: [], device_ids: []}` を追加できます。各 ID 配列は最大 100 件で、保存時に重複を除きます。ID は ASCII `[A-Za-z0-9_-]` の 1–128 文字です。グループまたは端末のどちらかに一致し、現在の端末・グループ認可が有効なら表示します。対象指定の通知はサーバー側 local カレンダーやグループ内容の割り当て一覧には含めません。日付、range／daily、曜日、enabled は管理タイムゾーンで判定し、アラームの `Asia/Taipei` 規則とは独立しています。
 
-`GET /api/v2/device/display` に `announcements: [{id, text, visible_until}]` を追加します。`visible_until` は Unix ミリ秒で、現在のスナップショットの最長 300 秒、絶対期限、現在の表示区間終了の最も早い値です。display／アラーム全体のリースは短縮しません。`events`、`next_event`、サーバー側 local カレンダー、browser-alarms には混ぜず、`schedules.type=announcement` も使いません。旧 schema 1／2 の契約は維持します。匿名 self 状態のお知らせは空で、登録済みの self 端末は v2 から対象のお知らせを取得できます。ブラウザーには永続保存せず、認可喪失、認証・範囲変更、リース期限、個別期限で消去します。
+`GET /api/v2/device/display` は対象に一致する通知を通常の `events` に含めます。独立した `announcements` 欄やお知らせの有効期限は提供しません。旧バックアップや保存データ内のお知らせ記録は最初の読み込み時に削除し、配信も表示も行いません。
 
-フォームは空の対象を配信なしで保存できますが、存在しない対象や他 owner の対象は拒否します。version 1 `/api/backup` は `notes` のお知らせ欄を保持し、読み込み時に構造と存在する対象の所有者を検証します。存在しない過去の ID は保持できますが、認可や対象の新規作成は行いません。完全ホストバックアップはデータを保持し、履歴復元時は端末資格情報を無効化します。操作は[お知らせガイド](../guides/guide_jp.md#グループ端末を指定するお知らせ)を参照してください。
+フォームは存在しない対象や他 owner の対象を拒否します。version 1 `/api/backup` の `notes` は通常の通知と `targets` のみを保持し、過去のバックアップ内のお知らせ欄は無視します。完全ホストバックアップは元データを保持し、履歴復元時は端末資格情報を無効化します。
 
 ## 起動と構成
 

@@ -42,6 +42,17 @@ class ReminderWindowTest(unittest.TestCase):
                 self.assertEqual(response.headers['Location'], '/admin#calendar-title')
         self.assertEqual(clock.load_notes(), [])
 
+    def test_retired_announcements_are_ignored(self):
+        clock.save_json(self.path, [
+            dict(id=1, text='retired notice', due_date='',
+                 announcement_targets={'group_ids': [], 'device_ids': []},
+                 expires_at='2026-09-10T10:00:00+08:00'),
+            dict(id=2, text='kept reminder', due_date='')])
+        self.assertEqual([note['text'] for note in clock.load_notes()], ['kept reminder'])
+        self.assertNotIn('announcement_targets', self.path.read_text())
+        self.assertNotIn('announcements', self.client.get('/api/status').json)
+        self.assertNotIn(b'retired notice', self.client.get('/admin').data)
+
     def test_cross_day_boundaries_and_storage(self):
         response = self.client.post('/add', data={
             'note_text': 'meeting', 'note_date': '2026-09-12', 'note_time': '10:00',
@@ -149,7 +160,7 @@ class ReminderWindowTest(unittest.TestCase):
         page = self.client.get('/admin').data
         self.assertIn(b'type="time" name="display_start" value="22:00"', page)
 
-    def test_reminder_targets_are_validated_and_kept_separate_from_announcements(self):
+    def test_reminder_targets_are_validated_deduplicated_and_saved(self):
         targets = {'group_ids': ['group-b', 'group-a'], 'device_ids': ['device-1']}
         note = clock.validate_note(dict(text='targeted', targets=targets))
         self.assertEqual(note['targets'], {'group_ids': ['group-a', 'group-b'], 'device_ids': ['device-1']})
@@ -160,8 +171,8 @@ class ReminderWindowTest(unittest.TestCase):
                                      announcement_targets={'group_ids': [], 'device_ids': []}))
         with patch.object(clock, 'validate_note_ownership'):
             with clock.app.test_request_context('/add', method='POST', data={
-                    'note_text': 'targeted', 'announcement': '',
-                    'announcement_group_ids': ['group-a'], 'announcement_device_ids': ['device-1']}):
+                    'note_text': 'targeted', 'targets_present': '1',
+                    'target_group_ids': ['group-a'], 'target_device_ids': ['device-1']}):
                 saved = clock.note_from_form()
         self.assertNotIn('announcement_targets', saved)
         self.assertEqual(saved['targets'], {'group_ids': ['group-a'], 'device_ids': ['device-1']})

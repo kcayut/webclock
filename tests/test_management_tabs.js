@@ -33,7 +33,7 @@ const panels = [
     element('two', 'data-management-tab-panel', 'sample'),
     element('other', 'data-management-tab-panel', 'second')
 ];
-const filterButtons = ['all', 'reminder', 'announcement'].map(value => {
+const filterButtons = ['all', 'reminder'].map(value => {
     const button = element(value, 'data-filter-value', 'calendar');
     button.setAttribute('data-filter-group', 'calendar');
     return button;
