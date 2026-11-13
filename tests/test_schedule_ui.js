@@ -76,7 +76,7 @@ const englishLabels = {
     holiday_only: "Holidays", dates: "Specific dates", weekly_summary: "Weekly {days}",
     event_once_notice: "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.",
     once_date_past: "This date has passed. Choose today or a later date.",
-    dates_empty: "No dates added yet.", preview_waiting: "Finish the settings above first.",
+    preview_waiting: "Finish the settings above first.",
     calendar_none_hint: "Rings at the fixed time; calendars are not used.",
     calendar_event_hint: "Only events with a specified start time ring.", calendar_day_hint: "All-day and multi-day events count.",
     date_once_hint: "Leave empty to ring at the next occurrence of this time.", dates_hint: "Pick a date, then choose Add date.",

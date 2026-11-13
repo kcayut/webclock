@@ -68,7 +68,6 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .volume-choice output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 #volume-hint { font-size: 14px; margin: 4px 0 0; }
 .repeat-panel { min-width: 0; margin: 0 0 18px; padding: 0; border: 0; }
-#weekday-field { padding: 0; }
 #weekday-field legend { position: static; width: auto; height: auto; overflow: visible; clip-path: none; margin: 0 0 8px; font-size: 15px; font-weight: 600; }
 .weekday-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; flex: 1 1 280px; }

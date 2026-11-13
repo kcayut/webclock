@@ -473,7 +473,6 @@
             item.append(remove);
             list.append(item);
         });
-        if (!values.length) list.append(node("li", t("dates_empty"), "help"));
         $("clear-schedule-dates").hidden = !values.length;
     }
     function onceDateIsPast(value) {
