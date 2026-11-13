@@ -7,9 +7,11 @@ const vm = require("node:vm");
 
 const template = fs.readFileSync(path.join(__dirname, "../templates/schedules.html"), "utf8");
 const source = fs.readFileSync(path.join(__dirname, "../static/schedules.js"), "utf8");
-assert.doesNotMatch(template, /id="(?:schedule-(?:repeat|snooze)|sound-form|enable-audio|ringing)"/);
-assert.match(template, /<input type="hidden" id="schedule-rule">/);
-assert.doesNotMatch(template.match(/<select id="schedule-special-rule">(.*?)<\/select>/)[1], /value="(?:once|every_day|weekdays|dates)"/);
+assert.doesNotMatch(template, /id="(?:schedule-(?:snooze|rule|special-rule|advanced|event-time)|sound-form|enable-audio|ringing)"/);
+assert.match(template, /id="schedule-repeat-mode"/);
+assert.match(template, /id="repeat-summary"/);
+assert.match(template, /id="calendar-source-error"/);
+assert.match(template, /data-schedule-i18n="repeat_section"/);
 assert.match(template, /alarm-audio\.js/);
 assert.match(template, /data-time-format="\{\{ time_format \}\}"/);
 assert.ok(template.indexOf("time-format.js") < template.indexOf("schedules.js"));
@@ -59,6 +61,28 @@ const $ = id => {
 $("csrf-token").content = "schedules-csrf-token";
 const englishLabels = {
     alarm: "Alarm",
+    ring_time_section: "Ring time", repeat_section: "Repeat", alarm_section: "Alarm settings",
+    ring_trigger: "Ring based on", repeat_mode: "Repeat", once_date: "Date (optional)",
+    repeat_weekly: "Weekly", repeat_every_day_hint: "Rings every day, without weekday limits.",
+    repeat_workday_hint: "Rings only on Taiwan workdays, including make-up workdays.",
+    repeat_holiday_hint: "Rings only on Taiwan holidays.",
+    no_calendar_occurrence: "No matching upcoming event in the selected calendars.",
+    no_future_date: "No future ring time for the selected dates.",
+    weekday_select_all: "Select all", weekday_clear: "Clear", weekdays_hint: "Choose one or more days.",
+    repeat_summary_pair: "{repeat} · {when}", repeat_when_at: "Rings at {time}",
+    repeat_when_event: "{minutes} min before the event", repeat_when_day: "On event days at {time}",
+    repeat_summary_skip: " · Skips Taiwan holidays", once_on: "Once · {date}",
+    once: "Once", every_day: "Every day", weekdays_label: "Selected weekdays", workday_only: "Workdays (including make-up days)",
+    holiday_only: "Holidays", dates: "Specific dates", weekly_summary: "Weekly {days}",
+    event_once_notice: "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.",
+    once_date_past: "This date has passed. Choose today or a later date.",
+    dates_empty: "No dates added yet.", preview_waiting: "Finish the settings above first.",
+    calendar_none_hint: "Rings at the fixed time; calendars are not used.",
+    calendar_event_hint: "Only events with a specified start time ring.", calendar_day_hint: "All-day and multi-day events count.",
+    date_once_hint: "Leave empty to ring at the next occurrence of this time.", dates_hint: "Pick a date, then choose Add date.",
+    add_date: "Add date", clear_date: "Clear date", select_weekday: "Choose at least one weekday.",
+    select_date: "Enter a valid date.", select_time: "Enter a valid time.", select_calendar_source: "Choose at least one available calendar source.",
+    calendar_offset_error: "Advance minutes must be an integer from 0 to 1440.", calendar_target_required: "Choose a calendar target.",
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     today: "Today", tomorrow: "Tomorrow", this_week: "This {weekday}", next_week: "Next {weekday}", next_ring: "Next ring: {datetime}",
     calendar_event_summary: "{sources} · {minutes} min before events", calendar_day_summary: "{sources} · Days with events", calendar_missing: "Removed source ({id})",
@@ -95,9 +119,9 @@ $("schedule-form").querySelector = selector => {
     return saveButton;
 };
 $("schedule-form").reset = () => {
-    ["id", "name", "dates"].forEach(key => $("schedule-" + key).value = "");
-    // The time helper makes this canonical field hidden; native reset keeps its current value.
-    $("schedule-rule").value = "every_day";
+    ["id", "name", "dates", "dates-picker", "date-picker"].forEach(key => $("schedule-" + key).value = "");
+    // The repeat mode drives the visible fields; native reset returns to the first option.
+    $("schedule-repeat-mode").value = "once";
     $("schedule-sound").value = "bell";
     $("schedule-skip-holidays").checked = false;
     $("schedule-enabled").checked = true;
@@ -270,17 +294,16 @@ const completionTimeout = setTimeout(() => {
     assert.equal(activeElement, $("schedule-name"), "Assignment refresh leaves schedule draft focus untouched");
     assignmentOptions.onSaved({kind: "schedule", id: "alarm"}, assignmentValues.alarm);
     assert.equal(groupRefreshes, 1, "Saving assignments refreshes the group management view");
-    assert.equal($("select-every-day").hidden, true, "Existing seven-day rules also hide the shortcut");
     assert.equal($("schedule-volume").value, "0", "Saved mute must not fall back to maximum volume");
     await $("add-schedule").trigger("click");
     assert.deepEqual(assignmentEditors.at(-1), {item: null, assignment: null}, "A new schedule has no persistent assignment target yet");
-    assert.equal($("schedule-rule").value, "once");
     assert.equal($("schedule-volume").value, "100");
     assert.equal($("schedule-volume-value").textContent, "100%");
+    assert.equal($("weekday-field").hidden, true, "A new one-time alarm hides weekday controls");
+    assert.equal($("repeat-once-field").hidden, false, "The one-time date field is visible");
+    assert.equal($("schedule-date-picker").disabled, false, "The one-time date is optional and editable");
     assert.equal($("select-every-day").hidden, false);
     assert.equal($("schedule-name").value, "");
-    assert.equal($("weekday-field").hidden, false, "Weekdays are visible before choosing a repeat rule");
-    assert.equal($("schedule-date-picker").disabled, false, "The date picker is immediately usable");
     assert.match($("editor-now").textContent, /2026.*10:00/);
     assert.equal(qa.scheduleData().name, "Alarm", "A blank name uses the selected language's type label");
     for (const [serverTime, time, date] of [
@@ -302,53 +325,67 @@ const completionTimeout = setTimeout(() => {
     qa.syncServerTime("2026-09-30T10:00:00+08:00");
     assert.equal(qa.remainingTime("2026-10-01T12:03:00+08:00"), "1 d 2 hr 3 min");
     assert.equal(qa.remainingTime("2026-09-30T10:00:30+08:00"), "Under 1 min");
+    $("schedule-date-picker").value = "2026-10-10";
+    await $("schedule-date-picker").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-10"]}, "A one-time date only changes its own draft");
+    assert.equal($("repeat-summary").textContent, "Once · 2026-10-10 · Rings at 07:30");
+    assert.equal($("skip-holidays-field").hidden, false, "A dated one-time alarm can skip Taiwan holidays");
+    $("schedule-skip-holidays").checked = true;
+    assert.equal(qa.scheduleData().skip_holidays, true);
+    await $("clear-schedule-date").trigger("click");
+    assert.equal($("schedule-date-picker").value, "");
+    assert.equal($("skip-holidays-field").hidden, true, "An undated one-time alarm hides the holiday modifier");
+    assert.equal(qa.scheduleData().skip_holidays, false, "An undated one-time alarm does not silently keep the modifier");
+    $("schedule-skip-holidays").checked = false;
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-01"]}, "Clearing the optional date returns to the next occurrence");
+    $("schedule-repeat-mode").value = "weekdays";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.equal($("weekday-field").hidden, false);
+    assert.equal($("repeat-once-field").hidden, true);
     weekdays[0].checked = true;
     await weekdays[0].trigger("change");
     assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1]});
     weekdays[4].checked = true;
     await weekdays[4].trigger("change");
-    assert.match($("schedule-repeat-summary").textContent, /Weekly Mon \/ Fri/);
-    $("schedule-date-picker").value = "2026-10-10";
-    await $("schedule-date-picker").trigger("change");
+    assert.match($("repeat-summary").textContent, /Weekly Mon \/ Fri/);
+    $("schedule-repeat-mode").value = "dates";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.equal($("multiple-dates-field").hidden, false);
+    $("schedule-dates-picker").value = "2026-10-10";
+    await $("add-schedule-date").trigger("click");
     assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-10"]});
-    assert.ok(weekdays.every(input => !input.checked), "Choosing a date clears weekly repetition");
-    weekdays[2].checked = true;
-    await weekdays[2].trigger("change");
-    assert.equal($("schedule-date-picker").value, "");
-    assert.equal($("schedule-dates").value, "");
-    weekdays[2].checked = false;
-    await weekdays[2].trigger("change");
-    assert.equal($("schedule-rule").value, "once", "Clearing every weekday restores a one-time alarm");
-
-    $("schedule-date-picker").value = "2026-10-10";
-    await $("schedule-date-picker").trigger("change");
+    assert.ok(weekdays[0].checked && weekdays[4].checked, "Switching to dates preserves the weekday draft");
+    assert.equal($("repeat-summary").textContent, "2026-10-10 · Rings at 07:30");
+    $("schedule-repeat-mode").value = "weekdays";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1, 5]}, "Switching back restores the weekday draft");
+    weekdays[0].checked = false;
+    weekdays[4].checked = false;
+    await weekdays[0].trigger("change");
+    assert.equal($("repeat-error").textContent, "Choose at least one weekday.");
+    assert.throws(() => qa.scheduleData(), /Choose at least one weekday/);
     await $("select-every-day").trigger("click");
     assert.ok(weekdays.every(input => input.checked));
-    assert.equal($("select-every-day").hidden, true);
-    assert.equal($("schedule-date-picker").value, "");
-    assert.equal($("schedule-dates").value, "");
+    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1, 2, 3, 4, 5, 6, 7]});
+    assert.match($("repeat-summary").textContent, /Every day/);
+    assert.equal($("select-every-day").hidden, false, "Select all remains available");
+    $("schedule-repeat-mode").value = "every_day";
+    await $("schedule-repeat-mode").trigger("change");
     assert.deepEqual(plain(qa.scheduleData().rule), {});
-    assert.equal($("schedule-repeat-summary").textContent, "every_day");
-    assert.equal(weekdays[0].focused, true, "Focus leaves the hidden daily button");
-    const dailyPreview = runPreview();
-    assert.deepEqual(JSON.parse(pending[0].options.body).rule, {}, "Daily click queues a preview without a form change event");
-    reply(take("/schedules/preview", "POST"), {next_occurrence: nextDate, server_time: "2026-09-30T10:00:00+08:00"});
-    await dailyPreview;
-    weekdays[6].checked = false;
-    await weekdays[6].trigger("change");
-    assert.equal($("select-every-day").hidden, false);
-    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1, 2, 3, 4, 5, 6]});
-    weekdays[6].checked = true;
-    await weekdays[6].trigger("change");
-    assert.equal($("select-every-day").hidden, true, "Manually selecting all days also hides the shortcut");
-    $("schedule-special-rule").value = "workday_only";
-    await $("schedule-special-rule").trigger("change");
+    assert.equal($("weekday-field").hidden, true);
+    assert.equal($("repeat-summary").textContent, "Every day · Rings at 07:30");
+    $("schedule-repeat-mode").value = "workday_only";
+    await $("schedule-repeat-mode").trigger("change");
     assert.deepEqual(plain(qa.scheduleData().rule), {workday_only: true});
-    assert.equal($("select-every-day").hidden, false);
-    await $("select-every-day").trigger("click");
-    assert.equal($("schedule-special-rule").value, "");
-    weekdays.forEach(input => input.checked = false);
-    await weekdays[0].trigger("change");
+    assert.equal($("skip-holidays-field").hidden, true, "Workdays do not offer the holiday skip modifier");
+    $("schedule-repeat-mode").value = "holiday_only";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {holiday_only: true});
+    assert.equal($("skip-holidays-field").hidden, true, "Holiday-only alarms hide the conflicting skip modifier");
+    assert.equal($("schedule-skip-holidays").checked, false);
+    $("schedule-repeat-mode").value = "once";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.equal($("repeat-once-field").hidden, false);
 
     await $("schedule-form").trigger("change");
     const olderPreview = runPreview(), olderPreviewRequest = take("/schedules/preview", "POST");
@@ -730,7 +767,8 @@ const completionTimeout = setTimeout(() => {
     await $("preview-sound").trigger("click");
     assert.equal($("status").textContent, "audio_unavailable");
     const previewed = [];
-    assert.equal($("select-every-day").hidden, true, "Existing daily alarms open with all weekdays selected");
+    assert.equal($("schedule-repeat-mode").value, "every_day", "Seven-day rules open as every day");
+    assert.equal($("weekday-field").hidden, true, "Existing daily alarms hide weekday controls");
     context.window.AlarmAudio = {unlock(sound, volume) { previewed.push({sound, volume}); return true; }};
     $("schedule-volume").value = "25";
     await $("schedule-volume").trigger("input");
@@ -776,33 +814,33 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("schedule-sound").value, "bell");
     assert.equal($("schedule-volume").value, "100", "New alarms do not inherit another alarm's volume");
     assert.equal($("schedule-skip-holidays").checked, false);
-    $("schedule-special-rule").value = "holiday_only";
-    await $("schedule-special-rule").trigger("change");
-    $("schedule-skip-holidays").checked = true;
-    await $("schedule-form").trigger("submit");
-    assert.equal($("form-error").textContent, "holiday_conflict");
-    assert.equal(pending.length, 0, "Contradictory holiday options must not send a request");
-    assert.equal($("schedule-date-picker").disabled, false);
-    $("schedule-date-picker").value = "2026-10-10";
-    await $("schedule-date-picker").trigger("change");
+    $("schedule-repeat-mode").value = "holiday_only";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.equal($("skip-holidays-field").hidden, true, "Holiday-only hides the conflicting skip modifier");
+    assert.equal($("schedule-skip-holidays").checked, false);
+    assert.deepEqual(plain(qa.scheduleData().rule), {holiday_only: true});
+    $("schedule-repeat-mode").value = "dates";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.equal($("multiple-dates-field").hidden, false);
+    $("schedule-dates-picker").value = "2026-10-10";
+    await $("add-schedule-date").trigger("click");
     assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-10"]});
-    assert.equal($("clear-schedule-date").hidden, false);
+    assert.equal($("clear-schedule-dates").hidden, false);
     assert.equal(pending.length, 0, "Picking a date only changes the draft");
-    $("schedule-dates").value = "2026-10-03, 2026-10-10";
-    await $("schedule-dates").trigger("input");
-    assert.equal($("schedule-date-picker").value, "");
-    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-03", "2026-10-10"]}, "Advanced rules preserve existing multiple-date support");
+    $("schedule-dates-picker").value = "2026-10-03";
+    await $("add-schedule-date").trigger("click");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-03", "2026-10-10"]});
     for (const invalid of ["", "2026-02-30", "not-a-date"]) {
         $("schedule-dates").value = invalid;
         await $("schedule-form").trigger("submit");
-        assert.equal($("form-error").textContent, "select_date");
+        assert.equal($("repeat-error").textContent, "Enter a valid date.");
         assert.equal(pending.length, 0, "Invalid dates must not send a request");
         assert.equal($("schedule-dates").value, invalid, "Validation preserves the draft for correction");
     }
-    await $("clear-schedule-date").trigger("click");
-    assert.equal($("schedule-rule").value, "once");
+    $("schedule-dates").value = "2026-10-03, 2026-10-10";
+    await $("clear-schedule-dates").trigger("click");
+    assert.equal($("schedule-repeat-mode").value, "dates");
     assert.equal($("schedule-dates").value, "");
-    assert.equal($("schedule-date-picker").value, "");
     await $("cancel-edit").trigger("click");
     assert.equal($("alarms-panel").classList.contains("is-editing"), false);
     assert.equal($("add-schedule").focused, true);
@@ -810,10 +848,11 @@ const completionTimeout = setTimeout(() => {
     showPanel("alarms");
     await $("add-schedule").trigger("click");
     $("schedule-name").value = "Weekly alarm";
+    $("schedule-repeat-mode").value = "weekdays";
+    await $("schedule-repeat-mode").trigger("change");
     weekdays.forEach(input => input.checked = false);
     weekdays[0].checked = true;
     weekdays[4].checked = true;
-    $("schedule-rule").value = "weekdays";
     await weekdays[0].trigger("change");
     $("schedule-skip-holidays").checked = true;
     const creating = $("schedule-form").trigger("submit");
@@ -855,25 +894,26 @@ const completionTimeout = setTimeout(() => {
     showPanel("alarms");
     await $("add-schedule").trigger("click");
     assert.equal($("schedule-date-picker").value, "", "Opening another editor clears the date picker");
-    assert.equal($("schedule-date-picker").disabled, false, "The date picker remains available without opening advanced rules");
+    assert.equal($("schedule-date-picker").disabled, false, "The one-time date picker is available in its own mode");
     $("schedule-name").value = "Linked alarm";
     $("schedule-calendar-mode").value = "event";
     await $("schedule-calendar-mode").trigger("change");
     assert.equal($("schedule-time-field").hidden, true);
-    assert.equal($("schedule-event-time").hidden, false);
     assert.equal($("schedule-time").required, false);
     assert.equal($("schedule-time").disabled, true);
     assert.equal(inputRefreshes.at(-1).disabled, true, "Event mode also disables the visible time controls");
     assert.equal($("schedule-offset-field").hidden, false);
     assert.equal($("calendar-source-field").hidden, false);
+    assert.equal($("schedule-repeat-mode").value, "every_day", "Event mode changes one-time repeat to every day");
+    assert.equal($("repeat-notice").textContent, "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.");
     await $("schedule-form").trigger("submit");
-    assert.equal($("form-error").textContent, "select_calendar_source");
+    assert.equal($("calendar-source-error").textContent, "Choose at least one available calendar source.");
     assert.equal(pending.length, 0);
     calendarInput("local").checked = true;
     calendarInput("work").checked = true;
     $("schedule-offset").value = "-1";
     await $("schedule-form").trigger("submit");
-    assert.equal($("form-error").textContent, "calendar_offset_error");
+    assert.equal($("schedule-offset-error").textContent, "Advance minutes must be an integer from 0 to 1440.");
     $("schedule-offset").value = "15";
     $("schedule-time").value = "";
     const linking = $("schedule-form").trigger("submit");
@@ -923,7 +963,7 @@ const completionTimeout = setTimeout(() => {
     assert.equal(calendarInput("work").checked, true, "Removing a source does not silently erase an existing selection");
     assert.match(content($("schedule-calendar-sources")), /Removed source \(work\)/);
     await $("schedule-form").trigger("submit");
-    assert.equal($("form-error").textContent, "select_calendar_source");
+    assert.equal($("calendar-source-error").textContent, "Choose at least one available calendar source.");
     assert.equal(pending.length, 0);
     $("schedule-calendar-mode").value = "none";
     await $("schedule-calendar-mode").trigger("change");
@@ -941,30 +981,40 @@ const completionTimeout = setTimeout(() => {
     scheduleReply(take("/schedules"), [datedLinked]);
     await datedPoll;
     assert.doesNotMatch(content($("schedule-list")), /once/, "A linked date may contain multiple events and must not promise one ring");
-    for (const changeRule of [
-        async () => { await $("clear-schedule-date").trigger("click"); },
-        async () => { $("schedule-date-picker").value = "2026-10-02"; await $("schedule-date-picker").trigger("change"); },
-        async () => {
-            weekdays[0].checked = true;
-            await weekdays[0].trigger("change");
-            assert.equal($("schedule-calendar-mode").value, "event", "Weekly filters preserve existing calendar linkage");
-            weekdays[0].checked = false;
-            await weekdays[0].trigger("change");
-        },
-    ]) {
-        await button("schedule-list", "edit").trigger("click");
-        assert.equal($("schedule-calendar-mode").value, "event", "Opening an existing linked-date alarm preserves its meaning");
-        assert.deepEqual(plain(qa.scheduleData().calendar_link), link);
-        await changeRule();
-        assert.equal($("schedule-calendar-mode").value, "none", "Explicit one-time selections leave event-based repetition");
-        assert.equal($("schedule-time").disabled, false);
-        assert.equal(qa.scheduleData().calendar_link, null, "Saving a manual one-time choice explicitly clears the old link");
-        await $("cancel-edit").trigger("click");
-    }
+    await button("schedule-list", "edit").trigger("click");
+    assert.equal($("schedule-calendar-mode").value, "event", "Opening an existing linked-date alarm preserves its meaning");
+    assert.equal($("schedule-repeat-mode").value, "dates", "A linked date opens in specific-dates mode");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-01"]});
+    assert.deepEqual(plain(qa.scheduleData().calendar_link), link);
+    $("schedule-repeat-mode").value = "weekdays";
+    await $("schedule-repeat-mode").trigger("change");
+    weekdays[0].checked = true;
+    await weekdays[0].trigger("change");
+    assert.equal($("schedule-calendar-mode").value, "event", "Changing repeat mode preserves the calendar link");
+    assert.deepEqual(plain(qa.scheduleData().rule), {weekdays: [1]});
+    assert.deepEqual(plain(qa.scheduleData().calendar_link), link);
+    $("schedule-repeat-mode").value = "dates";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-01"]}, "The dates draft survives a mode round trip");
+    await $("clear-schedule-dates").trigger("click");
+    assert.throws(() => qa.scheduleData(), /Enter a valid date/, "An empty dates mode is invalid, not silently one-time");
+    $("schedule-dates-picker").value = "2026-10-02";
+    await $("add-schedule-date").trigger("click");
+    assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-02"]});
+    assert.deepEqual(plain(qa.scheduleData().calendar_link), link, "Date changes never remove the calendar link");
+    $("schedule-calendar-mode").value = "none";
+    await $("schedule-calendar-mode").trigger("change");
+    assert.equal($("schedule-time").disabled, false);
+    assert.equal(qa.scheduleData().calendar_link, null, "Only changing the trigger clears the old link");
+    await $("cancel-edit").trigger("click");
 
     await $("add-schedule").trigger("click");
     $("schedule-calendar-mode").value = "event";
     await $("schedule-calendar-mode").trigger("change");
+    $("schedule-repeat-mode").value = "once";
+    await $("schedule-repeat-mode").trigger("change");
+    assert.equal($("schedule-repeat-mode").value, "every_day", "Event mode cannot promise a single ring");
+    assert.equal($("repeat-notice").textContent, "Event-linked alarms follow event occurrences, so the repeat mode was changed to every day.");
     calendarInput("work").checked = true;
     $("schedule-offset").value = "10";
     const meeting = {source_id: "work", uid: "weekly-meeting", recurring: true, recurrence_id: "2026-10-02T01:00:00+00:00",
@@ -974,7 +1024,7 @@ const completionTimeout = setTimeout(() => {
         {...meeting, uid: "all-day", all_day: true}];
     $("schedule-calendar-scope").value = "series";
     await $("schedule-calendar-scope").trigger("change");
-    assert.throws(() => qa.scheduleData(), /calendar_target_required/, "Choosing a scope must never silently target all events");
+    assert.throws(() => qa.scheduleData(), /Choose a calendar target/, "Choosing a scope must never silently target all events");
     reply(take("/calendar-events?source_id=work"), {events: calendarEvents});
     await flush();
     assert.equal($("schedule-calendar-target").children.length, 2, "Series deduplicate occurrences and exclude single/all-day events in relative-time mode");
@@ -994,7 +1044,11 @@ const completionTimeout = setTimeout(() => {
     // Changing language must preserve the entire draft, including calendar target identity.
     $("schedule-name").value = "Draft meeting alarm";
     $("schedule-volume").value = "37";
-    $("schedule-advanced").open = true;
+    $("schedule-repeat-mode").value = "weekdays";
+    await $("schedule-repeat-mode").trigger("change");
+    weekdays[0].checked = true;
+    await weekdays[0].trigger("change");
+    $("schedule-skip-holidays").checked = true;
     $("schedule-enabled").checked = false;
     const languageDraft = plain(qa.scheduleData());
     for (const language of ["zh-TW", "en"]) {
@@ -1004,7 +1058,8 @@ const completionTimeout = setTimeout(() => {
         assert.equal(assignmentLanguages, languageCalls + 1, "The assignment editor uses the active management language");
         assert.equal(assignmentSummaries.size, 1, "Rebuilt lists release old assignment badges");
         assert.equal($("editor").hidden, false);
-        assert.equal($("schedule-advanced").open, true);
+        assert.equal($("schedule-repeat-mode").value, "weekdays");
+        assert.equal($("schedule-skip-holidays").checked, true);
         assert.deepEqual(plain(qa.scheduleData()), languageDraft);
         reply(take("/calendar-events?source_id=work"), {events: calendarEvents});
         await flush();

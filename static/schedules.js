@@ -47,7 +47,7 @@
     const capabilityFields = ["display", "audio", "notifications", "background", "calendar"];
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
-    let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null;
+    let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null, repeatNoticeKey = "";
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
     const assignmentSummaries = new Map();
     const assignments = window.WebClockAssignments ? window.WebClockAssignments.create({
@@ -108,7 +108,13 @@
         renderEditorActions();
         let data;
         try { data = scheduleData(); }
-        catch (error) { $("editor-next").textContent = error.message; $("editor-countdown").textContent = ""; return; }
+        catch (error) {
+            if (error.field) showFormError(error);
+            $("editor-next").textContent = error.field ? t("preview_waiting") : error.message;
+            $("editor-countdown").textContent = "";
+            return;
+        }
+        clearFormErrors();
         previewDraft = JSON.stringify(data);
         if ($("schedule-id").value) data.id = $("schedule-id").value;
         previewTimer = setTimeout(async () => {
@@ -117,7 +123,8 @@
                 if (request !== previewRequest || $("editor").hidden) return;
                 syncServerTime(result.server_time);
                 previewTime = result.next_occurrence;
-                $("editor-next").textContent = previewTime ? format("next_ring", {datetime: nextTime(previewTime)}) : t(data.enabled ? "none" : "disabled");
+                const empty = data.calendar_link ? "no_calendar_occurrence" : data.rule.dates ? "no_future_date" : "none";
+                $("editor-next").textContent = previewTime ? format("next_ring", {datetime: nextTime(previewTime)}) : t(data.enabled ? empty : "disabled");
                 if (!previewTime) $("editor-countdown").textContent = "";
                 renderEditorTime();
                 renderEditorActions();
@@ -428,26 +435,117 @@
         if (!$("editor").hidden) {
             $("editor-title").textContent = t($("schedule-id").value ? "edit_alarm" : "add_alarm");
             renderCalendarSources(selectedCalendarSources());
-            setRule();
+            showRepeatNotice(repeatNoticeKey);
+            renderDateList();
             setCalendarMode();
             queuePreview();
             renderEditorTime();
         }
     };
-    function setRule(manual = false) {
-        const mode = $("schedule-rule").value;
-        $("schedule-special-rule").value = ["workday_only", "holiday_only"].includes(mode) ? mode : "";
-        if (manual && (mode === "once" || mode === "dates") && $("schedule-calendar-mode").value !== "none") {
-            $("schedule-calendar-mode").value = "none";
-            setCalendarMode();
+    const repeatMode = () => $("schedule-repeat-mode").value;
+    const selectedWeekdays = () => Array.from(document.querySelectorAll('[name="weekday"]:checked'), input => Number(input.value));
+    const dateValues = () => ($("schedule-dates").value || "").split(",").map(value => value.trim()).filter(Boolean);
+    const skipHolidaysVisible = () => ["every_day", "weekdays", "dates"].includes(repeatMode()) ||
+        (repeatMode() === "once" && !!$("schedule-date-picker").value);
+    function showRepeatNotice(key) {
+        repeatNoticeKey = key || "";
+        $("repeat-notice").textContent = repeatNoticeKey ? t(repeatNoticeKey) : "";
+    }
+    function setDateValues(values) {
+        $("schedule-dates").value = Array.from(new Set(values)).sort().join(", ");
+        renderDateList();
+    }
+    function renderDateList() {
+        const list = $("schedule-date-list"), values = dateValues();
+        list.replaceChildren();
+        values.forEach(value => {
+            const item = node("li", undefined, "date-chip");
+            item.append(node("span", value));
+            const remove = node("button", "×", "date-chip-remove");
+            remove.type = "button";
+            remove.setAttribute("aria-label", t("clear_date") + " " + value);
+            remove.addEventListener("click", () => {
+                setDateValues(values.filter(date => date !== value));
+                $("repeat-error").textContent = "";
+                renderRepeat();
+                queuePreview();
+            });
+            item.append(remove);
+            list.append(item);
+        });
+        if (!values.length) list.append(node("li", t("dates_empty"), "help"));
+        $("clear-schedule-dates").hidden = !values.length;
+    }
+    function onceDateIsPast(value) {
+        const now = serverNow(), time = $("schedule-time").value;
+        return now !== null && validDate(value) && /^([01]\d|2[0-3]):[0-5]\d$/.test(time) &&
+            Date.parse(value + "T" + time + ":00+08:00") < now;
+    }
+    function originalOnceDate() {
+        const schedule = schedules.find(item => item.id === $("schedule-id").value);
+        return schedule && !schedule.calendar_link && schedule.rule.dates && schedule.rule.dates.length === 1 ?
+            schedule.rule.dates[0] : null;
+    }
+    function repeatError() {
+        const mode = repeatMode();
+        if (mode === "weekdays" && !selectedWeekdays().length) return t("select_weekday");
+        if (mode === "dates" && !dateValues().length) return t("select_date");
+        if (mode === "once" && $("schedule-date-picker").value) {
+            if (!validDate($("schedule-date-picker").value)) return t("select_date");
+            if (onceDateIsPast($("schedule-date-picker").value) && $("schedule-date-picker").value !== originalOnceDate()) return t("once_date_past");
         }
+        return "";
+    }
+    function repeatSummary() {
+        const mode = repeatMode(), days = selectedWeekdays(), dates = dateValues();
+        let repeat;
+        if (mode === "once") repeat = $("schedule-date-picker").value ? format("once_on", {date: $("schedule-date-picker").value}) : t("once");
+        else if (mode === "every_day") repeat = t("every_day");
+        else if (mode === "weekdays") repeat = !days.length ? t("select_weekday") :
+            days.length === 7 ? t("every_day") : format("weekly_summary", {days: days.map(day => t("weekdays")[day - 1]).join(" / ")});
+        else if (mode === "dates") repeat = dates.length ? dates.join(" / ") : t("dates");
+        else repeat = t(mode);
+        const trigger = $("schedule-calendar-mode").value, time = $("schedule-time").value || "--:--";
+        const when = trigger === "event" ? format("repeat_when_event", {minutes: $("schedule-offset").value || "0"}) :
+            trigger === "day" ? format("repeat_when_day", {time}) : format("repeat_when_at", {time});
+        return format("repeat_summary_pair", {repeat, when}) +
+            (skipHolidaysVisible() && $("schedule-skip-holidays").checked ? t("repeat_summary_skip") : "");
+    }
+    function renderRepeat() {
+        const mode = repeatMode();
+        $("repeat-once-field").hidden = mode !== "once";
+        $("weekday-field").hidden = mode !== "weekdays";
         $("multiple-dates-field").hidden = mode !== "dates";
-        $("schedule-dates").disabled = mode !== "dates";
-        $("clear-schedule-date").hidden = !$("schedule-dates").value && !$("schedule-date-picker").value;
-        const days = Array.from(document.querySelectorAll('[name="weekday"]:checked'), input => t("weekdays")[Number(input.value) - 1]);
-        $("select-every-day").hidden = days.length === 7;
-        $("schedule-repeat-summary").textContent = mode === "weekdays" ? (days.length === 7 ? t("every_day") : format("weekly_summary", {days: days.join(" / ")})) :
-            mode === "dates" ? t("dates") + " · " + $("schedule-dates").value : t(mode);
+        $("schedule-date-picker").disabled = mode !== "once";
+        document.querySelectorAll('[name="weekday"]').forEach(input => input.disabled = mode !== "weekdays");
+        $("schedule-dates-picker").disabled = mode !== "dates";
+        $("add-schedule-date").disabled = mode !== "dates";
+        $("clear-schedule-dates").disabled = mode !== "dates";
+        const skip = skipHolidaysVisible();
+        $("skip-holidays-field").hidden = !skip;
+        $("skip-holidays-hint").hidden = !skip;
+        $("schedule-skip-holidays").disabled = !skip;
+        $("clear-schedule-date").hidden = !$("schedule-date-picker").value;
+        const hint = {every_day: "repeat_every_day_hint", workday_only: "repeat_workday_hint", holiday_only: "repeat_holiday_hint"}[mode];
+        $("repeat-mode-hint").textContent = hint ? t(hint) : "";
+        $("repeat-error").textContent = repeatError();
+        $("repeat-summary").textContent = repeatSummary();
+    }
+    function fail(key, field) {
+        const error = new Error(t(key));
+        error.field = field;
+        return error;
+    }
+    function clearFormErrors() {
+        ["form-error", "repeat-error", "calendar-source-error", "schedule-offset-error", "schedule-time-error"]
+            .forEach(id => { $(id).textContent = ""; });
+    }
+    function showFormError(error) {
+        clearFormErrors();
+        const message = error.message === "Occurrence changed; preview again" ? t("pause_stale") : error.message || t("request_failed");
+        const target = error.field === "repeat" ? "repeat-error" : error.field === "calendar" ? "calendar-source-error" :
+            error.field === "offset" ? "schedule-offset-error" : error.field === "time" ? "schedule-time-error" : "form-error";
+        $(target).textContent = message;
     }
     function selectedCalendarSources() {
         return Array.from(document.querySelectorAll('[name="calendar-source"]:checked'), input => input.value);
@@ -464,7 +562,10 @@
             input.name = "calendar-source";
             input.value = id;
             input.checked = selected.includes(id);
-            input.addEventListener("change", loadCalendarTargets);
+            input.addEventListener("change", () => {
+                $("calendar-source-error").textContent = "";
+                loadCalendarTargets();
+            });
             label.append(input, node("span", sourceName(id)));
             list.append(label);
         });
@@ -504,15 +605,21 @@
     }
     async function loadCalendarTargets() {
         const request = ++calendarRequest, sources = selectedCalendarSources();
-        const active = $("schedule-calendar-mode").value !== "none" && $("schedule-calendar-scope").value !== "all";
+        const linked = $("schedule-calendar-mode").value !== "none";
+        const active = linked && $("schedule-calendar-scope").value !== "all";
         $("calendar-target-field").hidden = !active;
         $("schedule-calendar-target").disabled = !active;
         $("schedule-calendar-target").required = active;
+        if (!linked) { $("calendar-source-error").textContent = ""; return; }
+        if (!sources.length) {
+            $("calendar-source-error").textContent = t("select_calendar_source");
+            return;
+        }
+        $("calendar-source-error").textContent = "";
         if (!active) return;
         if (calendarTarget && !sources.includes(calendarTarget.source_id)) calendarTarget = null;
         calendarEvents = calendarEvents.filter(event => sources.includes(event.source_id));
         renderCalendarTargets(false, false);
-        if (!sources.length) { $("calendar-target-status").textContent = t("select_calendar_source"); return; }
         try {
             const data = await api("/calendar-events?" + sources.map(id => "source_id=" + encodeURIComponent(id)).join("&"));
             if (request !== calendarRequest || $("editor").hidden) return;
@@ -525,17 +632,25 @@
     }
     function setCalendarMode() {
         const mode = $("schedule-calendar-mode").value;
-        $("schedule-calendar-mode-field").hidden = false;
         $("calendar-source-field").hidden = mode === "none";
         $("schedule-offset-field").hidden = mode !== "event";
         $("schedule-offset").disabled = mode !== "event";
         $("schedule-offset").required = mode === "event";
         $("schedule-time-field").hidden = mode === "event";
-        $("schedule-event-time").hidden = mode !== "event";
         $("schedule-time").required = mode !== "event";
         $("schedule-time").disabled = mode === "event";
-        $("calendar-mode-hint").textContent = t(mode === "event" ? "calendar_event_hint" : "calendar_day_hint");
-        $("date-once-hint").textContent = t(mode === "none" ? "date_once_hint" : "calendar_rule_hint");
+        $("calendar-mode-hint").textContent = mode === "event" ? t("calendar_event_hint") :
+            mode === "day" ? t("calendar_day_hint") : t("calendar_none_hint");
+        $("schedule-offset-error").textContent = "";
+        $("schedule-time-error").textContent = "";
+        if (mode === "event" && repeatMode() === "once") {
+            $("schedule-repeat-mode").value = "every_day";
+            showRepeatNotice("event_once_notice");
+        } else if (mode !== "event" && repeatNoticeKey === "event_once_notice") {
+            showRepeatNotice("");
+        }
+        if (mode === "none") $("calendar-source-error").textContent = "";
+        renderRepeat();
         loadCalendarTargets();
         refreshTimeInputs();
     }
@@ -547,9 +662,14 @@
         $("editor-next").textContent = "";
         $("editor-countdown").textContent = "";
         if (!schedule) $("schedule-time").value = "07:30";
-        $("schedule-rule").value = !schedule ? "once" : "every_day";
+        ["form-error", "repeat-error", "repeat-notice", "calendar-source-error", "schedule-offset-error", "schedule-time-error"]
+            .forEach(id => { $(id).textContent = ""; });
+        repeatNoticeKey = "";
         $("schedule-date-picker").value = "";
-        $("form-error").textContent = "";
+        $("schedule-dates").value = "";
+        document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
+        $("schedule-repeat-mode").value = "once";
+        renderDateList();
         $("schedule-id").value = schedule ? schedule.id : "";
         $("schedule-sound-field").hidden = false;
         $("schedule-volume-field").hidden = false;
@@ -573,36 +693,50 @@
             ["name", "time"].forEach(key => $("schedule-" + key).value = schedule[key]);
             $("schedule-enabled").checked = schedule.enabled;
             const rule = schedule.rule;
-            $("schedule-rule").value = ["weekdays", "workday_only", "holiday_only", "dates"].find(key => rule[key]) || "every_day";
-            document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = (rule.weekdays || []).includes(Number(input.value)));
-            $("schedule-dates").value = (rule.dates || []).join(", ");
-            $("schedule-date-picker").value = rule.dates && rule.dates.length === 1 ? rule.dates[0] : "";
+            let mode = "every_day";
+            if (rule.weekdays) {
+                document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = rule.weekdays.includes(Number(input.value)));
+                mode = rule.weekdays.length === 7 ? "every_day" : "weekdays";
+            } else if (rule.workday_only) mode = "workday_only";
+            else if (rule.holiday_only) mode = "holiday_only";
+            else if (rule.dates) {
+                if (rule.dates.length === 1 && (!link || link.mode !== "event")) {
+                    mode = "once";
+                    $("schedule-date-picker").value = rule.dates[0];
+                } else {
+                    mode = "dates";
+                    setDateValues(rule.dates);
+                }
+            }
+            $("schedule-repeat-mode").value = mode;
         }
-        if ($("schedule-rule").value === "every_day") document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
-        $("schedule-advanced").open = !!(schedule && (schedule.skip_holidays || schedule.rule.workday_only || schedule.rule.holiday_only || (schedule.rule.dates || []).length > 1));
+        if (repeatMode() === "every_day") document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
         $("editor").hidden = false;
         renderAssignments();
-        setRule();
         setCalendarMode();
         renderEditorActions();
         renderEditorTime();
         queuePreview();
         $("editor").scrollIntoView({block: "start"});
-        ($("schedule-time-hour") || $("schedule-name")).focus({preventScroll: true});
+        const focusTarget = $("schedule-time-field").hidden ? $("schedule-calendar-mode") : ($("schedule-time-hour") || $("schedule-name"));
+        focusTarget.focus({preventScroll: true});
     }
     $("add-schedule").addEventListener("click", () => edit(null));
     $("cancel-edit").addEventListener("click", closeEditor);
-    $("schedule-special-rule").addEventListener("change", function () {
-        $("schedule-rule").value = this.value || "once";
-        $("schedule-date-picker").value = $("schedule-dates").value = "";
-        document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
-        setRule(true);
+    $("schedule-repeat-mode").addEventListener("change", () => {
+        $("repeat-error").textContent = "";
+        if (repeatMode() === "once" && $("schedule-calendar-mode").value === "event") {
+            $("schedule-repeat-mode").value = "every_day";
+            showRepeatNotice("event_once_notice");
+        } else {
+            showRepeatNotice("");
+        }
+        renderRepeat();
+        queuePreview();
     });
     function setWeekdays() {
-        const count = document.querySelectorAll('[name="weekday"]:checked').length;
-        $("schedule-rule").value = count === 7 ? "every_day" : count ? "weekdays" : "once";
-        $("schedule-date-picker").value = $("schedule-dates").value = "";
-        setRule(true);
+        $("repeat-error").textContent = "";
+        renderRepeat();
         queuePreview();
     }
     document.querySelectorAll('[name="weekday"]').forEach(input => input.addEventListener("change", setWeekdays));
@@ -611,33 +745,58 @@
         setWeekdays();
         document.querySelectorAll('[name="weekday"]')[0].focus();
     });
-    $("schedule-date-picker").addEventListener("change", function () {
-        $("schedule-dates").value = this.value;
-        $("schedule-rule").value = this.value ? "dates" : "once";
+    $("clear-weekdays").addEventListener("click", () => {
         document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
-        setRule(true);
+        setWeekdays();
+        document.querySelectorAll('[name="weekday"]')[0].focus();
     });
-    $("clear-schedule-date").addEventListener("click", () => {
-        $("schedule-date-picker").value = $("schedule-dates").value = "";
-        $("schedule-rule").value = "once";
-        document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
-        setRule(true);
+    $("schedule-date-picker").addEventListener("change", () => {
+        $("repeat-error").textContent = "";
+        renderRepeat();
         queuePreview();
     });
-    $("schedule-dates").addEventListener("input", () => {
+    $("clear-schedule-date").addEventListener("click", () => {
         $("schedule-date-picker").value = "";
-        setRule();
+        $("repeat-error").textContent = "";
+        renderRepeat();
+        queuePreview();
     });
-    $("schedule-calendar-mode").addEventListener("change", function () {
-        if (this.value !== "none" && $("schedule-rule").value === "once") {
-            $("schedule-rule").value = "every_day";
-            document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = true);
-            setRule();
-        }
+    $("schedule-dates-picker").addEventListener("change", () => { $("repeat-error").textContent = ""; });
+    $("add-schedule-date").addEventListener("click", () => {
+        const value = $("schedule-dates-picker").value;
+        if (!validDate(value)) { $("repeat-error").textContent = t("select_date"); return; }
+        setDateValues([...dateValues(), value]);
+        $("schedule-dates-picker").value = "";
+        $("repeat-error").textContent = "";
+        renderRepeat();
+        queuePreview();
+    });
+    $("clear-schedule-dates").addEventListener("click", () => {
+        setDateValues([]);
+        $("repeat-error").textContent = "";
+        renderRepeat();
+        queuePreview();
+    });
+    $("schedule-skip-holidays").addEventListener("change", () => {
+        renderRepeat();
+        queuePreview();
+    });
+    ["input", "change"].forEach(event => $("schedule-time").addEventListener(event, () => {
+        $("schedule-time-error").textContent = "";
+        renderRepeat();
+    }));
+    $("schedule-offset").addEventListener("input", () => {
+        $("schedule-offset-error").textContent = "";
+        renderRepeat();
+    });
+    $("schedule-calendar-mode").addEventListener("change", () => {
+        $("calendar-source-error").textContent = "";
         setCalendarMode();
+        queuePreview();
     });
     $("schedule-calendar-scope").addEventListener("change", () => {
         calendarTarget = null;
+        $("calendar-source-error").textContent = "";
         loadCalendarTargets();
     });
     $("schedule-calendar-target").addEventListener("change", function () {
@@ -646,9 +805,13 @@
         if (event) calendarTarget = {source_id: event.source_id, uid: event.uid, scope,
             recurrence_id: scope === "series" ? "" : event.recurrence_id || "", title: (event.text || t("calendar_untitled")).slice(0, 500)};
         else if (!this.value) calendarTarget = null;
+        $("calendar-source-error").textContent = "";
         renderCalendarTargets();
     });
-    $("refresh-calendar-targets").addEventListener("click", loadCalendarTargets);
+    $("refresh-calendar-targets").addEventListener("click", () => {
+        $("calendar-source-error").textContent = "";
+        loadCalendarTargets();
+    });
     ["input", "change"].forEach(event => $("schedule-form").addEventListener(event, queuePreview));
     $("schedule-volume").addEventListener("input", function () {
         $("schedule-volume-value").textContent = this.value + "%";
@@ -661,17 +824,26 @@
         notice(t(played ? "sound_previewed" : "audio_unavailable"), !played);
     });
     function scheduleData() {
-        const id = $("schedule-id").value;
-        const rule = {}, mode = $("schedule-rule").value;
+        const id = $("schedule-id").value, mode = repeatMode();
+        let rule = {};
         if (mode === "weekdays") {
-            rule.weekdays = Array.from(document.querySelectorAll('[name="weekday"]:checked'), input => Number(input.value));
-            if (!rule.weekdays.length) throw new Error(t("select_weekday"));
+            const days = selectedWeekdays().sort((a, b) => a - b);
+            if (!days.length) throw fail("select_weekday", "repeat");
+            rule = {weekdays: days};
+        } else if (mode === "workday_only") {
+            rule = {workday_only: true};
+        } else if (mode === "holiday_only") {
+            rule = {holiday_only: true};
         } else if (mode === "dates") {
-            rule.dates = $("schedule-dates").value.split(",").map(value => value.trim());
-            if (rule.dates.some(value => !validDate(value))) throw new Error(t("select_date"));
-        } else if (mode !== "every_day" && mode !== "once") rule[mode] = true;
-        if ($("schedule-skip-holidays").checked && mode === "holiday_only") throw new Error(t("holiday_conflict"));
-        const data = {rule: rule, enabled: $("schedule-enabled").checked || !!editorPausedUntil, skip_holidays: $("schedule-skip-holidays").checked};
+            const dates = dateValues();
+            if (!dates.length || dates.some(value => !validDate(value))) throw fail("select_date", "repeat");
+            rule = {dates: dates.sort()};
+        }
+        const data = {
+            rule: rule,
+            enabled: $("schedule-enabled").checked || !!editorPausedUntil,
+            skip_holidays: skipHolidaysVisible() && $("schedule-skip-holidays").checked
+        };
         if (editorPausedUntil && $("schedule-enabled").checked) {
             const schedule = schedules.find(item => item.id === id);
             data.skipped_occurrences = schedule.skipped_occurrences.filter(value => Date.parse(value) < serverNow());
@@ -683,23 +855,30 @@
         data.browser_volume = Number($("schedule-volume").value);
         const calendarMode = $("schedule-calendar-mode").value;
         if (calendarMode === "event" && !data.time) data.time = "07:30";
-        if (calendarMode !== "event" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.time) || ($("schedule-time")._clockTimeControl || {}).invalid)) throw new Error(t("select_time"));
+        if (calendarMode !== "event" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.time) || ($("schedule-time")._clockTimeControl || {}).invalid)) throw fail("select_time", "time");
         if (mode === "once") {
-            const now = serverNow();
-            if (now === null) throw new Error(t("preview_failed"));
-            const today = new Date(now + 8 * 3600000).toISOString().slice(0, 10);
-            const target = Date.parse(today + "T" + data.time + ":00+08:00");
-            rule.dates = [new Date(target + 8 * 3600000 + (target < now ? 86400000 : 0)).toISOString().slice(0, 10)];
+            const chosen = $("schedule-date-picker").value;
+            if (chosen) {
+                if (!validDate(chosen)) throw fail("select_date", "repeat");
+                if (onceDateIsPast(chosen) && chosen !== originalOnceDate()) throw fail("once_date_past", "repeat");
+                data.rule = {dates: [chosen]};
+            } else {
+                const now = serverNow();
+                if (now === null) throw fail("preview_failed", "repeat");
+                const today = new Date(now + 8 * 3600000).toISOString().slice(0, 10);
+                const target = Date.parse(today + "T" + data.time + ":00+08:00");
+                data.rule = {dates: [new Date(target + 8 * 3600000 + (target < now ? 86400000 : 0)).toISOString().slice(0, 10)]};
+            }
         }
         if (calendarMode !== "none") {
             const sourceIds = selectedCalendarSources();
-            if (!sourceIds.length || sourceIds.some(id => !calendarSources.some(source => source.id === id))) throw new Error(t("select_calendar_source"));
-            if (calendarMode === "event" && !/^\d+$/.test($("schedule-offset").value)) throw new Error(t("calendar_offset_error"));
+            if (!sourceIds.length || sourceIds.some(id => !calendarSources.some(source => source.id === id))) throw fail("select_calendar_source", "calendar");
+            if (calendarMode === "event" && !/^\d+$/.test($("schedule-offset").value)) throw fail("calendar_offset_error", "offset");
             const offset = calendarMode === "event" ? Number($("schedule-offset").value) : 0;
-            if (!Number.isInteger(offset) || offset < 0 || offset > 1440) throw new Error(t("calendar_offset_error"));
+            if (!Number.isInteger(offset) || offset < 0 || offset > 1440) throw fail("calendar_offset_error", "offset");
             data.calendar_link = {mode: calendarMode, source_ids: sourceIds, offset_minutes: offset};
             if ($("schedule-calendar-scope").value !== "all") {
-                if (!calendarTarget || !sourceIds.includes(calendarTarget.source_id)) throw new Error(t("calendar_target_required"));
+                if (!calendarTarget || !sourceIds.includes(calendarTarget.source_id)) throw fail("calendar_target_required", "calendar");
                 data.calendar_link.target = Object.assign({}, calendarTarget);
             }
         } else if (id && schedules.some(schedule => schedule.id === id && schedule.calendar_link)) {
@@ -710,7 +889,7 @@
     async function saveEditor(skipNext = false) {
         if (saving) return;
         const button = $("schedule-form").querySelector('[type="submit"]');
-        $("form-error").textContent = "";
+        clearFormErrors();
         saving = true;
         button.disabled = true;
         try {
@@ -739,7 +918,7 @@
                 if (data.skip_next) notice(latest && latest.next_occurrence && isRecurringAlarm(data) ? resumeMessage(data.skip_next) : format("skipped", {datetime: eventTime(data.skip_next)}));
                 else notice(latest && latest.next_occurrence ? format("saved_next", {duration: remainingTime(latest.next_occurrence)}) : t("saved") + " · " + t(data.enabled ? "none" : "disabled"));
             } catch (error) { notice(t("saved") + " · " + t("preview_failed")); }
-        } catch (error) { $("form-error").textContent = error.message === "Occurrence changed; preview again" ? t("pause_stale") : error.message || t("request_failed"); }
+        } catch (error) { showFormError(error); }
         finally { saving = false; button.disabled = false; renderEditorActions(); }
     }
     $("schedule-form").addEventListener("submit", function (event) {
