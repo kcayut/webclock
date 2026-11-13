@@ -76,7 +76,7 @@
         var endTime = root.querySelector('[data-range-time="end"]');
         var viewButtons = root.querySelectorAll('[data-range-view]');
         var state = {view: 'month', cursor: startOfDay(new Date()), start: null, end: null,
-            selecting: false, anchor: null, lastPointer: 0};
+            selecting: false, anchor: null, lastPointer: 0, container: null};
 
         function syncTimes() {
             startTime.value = timeOf(state.start);
@@ -131,16 +131,26 @@
             yearView.hidden = view !== 'year';
             render();
         }
-        function paintMonthSelection() {
+        function paintDaySelection(container) {
             if (!state.start || !state.end) return;
             var first = startOfDay(state.start) <= startOfDay(state.end) ? startOfDay(state.start) : startOfDay(state.end);
             var last = startOfDay(state.start) <= startOfDay(state.end) ? startOfDay(state.end) : startOfDay(state.start);
-            monthView.querySelectorAll('[data-range-date]').forEach(function (cell) {
+            container.querySelectorAll('[data-range-date]').forEach(function (cell) {
                 var date = parseDay(cell.getAttribute('data-range-date'));
                 var selected = date && date >= first && date <= last;
                 cell.classList.toggle('is-selected', !!selected);
                 cell.classList.toggle('is-start', !!selected && sameDay(date, state.start));
                 cell.classList.toggle('is-end', !!selected && sameDay(date, state.end));
+            });
+        }
+        function paintMonthSelection() { paintDaySelection(monthView); }
+        function paintYearSelection() {
+            paintDaySelection(yearView);
+            var year = state.cursor.getFullYear();
+            yearView.querySelectorAll('[data-range-year-month]').forEach(function (card) {
+                var month = Number(card.getAttribute('data-range-year-month'));
+                var first = new Date(year, month, 1), next = new Date(year, month + 1, 1);
+                card.classList.toggle('is-selected', !!(state.start && state.end && state.end >= first && state.start < next));
             });
         }
         function paintWeekSelection() {
@@ -210,21 +220,23 @@
             var year = state.cursor.getFullYear(), html = '<div class="range-year-grid">';
             for (var month = 0; month < 12; month++) {
                 var first = new Date(year, month, 1), start = startOfWeek(first);
-                var selected = state.start && state.end && state.end >= first &&
-                    state.start < new Date(year, month + 1, 1);
-                html += '<button type="button" class="range-year-month' + (selected ? ' is-selected' : '') +
-                    '" data-range-month="' + month + '"><strong>' +
-                    formatDate(first, {month: 'long'}) + '</strong><span class="range-mini-week">';
+                html += '<div class="range-year-month" data-range-year-month="' + month + '">' +
+                    '<button type="button" class="range-year-title" data-range-month="' + month + '"><strong>' +
+                    formatDate(first, {month: 'long'}) + '</strong></button><span class="range-mini-week">';
                 for (var w = 0; w < 7; w++) html += '<i>' + formatDate(addDays(start, w), {weekday: 'narrow'}) + '</i>';
                 html += '</span><span class="range-mini-days">';
                 for (var i = 0; i < 42; i++) {
                     var day = addDays(start, i);
-                    html += '<i class="' + (day.getMonth() !== month ? 'is-outside' : '') +
-                        (sameDay(day, new Date()) ? ' is-today' : '') + '">' + day.getDate() + '</i>';
+                    var classes = ['range-year-day'];
+                    if (day.getMonth() !== month) classes.push('is-outside');
+                    if (sameDay(day, new Date())) classes.push('is-today');
+                    html += '<button type="button" class="' + classes.join(' ') + '" data-range-date="' + dayKey(day) +
+                        '" aria-label="' + formatDate(day, {dateStyle: 'full'}) + '">' + day.getDate() + '</button>';
                 }
-                html += '</span></button>';
+                html += '</span></div>';
             }
             yearView.innerHTML = html + '</div>';
+            paintYearSelection();
         }
         function render() {
             setLabel();
@@ -235,28 +247,32 @@
         function finishSelection() {
             if (!state.selecting) return;
             state.selecting = false;
+            state.container = null;
             if (state.start && state.end) commit();
         }
         root.addEventListener('pointerdown', function (event) {
             var day = event.target.closest('[data-range-date]');
-            if (!day || !monthView.contains(day)) return;
+            if (!day) return;
+            var container = monthView.contains(day) ? monthView : (yearView.contains(day) ? yearView : null);
+            if (!container) return;
             var date = parseDay(day.getAttribute('data-range-date'));
             if (!date) return;
             event.preventDefault();
             state.lastPointer = Date.now();
             state.anchor = date;
+            state.container = container;
             var times = responseTimes();
             state.start = withTime(date, times.start);
             state.end = withTime(date, times.end);
             state.selecting = true;
-            paintMonthSelection();
+            if (container === monthView) paintMonthSelection(); else paintYearSelection();
             paintSummary();
         });
         document.addEventListener('pointermove', function (event) {
-            if (!state.selecting || !state.anchor) return;
+            if (!state.selecting || !state.anchor || !state.container) return;
             var element = document.elementFromPoint(event.clientX, event.clientY);
             var day = element && element.closest ? element.closest('[data-range-date]') : null;
-            if (!day || !monthView.contains(day)) return;
+            if (!day || !state.container.contains(day)) return;
             var date = parseDay(day.getAttribute('data-range-date'));
             if (!date) return;
             var times = responseTimes();
@@ -267,7 +283,7 @@
                 state.start = withTime(state.anchor, times.start);
                 state.end = withTime(date, times.end);
             }
-            paintMonthSelection();
+            if (state.container === monthView) paintMonthSelection(); else paintYearSelection();
             paintSummary();
         });
         document.addEventListener('pointerup', finishSelection);
@@ -316,9 +332,20 @@
         });
         yearView.addEventListener('click', function (event) {
             var month = event.target.closest('[data-range-month]');
-            if (!month) return;
-            state.cursor = new Date(state.cursor.getFullYear(), Number(month.getAttribute('data-range-month')), 1);
-            setView('month');
+            if (month) {
+                state.cursor = new Date(state.cursor.getFullYear(), Number(month.getAttribute('data-range-month')), 1);
+                setView('month');
+                return;
+            }
+            var day = event.target.closest('[data-range-date]');
+            if (!day || state.selecting || Date.now() - state.lastPointer < 400) return;
+            var date = parseDay(day.getAttribute('data-range-date'));
+            if (!date) return;
+            var times = responseTimes();
+            state.start = withTime(date, times.start);
+            state.end = withTime(date, times.end);
+            commit();
+            paintYearSelection();
         });
         viewButtons.forEach(function (button) {
             button.addEventListener('click', function () { setView(button.getAttribute('data-range-view')); });

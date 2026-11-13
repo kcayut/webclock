@@ -314,6 +314,9 @@ details[open] > summary { margin-bottom: 10px; }
 .group-choice span { overflow-wrap: anywhere; min-width: 0; }
 .announcement-target-list { max-height: 240px; overflow-y: auto; }
 .announcement-summary { overflow-wrap: anywhere; }
+.note-targets { margin-top: 18px; }
+.note-target-preview .field-label { display: block; margin-bottom: 6px; font-size: 15px; font-weight: 600; }
+.note-target-preview [data-target-preview] { margin: 0; white-space: pre-line; }
 .group-calendar-node { padding: 4px 0; }
 .group-calendar-node > summary { cursor: pointer; font-size: 15px; font-weight: 500; }
 .group-calendar-node > summary .group-choice { display: inline-flex; vertical-align: middle; max-width: calc(100% - 24px); margin: 0; }

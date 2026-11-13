@@ -43,14 +43,20 @@
 .range-slot.is-start, .range-slot.is-end { background: var(--accent); }
 .range-year-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .range-year-month { display: block; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: left; }
-.range-year-month:hover { border-color: var(--accent); background: var(--hover); }
 .range-year-month.is-selected { border-color: var(--accent); background: var(--tint); color: var(--tint-ink); }
-.range-year-month > strong { display: block; margin-bottom: 6px; font-size: 14px; }
+.range-year-title { display: block; width: 100%; min-height: 0; margin: 0 0 6px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font-size: 14px; }
+.range-year-title:hover { border-color: transparent; background: transparent; color: var(--accent); }
+.range-year-title strong { display: block; }
 .range-mini-week, .range-mini-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; color: var(--muted); font-size: 10px; text-align: center; }
-.range-mini-week i, .range-mini-days i { display: block; min-height: 16px; line-height: 16px; font-style: normal; }
-.range-mini-days i.is-outside { opacity: .35; }
-.range-mini-days i.is-today { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 3px; }
-.range-picker-times { margin-top: 14px; }
+.range-mini-week i { display: block; min-height: 16px; line-height: 16px; font-style: normal; }
+.range-mini-days { margin-top: 2px; }
+.range-year-day { display: block; min-height: 16px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: inherit; font-size: 10px; line-height: 16px; font-weight: 400; }
+.range-year-day:hover { border-color: transparent; background: var(--hover); color: var(--ink); }
+.range-year-day.is-outside { opacity: .35; }
+.range-year-day.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
+.range-year-day.is-selected { background: var(--tint); color: var(--tint-ink); }
+.range-year-day.is-start, .range-year-day.is-end { background: var(--accent); color: var(--accent-ink); }
+.range-picker-times { margin: 0 0 14px; }
 .range-picker-times .field { margin-bottom: 0; }
 .range-picker-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .range-picker-panel .help { margin: 8px 0 0; }

@@ -30,11 +30,21 @@
                 <span class="range-picker-summary" data-range-summary></span>
             </button>
             <div id="range-panel-{{ suffix }}" class="range-picker-panel" data-range-panel hidden>
+                <div class="range-picker-times fields">
+                    <div class="field">
+                        <label for="range-time-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
+                        <input id="range-time-start-{{ suffix }}" type="time" data-range-time="start">
+                    </div>
+                    <div class="field">
+                        <label for="range-time-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
+                        <input id="range-time-end-{{ suffix }}" type="time" data-range-time="end">
+                    </div>
+                </div>
                 <div class="range-picker-toolbar">
                     <div class="range-picker-views" role="tablist" aria-label="{{ translations[language].display_window }}">
+                        <button type="button" role="tab" id="range-tab-year-{{ suffix }}" aria-controls="range-view-year-{{ suffix }}" data-range-view="year" aria-selected="false" data-i18n="range_year">{{ translations[language].range_year }}</button>
                         <button type="button" role="tab" id="range-tab-month-{{ suffix }}" aria-controls="range-view-month-{{ suffix }}" data-range-view="month" aria-selected="true" data-i18n="range_month">{{ translations[language].range_month }}</button>
                         <button type="button" role="tab" id="range-tab-week-{{ suffix }}" aria-controls="range-view-week-{{ suffix }}" data-range-view="week" aria-selected="false" data-i18n="range_week">{{ translations[language].range_week }}</button>
-                        <button type="button" role="tab" id="range-tab-year-{{ suffix }}" aria-controls="range-view-year-{{ suffix }}" data-range-view="year" aria-selected="false" data-i18n="range_year">{{ translations[language].range_year }}</button>
                     </div>
                     <div class="range-picker-nav">
                         <button type="button" data-range-prev data-i18n-aria-label="range_prev" aria-label="{{ translations[language].range_prev }}">&#8249;</button>
@@ -46,16 +56,6 @@
                 <div id="range-view-month-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-month-{{ suffix }}" data-range-view-panel="month"></div>
                 <div id="range-view-week-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-week-{{ suffix }}" data-range-view-panel="week" hidden></div>
                 <div id="range-view-year-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-year-{{ suffix }}" data-range-view-panel="year" hidden></div>
-                <div class="range-picker-times fields">
-                    <div class="field">
-                        <label for="range-time-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
-                        <input id="range-time-start-{{ suffix }}" type="time" data-range-time="start">
-                    </div>
-                    <div class="field">
-                        <label for="range-time-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
-                        <input id="range-time-end-{{ suffix }}" type="time" data-range-time="end">
-                    </div>
-                </div>
                 <p class="help" data-i18n="range_hint">{{ translations[language].range_hint }}</p>
                 <div class="range-picker-actions">
                     <button type="button" data-range-clear data-i18n="range_clear">{{ translations[language].range_clear }}</button>
@@ -87,11 +87,8 @@
         </div>
     </fieldset>
     {% endmacro %}
-    {% macro announcement_fields(values, suffix) %}
+    {% macro note_kind_field(values, suffix) %}
         {% set is_announcement = values.get('announcement', '1' if values.get('announcement_targets') else '') == '1' %}
-        {% set targets = values.get('announcement_targets', values.get('targets', {})) %}
-        {% set selected_groups = values.getlist('announcement_group_ids') if values.getlist is defined else targets.get('group_ids', []) %}
-        {% set selected_devices = values.getlist('announcement_device_ids') if values.getlist is defined else targets.get('device_ids', []) %}
         <div class="field">
             <label for="note-kind-{{ suffix }}" data-i18n="note_kind">{{ translations[language].note_kind }}</label>
             <select id="note-kind-{{ suffix }}" name="announcement" onchange="setAnnouncementMode(this)">
@@ -99,34 +96,43 @@
                 <option value="1" {% if is_announcement %}selected{% endif %} data-i18n="announcements">{{ translations[language].announcements }}</option>
             </select>
         </div>
-        <fieldset>
-            <legend data-i18n="note_targets">{{ translations[language].note_targets }}</legend>
+    {% endmacro %}
+    {% macro target_fields(values, suffix) %}
+        {% set is_announcement = values.get('announcement', '1' if values.get('announcement_targets') else '') == '1' %}
+        {% set targets = values.get('announcement_targets', values.get('targets', {})) %}
+        {% set selected_groups = values.getlist('announcement_group_ids') if values.getlist is defined else targets.get('group_ids', []) %}
+        {% set selected_devices = values.getlist('announcement_device_ids') if values.getlist is defined else targets.get('device_ids', []) %}
+        <div class="note-targets" data-note-targets>
             <p class="help" data-i18n="note_targets_hint">{{ translations[language].note_targets_hint }}</p>
             {% for key, items, selected_ids, title in [('group_ids', announcement_groups, selected_groups, 'announcement_groups'), ('device_ids', announcement_devices, selected_devices, 'announcement_devices')] %}
             <fieldset>
                 <legend data-i18n="{{ title }}">{{ translations[language][title] }}</legend>
                 <div class="announcement-target-list">
                     {% for item in items %}
-                    <label class="group-choice"><input type="checkbox" name="announcement_{{ key }}" value="{{ item.id }}" {% if item.id in selected_ids %}checked{% endif %}><span>{{ item.name or item.id }}{% if key == 'device_ids' %} · {{ item.group_name or item.group_id }}{% endif %}</span></label>
+                    <label class="group-choice"><input type="checkbox" name="announcement_{{ key }}" value="{{ item.id }}" {% if item.id in selected_ids %}checked{% endif %} data-target-label="{{ item.name or item.id }}{% if key == 'device_ids' %} · {{ item.group_name or item.group_id }}{% endif %}"><span>{{ item.name or item.id }}{% if key == 'device_ids' %} · {{ item.group_name or item.group_id }}{% endif %}</span></label>
                     {% endfor %}
                     {% for id in selected_ids if id not in items|map(attribute='id')|list %}
-                    <label class="group-choice"><input type="checkbox" name="announcement_{{ key }}" value="{{ id }}" checked><span>{{ id }} · <span data-i18n="announcement_missing_target">{{ translations[language].announcement_missing_target }}</span></span></label>
+                    <label class="group-choice"><input type="checkbox" name="announcement_{{ key }}" value="{{ id }}" checked data-target-label="{{ id }}"><span>{{ id }} · <span data-i18n="announcement_missing_target">{{ translations[language].announcement_missing_target }}</span></span></label>
                     {% endfor %}
                     {% if not items and not selected_ids %}<p class="help" data-i18n="announcement_no_targets">{{ translations[language].announcement_no_targets }}</p>{% endif %}
                 </div>
             </fieldset>
             {% endfor %}
-        </fieldset>
-        <fieldset data-announcement-options {% if not is_announcement %}hidden disabled{% endif %}>
-            <div class="field">
-                <label for="announcement-expires-{{ suffix }}" data-i18n="announcement_expires">{{ translations[language].announcement_expires }}</label>
-                <input id="announcement-expires-{{ suffix }}" name="expires_at" type="datetime-local" value="{{ values.get('announcement_expires_local', values.get('expires_at', '')) }}">
-                <p class="help" data-i18n="announcement_expiry_hint">{{ translations[language].announcement_expiry_hint }}</p>
+            <div class="field note-target-preview">
+                <span class="field-label" data-i18n="note_targets">{{ translations[language].note_targets }}</span>
+                <p class="help" data-target-preview role="status" aria-live="polite"></p>
             </div>
-        </fieldset>
+            <fieldset data-announcement-options {% if not is_announcement %}hidden disabled{% endif %}>
+                <div class="field">
+                    <label for="announcement-expires-{{ suffix }}" data-i18n="announcement_expires">{{ translations[language].announcement_expires }}</label>
+                    <input id="announcement-expires-{{ suffix }}" name="expires_at" type="datetime-local" value="{{ values.get('announcement_expires_local', values.get('expires_at', '')) }}">
+                    <p class="help" data-i18n="announcement_expiry_hint">{{ translations[language].announcement_expiry_hint }}</p>
+                </div>
+            </fieldset>
+        </div>
     {% endmacro %}
     {% macro note_fields(values, suffix) %}
-        {{ announcement_fields(values, suffix) }}
+        {{ note_kind_field(values, suffix) }}
         <div class="field">
         <label for="note-text-{{ suffix }}" data-i18n="event_text">{{ translations[language].event_text }}</label>
         <input id="note-text-{{ suffix }}" type="text" name="note_text" maxlength="1000" value="{{ values.get('note_text', values.get('text', '')) }}" required>
@@ -304,6 +310,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ note_fields(draft, 'add') }}
             {{ window_fields(draft, 'add') }}
+            {{ target_fields(draft, 'add') }}
             <div class="actions"><button type="submit" class="primary" data-i18n="add">{{ translations[language].add }}</button></div>
         </form>
     </section>
@@ -377,6 +384,7 @@
                     <div class="management-overlay-body">
                     {{ note_fields(request.form if editing_id == note.id else note, note.id) }}
                     {{ window_fields(request.form if editing_id == note.id else note, note.id) }}
+                    {{ target_fields(request.form if editing_id == note.id else note, note.id) }}
                     {% if not note.get('announcement_targets') and not note.get('targets') %}<div data-note-assignment-wrapper {% if editing_id == note.id and request.form.get('announcement') == '1' %}hidden{% endif %}><div data-note-group-editor="{{ note.id }}"></div></div>{% endif %}
                     </div>
                     <div class="management-overlay-actions">
@@ -580,6 +588,7 @@
                 el.textContent = t('weekdays')[Number(el.getAttribute('data-weekday'))];
             });
             applyTimeFormat(currentTimeFormat);
+            if (typeof updateTargetPreviews === 'function') updateTargetPreviews();
             document.getElementById('settings-status').textContent = settingsMessage ? t(settingsMessage) : '';
             if (window.CalendarSettings) window.CalendarSettings.applyLanguage();
             if (window.PortableBackup) window.PortableBackup.applyLanguage();
@@ -606,6 +615,28 @@
             fields.hidden = fields.disabled = select.value !== '1';
             var groups = form.querySelector('[data-note-assignment-wrapper]');
             if (groups) groups.hidden = select.value === '1';
+            var targets = form.querySelector('[data-note-targets]');
+            if (targets && typeof updateTargetPreview === 'function') updateTargetPreview(targets);
+        }
+
+        function updateTargetPreview(container) {
+            var preview = container.querySelector('[data-target-preview]');
+            if (!preview) return;
+            function selected(name) {
+                return Array.from(container.querySelectorAll('input[name="' + name + '"]:checked')).map(function (input) {
+                    return input.getAttribute('data-target-label') || input.value;
+                });
+            }
+            var groups = selected('announcement_group_ids'), devices = selected('announcement_device_ids'), lines = [];
+            if (groups.length) lines.push(t('announcement_groups') + ': ' + groups.join(' · '));
+            if (devices.length) lines.push(t('announcement_devices') + ': ' + devices.join(' · '));
+            var form = container.closest('form'), kind = form && form.querySelector('select[name="announcement"]');
+            var noneKey = kind && kind.value === '1' ? 'note_targets_none_announcement' : 'note_targets_none';
+            preview.textContent = lines.length ? lines.join('\n') : t(noneKey);
+        }
+
+        function updateTargetPreviews() {
+            document.querySelectorAll('[data-note-targets]').forEach(updateTargetPreview);
         }
 
         function applyTimeFormat(format) {
@@ -759,6 +790,11 @@
                 select.disabled = false;
             });
         }
+
+        document.querySelectorAll('[data-note-targets]').forEach(function (container) {
+            container.addEventListener('change', function () { updateTargetPreview(container); });
+        });
+        updateTargetPreviews();
 
         var editingDialog = document.querySelector('dialog[data-editing="1"]');
         if (editingDialog) editingDialog.showModal();

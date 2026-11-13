@@ -14,6 +14,7 @@ assert.match(admin, /data-tab-group="calendar"/);
 assert.match(admin, /data-filter-list="calendar"/);
 assert.match(admin, /id="calendar-device-filter"/);
 assert.match(admin, /data-i18n="note_targets"/);
+assert.match(admin, /data-target-preview/);
 assert.match(admin, /data-range-picker/);
 assert.match(admin, /range-picker\.css/);
 assert.match(admin, /range-picker\.js/);
