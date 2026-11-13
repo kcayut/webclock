@@ -86,7 +86,6 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .date-chip-remove { width: 32px; min-height: 32px; padding: 0; border-color: transparent; border-radius: 50%; color: var(--muted); font-size: 18px; }
 #repeat-notice:not(:empty) { color: var(--accent); font-size: 14px; }
 #repeat-mode-hint:empty { display: none; }
-#repeat-summary:not(:empty) { margin-top: 18px; }
 .calendar-source-field { padding: 0; margin: 4px 0 0; border: 0; min-width: 0; }
 .calendar-source-options { display: flex; flex-wrap: wrap; gap: 4px 24px; }
 .calendar-source-options .check { overflow-wrap: anywhere; min-width: 0; }
