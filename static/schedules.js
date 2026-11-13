@@ -394,6 +394,7 @@
             timeFormat = data.time_format;
             document.body.setAttribute("data-time-format", timeFormat);
             refreshTimeInputs();
+            if (!$("editor").hidden) renderRepeat();
             renderDevices();
         }
         syncServerTime(data.server_time);
@@ -485,13 +486,13 @@
         return schedule && !schedule.calendar_link && schedule.rule.dates && schedule.rule.dates.length === 1 ?
             schedule.rule.dates[0] : null;
     }
-    function repeatError() {
+    function repeatErrorKey() {
         const mode = repeatMode();
-        if (mode === "weekdays" && !selectedWeekdays().length) return t("select_weekday");
-        if (mode === "dates" && !dateValues().length) return t("select_date");
+        if (mode === "weekdays" && !selectedWeekdays().length) return "select_weekday";
+        if (mode === "dates" && (!dateValues().length || dateValues().some(value => !validDate(value)))) return "select_date";
         if (mode === "once" && $("schedule-date-picker").value) {
-            if (!validDate($("schedule-date-picker").value)) return t("select_date");
-            if (onceDateIsPast($("schedule-date-picker").value) && $("schedule-date-picker").value !== originalOnceDate()) return t("once_date_past");
+            if (!validDate($("schedule-date-picker").value)) return "select_date";
+            if (onceDateIsPast($("schedule-date-picker").value) && $("schedule-date-picker").value !== originalOnceDate()) return "once_date_past";
         }
         return "";
     }
@@ -504,7 +505,7 @@
             days.length === 7 ? t("every_day") : format("weekly_summary", {days: days.map(day => t("weekdays")[day - 1]).join(" / ")});
         else if (mode === "dates") repeat = dates.length ? dates.join(" / ") : t("dates");
         else repeat = t(mode);
-        const trigger = $("schedule-calendar-mode").value, time = $("schedule-time").value || "--:--";
+        const trigger = $("schedule-calendar-mode").value, time = displayTime($("schedule-time").value) || "--:--";
         const when = trigger === "event" ? format("repeat_when_event", {minutes: $("schedule-offset").value || "0"}) :
             trigger === "day" ? format("repeat_when_day", {time}) : format("repeat_when_at", {time});
         return format("repeat_summary_pair", {repeat, when}) +
@@ -527,7 +528,8 @@
         $("clear-schedule-date").hidden = !$("schedule-date-picker").value;
         const hint = {every_day: "repeat_every_day_hint", workday_only: "repeat_workday_hint", holiday_only: "repeat_holiday_hint"}[mode];
         $("repeat-mode-hint").textContent = hint ? t(hint) : "";
-        $("repeat-error").textContent = repeatError();
+        const errorKey = repeatErrorKey();
+        $("repeat-error").textContent = errorKey ? t(errorKey) : "";
         $("repeat-summary").textContent = repeatSummary();
     }
     function fail(key, field) {
@@ -670,8 +672,6 @@
         $("schedule-repeat-mode").value = "once";
         renderDateList();
         $("schedule-id").value = schedule ? schedule.id : "";
-        $("schedule-sound-field").hidden = false;
-        $("schedule-volume-field").hidden = false;
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
         $("schedule-volume").value = String(schedule && schedule.browser_volume != null ? schedule.browser_volume : 100);
         $("schedule-volume-value").textContent = $("schedule-volume").value + "%";
@@ -824,10 +824,11 @@
     });
     function scheduleData() {
         const id = $("schedule-id").value, mode = repeatMode();
+        const errorKey = repeatErrorKey();
+        if (errorKey) throw fail(errorKey, "repeat");
         let rule = {};
         if (mode === "weekdays") {
             const days = selectedWeekdays().sort((a, b) => a - b);
-            if (!days.length) throw fail("select_weekday", "repeat");
             rule = {weekdays: days};
         } else if (mode === "workday_only") {
             rule = {workday_only: true};
@@ -835,7 +836,6 @@
             rule = {holiday_only: true};
         } else if (mode === "dates") {
             const dates = dateValues();
-            if (!dates.length || dates.some(value => !validDate(value))) throw fail("select_date", "repeat");
             rule = {dates: dates.sort()};
         }
         const data = {
@@ -858,8 +858,6 @@
         if (mode === "once") {
             const chosen = $("schedule-date-picker").value;
             if (chosen) {
-                if (!validDate(chosen)) throw fail("select_date", "repeat");
-                if (onceDateIsPast(chosen) && chosen !== originalOnceDate()) throw fail("once_date_past", "repeat");
                 data.rule = {dates: [chosen]};
             } else {
                 const now = serverNow();

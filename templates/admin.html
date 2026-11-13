@@ -696,7 +696,7 @@
             var select = document.getElementById('time-format-select');
             select.disabled = true;
             applyTimeFormat(format);
-            return postSettings({time_format: format}, true).then(function (result) {
+            return postSettings({time_format: format}).then(function (result) {
                 if (result) {
                     applyTimeFormat(format);
                 }
@@ -832,7 +832,7 @@
             if (select.disabled) return;
             select.disabled = true;
             var requested = select.value;
-            postSettings({language: requested}, true).then(function (result) {
+            postSettings({language: requested}).then(function (result) {
                 if (result) displayLanguage = requested;
                 select.disabled = false;
             });

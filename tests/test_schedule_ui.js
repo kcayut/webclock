@@ -325,6 +325,14 @@ const completionTimeout = setTimeout(() => {
     qa.syncServerTime("2026-09-30T10:00:00+08:00");
     assert.equal(qa.remainingTime("2026-10-01T12:03:00+08:00"), "1 d 2 hr 3 min");
     assert.equal(qa.remainingTime("2026-09-30T10:00:30+08:00"), "Under 1 min");
+    for (const [date, message] of [["2026-02-30", "Enter a valid date."],
+        ["2026-09-29", "This date has passed. Choose today or a later date."]]) {
+        $("schedule-date-picker").value = date;
+        await $("schedule-date-picker").trigger("change");
+        assert.equal($("repeat-error").textContent, message);
+        assert.throws(() => qa.scheduleData(), error => error.message === message && error.field === "repeat",
+            "One-time date errors agree in live feedback and saved payload validation");
+    }
     $("schedule-date-picker").value = "2026-10-10";
     await $("schedule-date-picker").trigger("change");
     assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-10"]}, "A one-time date only changes its own draft");
@@ -481,6 +489,7 @@ const completionTimeout = setTimeout(() => {
         assert.equal(displayedTime.children[1].className, "schedule-time-period", "English places the small AM / PM after the time");
         assert.equal($("schedule-name").value, "Unsaved time draft", "Changing the clock format preserves editor text");
         assert.equal($("schedule-time").value, "13:45", "Changing the clock format preserves canonical time");
+        assert.match($("repeat-summary").textContent, /Rings at 01:45 PM/, "The editor summary follows the selected time format without losing its draft");
     }
     assert.equal(body.getAttribute("data-time-format"), "12h");
     assert.equal(inputRefreshes.length, beforeFormatChange + 1, "Unchanged format polls preserve incomplete input drafts");
@@ -497,6 +506,7 @@ const completionTimeout = setTimeout(() => {
     scheduleReply(take('/schedules'), [row]);
     await restored;
     assert.equal(body.getAttribute("data-time-format"), "24h");
+    assert.match($("repeat-summary").textContent, /Rings at 13:45/, "Returning to 24-hour format refreshes the summary");
     assert.doesNotMatch(content($("device-list")), /10:00 AM/);
 
     const cancellingPause = button("schedule-list", "disable").trigger("click");
@@ -832,6 +842,8 @@ const completionTimeout = setTimeout(() => {
     assert.deepEqual(plain(qa.scheduleData().rule), {dates: ["2026-10-03", "2026-10-10"]});
     for (const invalid of ["", "2026-02-30", "not-a-date"]) {
         $("schedule-dates").value = invalid;
+        await $("schedule-repeat-mode").trigger("change");
+        assert.equal($("repeat-error").textContent, "Enter a valid date.", "Live validation uses the same rule as saving");
         await $("schedule-form").trigger("submit");
         assert.equal($("repeat-error").textContent, "Enter a valid date.");
         assert.equal(pending.length, 0, "Invalid dates must not send a request");
