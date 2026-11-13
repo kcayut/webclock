@@ -4,9 +4,34 @@
 
 ## 目前狀態
 
-- **[v1.2.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.2.0)，並設為最新正式版**。本版提供 Docker 安全更新、離線救援、worker 維護與 HA 版本對齊，並補修備份、安裝及回退流程。
+- **[v1.3.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.3.0)，並設為最新正式版**。本版整理管理頁與提醒表單，改善顯示時間區間選取，並維持既有備份與更新流程。
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
+
+<a id="release-1-3-0"></a>
+## 1.3.0 發行驗證（2026-11-13）
+
+- 發行提交：`2fdd595d2e5a55478c53a32534c114e6f6987717`；GitHub 與 Gitea 的 `v1.3.0` 已獨立回讀，指向同一提交。
+- [安裝與發行流程](https://github.com/kcayut/webclock/actions/runs/43396248421) 全部通過：Server 回歸、真實 HA 整合與卡片、Linux systemd、Docker 更新演練、`linux/amd64`／`linux/arm64` Server 與 App 映像，以及正式發布。
+- 公開 Release 的五個資產完整，版本為 `1.3.0`、非 draft、非 prerelease，並設為最新正式版。
+- 匿名讀取兩個 GHCR manifest 成功，皆包含 `linux/amd64` 與 `linux/arm64`。
+- [公開安裝與跨版本升級](https://github.com/kcayut/webclock/actions/runs/43397975057) 全部通過：以公開安裝器完成 systemd 新安裝，並以 v1.3.0 入口將 Docker v1.2.0 升級；版本、self 模式、資料保存與重啟後狀態均通過。
+
+發布流程記錄的多架構映像 manifest digest：
+
+| 映像 | Digest |
+| --- | --- |
+| `ghcr.io/kcayut/webclock:1.3.0` | `sha256:c05f1d9dbb03b00c353b824a9e880d1a81beb6d5a09d0f046705f01c4380c203` |
+| `ghcr.io/kcayut/webclock-addon:1.3.0` | `sha256:52cc52ed9e419a1db0e8897a4d0fdf0af6be207a9f2eba9dd105e7a45942dad6` |
+
+公開資產的 SHA256：
+
+| 檔案 | SHA256 |
+| --- | --- |
+| `install.sh` | `1b3a8caf886a75be0b9d7bd199314a6947a5cebdf175da0de5d43ea61c220e8d` |
+| `portable_docker_update.sh` | `78d07635d27d9f5264dc3d69873a0647fb6f7ab7148bd3522ba7b95fca6bb9c7` |
+| `webclock-1.3.0.tar.gz` | `5d732c8c0fd2fee66003902269452285d7227a91acba91cfe56835c11ca3d575` |
+| `webclock-clock-1.3.0.zip` | `899b803fdb26bf12effb02e0813316fd05c6d905602426468f969c9dd3e3997c` |
 
 <a id="release-1-2-0"></a>
 ## 1.2.0 發行驗證（2026-10-20）
