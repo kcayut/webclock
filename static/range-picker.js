@@ -453,21 +453,22 @@
             state.cursor = startOfDay(new Date());
             render();
         });
-        root.querySelector('[data-range-clear]').addEventListener('click', function () {
+        function clearSelection() {
             state.start = state.end = null;
+            state.selecting = false;
+            state.anchor = null;
+            state.container = null;
+            hideTooltip();
+            state.cursor = startOfDay(new Date());
             commit();
-            render();
-        });
+            if (!panel.hidden) render();
+        }
         function openPanel() {
             panel.hidden = false;
             toggle.setAttribute('aria-expanded', 'true');
             readInputs();
             render();
         }
-        root.querySelector('[data-range-done]').addEventListener('click', function () {
-            panel.hidden = true;
-            toggle.setAttribute('aria-expanded', 'false');
-        });
         toggle.addEventListener('click', function () {
             if (panel.hidden) openPanel();
             else {
@@ -520,6 +521,7 @@
         return {
             refresh: function () { readInputs(); if (!panel.hidden) render(); },
             open: openPanel,
+            clear: clearSelection,
             applyLanguage: function () { paintSummary(); if (!panel.hidden) render(); }
         };
     }
@@ -537,6 +539,10 @@
         open: function (element) {
             var root = resolvePicker(element);
             if (root && root._rangePicker) root._rangePicker.open();
+        },
+        clear: function (element) {
+            var root = resolvePicker(element);
+            if (root && root._rangePicker) root._rangePicker.clear();
         },
         applyLanguage: function () {
             roots.forEach(function (root) { if (root._rangePicker) root._rangePicker.applyLanguage(); });

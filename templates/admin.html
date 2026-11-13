@@ -69,10 +69,6 @@
                 <div id="range-view-week-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-week-{{ suffix }}" data-range-view-panel="week" hidden></div>
                 <div id="range-view-year-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-year-{{ suffix }}" data-range-view-panel="year" hidden></div>
                 <p class="help" data-i18n="range_hint">{{ translations[language].range_hint }}</p>
-                <div class="range-picker-actions">
-                    <button type="button" data-range-clear data-i18n="range_clear">{{ translations[language].range_clear }}</button>
-                    <button type="button" class="primary" data-range-done data-i18n="range_done">{{ translations[language].range_done }}</button>
-                </div>
             </div>
         </div>
         <div class="window-fields fields display-window-fields" {% if mode == 'range' %}hidden{% endif %}>
@@ -300,13 +296,29 @@
     <p class="help" data-i18n="manual_events_hint">{{ translations[language].manual_events_hint }}</p>
     {% if error %}<p class="form-error" role="alert" data-i18n="{{ error }}">{{ translations[language][error] }}</p>{% endif %}
         {% set draft = request.form if request.endpoint == 'add' else {} %}
-        <form action="{{ url_for('add') }}" method="POST">
+        <form id="add-note-form" action="{{ url_for('add') }}" method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ note_fields(draft, 'add') }}
             {{ window_fields(draft, 'add') }}
             {{ target_fields(draft, 'add') }}
-            <div class="actions"><button type="submit" class="primary" data-i18n="add">{{ translations[language].add }}</button></div>
+            <div class="actions">
+                <button type="submit" class="primary" data-i18n="add">{{ translations[language].add }}</button>
+                <button type="button" class="danger" data-dialog-open="clear-note-dialog" data-i18n="clear_form">{{ translations[language].clear_form }}</button>
+            </div>
         </form>
+        <dialog id="clear-note-dialog" class="management-dialog" aria-labelledby="clear-note-dialog-title">
+            <div class="management-overlay-header">
+                <h2 id="clear-note-dialog-title" data-i18n="clear_form_title">{{ translations[language].clear_form_title }}</h2>
+                <button type="button" class="management-overlay-close" data-dialog-close aria-label="{{ translations[language].notice_close }}" data-i18n-aria-label="notice_close">&times;</button>
+            </div>
+            <div class="management-overlay-body">
+                <p class="form-error" data-i18n="clear_form_warning">{{ translations[language].clear_form_warning }}</p>
+            </div>
+            <div class="management-overlay-actions">
+                <button type="button" data-dialog-close data-i18n="cancel">{{ translations[language].cancel }}</button>
+                <button type="button" class="danger" id="clear-note-confirm" data-i18n="clear_form_confirm">{{ translations[language].clear_form_confirm }}</button>
+            </div>
+        </dialog>
     </section>
 
     <h2 class="section-title" data-i18n="current_list">{{ translations[language].current_list }}</h2>
@@ -596,6 +608,24 @@
             applyTimeFormat(currentTimeFormat);
         }
 
+        function clearNoteForm(form) {
+            if (!form) return;
+            form.querySelectorAll('input').forEach(function (input) {
+                if (input.type === 'hidden') return;
+                if (input.type === 'checkbox' || input.type === 'radio') input.checked = false;
+                else input.value = '';
+            });
+            form.querySelectorAll('textarea').forEach(function (field) { field.value = ''; });
+            form.querySelectorAll('select').forEach(function (select) { select.selectedIndex = 0; });
+            var mode = form.querySelector('select[name="display_mode"]');
+            if (mode) setWindowMode(mode);
+            var picker = form.querySelector('[data-range-picker]');
+            if (picker && window.WebClockRangePicker) window.WebClockRangePicker.clear(picker);
+            if (typeof updateTargetPreviews === 'function') updateTargetPreviews();
+            var text = form.querySelector('input[name="note_text"]');
+            if (text) text.focus();
+        }
+
         function updateTargetPreview(container) {
             var preview = container.querySelector('[data-target-preview]');
             if (!preview) return;
@@ -770,6 +800,15 @@
             container.addEventListener('change', function () { updateTargetPreview(container); });
         });
         updateTargetPreviews();
+
+        var clearNoteConfirm = document.getElementById('clear-note-confirm');
+        if (clearNoteConfirm) {
+            clearNoteConfirm.addEventListener('click', function () {
+                clearNoteForm(document.getElementById('add-note-form'));
+                var dialog = document.getElementById('clear-note-dialog');
+                if (dialog && dialog.close) dialog.close();
+            });
+        }
 
         var editingDialog = document.querySelector('dialog[data-editing="1"]');
         if (editingDialog) editingDialog.showModal();
