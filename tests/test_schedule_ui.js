@@ -1086,6 +1086,31 @@ const completionTimeout = setTimeout(() => {
     assert.equal($("calendar-target-field").hidden, true);
     await $("cancel-edit").trigger("click");
 
+    const quickSkip = button("schedule-list", "skip_next");
+    assert.equal(quickSkip.disabled, false);
+    const quickSkipping = quickSkip.trigger("click");
+    const quickSkipRequest = take("/schedules/" + targeted.id + "/skip-next", "POST");
+    assert.deepEqual(JSON.parse(quickSkipRequest.options.body), {expected_occurrence: targeted.next_occurrence});
+    reply(quickSkipRequest, {skipped: {datetime: targeted.next_occurrence}, next_event: {datetime: nextDate}});
+    await flush();
+    scheduleReply(take("/schedules"), [{...targeted, next_occurrence: nextDate, skipped_occurrences: [targeted.next_occurrence]}]);
+    await quickSkipping;
+    assert.equal(button("schedule-list", "skip_next").disabled, true, "A pending skip disables the quick action");
+    const resetAfterSkip = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [targeted]);
+    await resetAfterSkip;
+    assert.equal(button("schedule-list", "skip_next").disabled, false);
+
+    const quickDeleting = button("schedule-list", "delete").trigger("click");
+    reply(take("/schedules/" + targeted.id, "DELETE"), {ok: true});
+    await flush();
+    scheduleReply(take("/schedules"), []);
+    await quickDeleting;
+    assert.equal(content($("schedule-list")).trim(), "none");
+    const resetAfterDelete = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [targeted]);
+    await resetAfterDelete;
+
     const refreshedDevice = {
         id: "desk", name: "Desk", reported_name: "Firmware desk", admin_name: null,
         device_type: "browser", registered_at: "2026-09-29T09:00:00+08:00",

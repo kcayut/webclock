@@ -278,6 +278,15 @@
         notice(result.next_event && isRecurringAlarm(schedule) ? resumeMessage(result.skipped.datetime) : format("skipped", {datetime: eventTime(result.skipped.datetime)}));
         await loadSchedules();
     }
+    async function deleteSchedule(schedule, afterDelete) {
+        if (!window.confirm(format("delete_confirm", {name: schedule.name}))) return false;
+        await api("/schedules/" + encodeURIComponent(schedule.id), {method: "DELETE"});
+        acceptScheduleChange(schedule.id, null);
+        if (afterDelete) afterDelete();
+        notice(t("deleted"));
+        await loadSchedules();
+        return true;
+    }
     function acceptScheduleChange(id, updated) {
         ++scheduleRequest;
         const previous = schedules.find(schedule => schedule.id === id);
@@ -333,7 +342,11 @@
             toggle.setAttribute("aria-checked", String(enabled));
             toggle.setAttribute("aria-label", t("enabled") + " · " + schedule.name);
             toggle.title = t(enabled ? "disable" : "enable");
-            actions.append(toggle, action(t("edit"), () => edit(schedule)));
+            const quickSkip = action(t("skip_next"), () => skipSchedule(schedule, schedule.next_occurrence));
+            quickSkip.disabled = !enabled || !schedule.next_occurrence || !!pendingSkip(schedule);
+            quickSkip.title = t("skip_next");
+            actions.append(toggle, quickSkip, action(t("edit"), () => edit(schedule)),
+                action(t("delete"), () => deleteSchedule(schedule), "danger"));
             const byEvent = schedule.calendar_link && schedule.calendar_link.mode === "event";
             const shownTime = byEvent ? t("calendar_event_time") : displayTime(schedule.time);
             const time = node("p", undefined, "schedule-time" + (byEvent ? " calendar-time" : ""));
@@ -377,14 +390,7 @@
         skip.disabled = saving || !$("schedule-enabled").checked || !previewTime;
         try { skip.disabled = skip.disabled || !!pendingSkip(Object.assign({}, schedule, scheduleData())); }
         catch (error) { skip.disabled = true; }
-        actions.append(skip, action(t("delete"), async () => {
-            if (!window.confirm(format("delete_confirm", {name: schedule.name}))) return;
-            await api("/schedules/" + encodeURIComponent(schedule.id), {method: "DELETE"});
-            acceptScheduleChange(schedule.id, null);
-            closeEditor();
-            notice(t("deleted"));
-            await loadSchedules();
-        }, "danger"));
+        actions.append(skip, action(t("delete"), () => deleteSchedule(schedule, closeEditor), "danger"));
     }
     async function loadSchedules() {
         const request = ++scheduleRequest;
