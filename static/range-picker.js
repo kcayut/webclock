@@ -175,45 +175,38 @@
         function paintWeekSelection() {
             var grid = weekView.querySelector('[data-week-grid]');
             if (!grid) return;
-            var overlay = grid.querySelector('[data-week-selection]');
-            if (!overlay) return;
-            if (!state.start || !state.end) { overlay.hidden = true; return; }
-            var columns = grid.querySelectorAll('[data-week-column]');
-            var firstIndex = -1, lastIndex = -1, first = startOfWeek(state.cursor);
-            for (var i = 0; i < 7; i++) {
-                var date = addDays(first, i);
-                var dayStart = withTime(date, 0), dayEnd = withTime(addDays(date, 1), 0);
-                if (state.end > dayStart && state.start < dayEnd) {
-                    if (firstIndex < 0) firstIndex = i;
-                    lastIndex = i;
-                }
-            }
-            if (firstIndex < 0 || !columns[firstIndex] || !columns[lastIndex]) { overlay.hidden = true; return; }
+            weekView.querySelectorAll('[data-week-selection]').forEach(function (overlay) { overlay.hidden = true; });
+            if (!state.start || !state.end) return;
             var startHour = Number(grid.getAttribute('data-week-start-hour'));
             var endHour = Number(grid.getAttribute('data-week-end-hour'));
             var row = Number(grid.getAttribute('data-week-row-height')) || 34;
             var gridHeight = (endHour - startHour) * row;
-            var top, bottom;
-            if (firstIndex === lastIndex) {
-                top = (state.start.getHours() * 60 + state.start.getMinutes() - startHour * 60) / 60 * row;
-                bottom = (state.end.getHours() * 60 + state.end.getMinutes() - startHour * 60) / 60 * row;
-            } else if (state.start.getHours() * 60 + state.start.getMinutes() <
-                       state.end.getHours() * 60 + state.end.getMinutes()) {
-                top = (state.start.getHours() * 60 + state.start.getMinutes() - startHour * 60) / 60 * row;
-                bottom = (state.end.getHours() * 60 + state.end.getMinutes() - startHour * 60) / 60 * row;
-            } else {
-                top = 0;
-                bottom = gridHeight;
-            }
-            top = Math.max(0, Math.min(gridHeight, top));
-            bottom = Math.max(top + 6, Math.min(gridHeight, bottom));
-            var left = columns[firstIndex].offsetLeft;
-            var right = columns[lastIndex].offsetLeft + columns[lastIndex].offsetWidth;
-            overlay.style.left = left + 'px';
-            overlay.style.top = top + 'px';
-            overlay.style.width = (right - left) + 'px';
-            overlay.style.height = (bottom - top) + 'px';
-            overlay.hidden = false;
+            var selected = [];
+            weekView.querySelectorAll('[data-week-column]').forEach(function (column, index) {
+                var date = parseDay(column.getAttribute('data-range-date'));
+                if (!date) return;
+                var dayStart = withTime(date, 0), dayEnd = withTime(addDays(date, 1), 0);
+                var start = Math.max(state.start.getTime(), dayStart.getTime());
+                var end = Math.min(state.end.getTime(), dayEnd.getTime());
+                if (end > start) selected.push({column: column, index: index, date: date, start: start, end: end});
+            });
+            if (!selected.length) return;
+            var first = selected[0].index, last = selected[selected.length - 1].index;
+            selected.forEach(function (item) {
+                var overlay = item.column.querySelector('[data-week-selection]');
+                if (!overlay) return;
+                var top = ((item.start - withTime(item.date, 0).getTime()) / 60000 / 60 - startHour) * row;
+                var height = ((item.end - item.start) / 60000 / 60) * row;
+                top = Math.max(0, Math.min(gridHeight - 6, top));
+                height = Math.max(6, Math.min(gridHeight - top, height));
+                overlay.style.top = top + 'px';
+                overlay.style.height = height + 'px';
+                overlay.classList.toggle('is-first', item.index === first);
+                overlay.classList.toggle('is-last', item.index === last);
+                overlay.classList.toggle('is-clipped-top', state.start < withTime(item.date, startHour * 60));
+                overlay.classList.toggle('is-clipped-bottom', state.end > withTime(item.date, endHour * 60));
+                overlay.hidden = false;
+            });
         }
         function renderMonth() {
             var year = state.cursor.getFullYear(), month = state.cursor.getMonth();
@@ -251,9 +244,9 @@
                 html += '<div class="range-week-column' + (sameDay(columnDate, new Date()) ? ' is-today' : '') +
                     '" data-week-column data-range-date="' + dayKey(columnDate) + '">';
                 for (var cell = range.start; cell < range.end; cell++) html += '<div class="range-week-hour"></div>';
-                html += '</div>';
+                html += '<div class="range-week-selection" data-week-selection hidden></div></div>';
             }
-            weekView.innerHTML = html + '<div class="range-week-selection" data-week-selection hidden></div></div></div>';
+            weekView.innerHTML = html + '</div></div>';
             paintWeekSelection();
         }
         function renderYear() {

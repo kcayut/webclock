@@ -37,7 +37,11 @@
 .range-week-column { position: relative; display: grid; grid-auto-rows: 34px; background-color: var(--surface); background-image: linear-gradient(to bottom, transparent 49%, var(--line) 49%, var(--line) 50%, transparent 50%); background-size: 100% 34px; background-repeat: repeat-y; touch-action: pan-y; user-select: none; }
 .range-week-column.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
 .range-week-hour { border-bottom: 1px solid var(--line); }
-.range-week-selection { position: absolute; z-index: 2; box-sizing: border-box; border: 3px solid var(--accent); border-radius: 3px; background: transparent; pointer-events: none; }
+.range-week-selection { position: absolute; left: 0; right: 0; z-index: 2; box-sizing: border-box; border: 3px solid var(--accent); border-radius: 3px; background: var(--tint); pointer-events: none; }
+.range-week-selection:not(.is-first) { border-left: 0; }
+.range-week-selection:not(.is-last) { border-right: 0; }
+.range-week-selection.is-clipped-top { border-top: 0; }
+.range-week-selection.is-clipped-bottom { border-bottom: 0; }
 .range-year-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .range-year-month { display: block; overflow: hidden; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: left; }
 .range-year-month.is-selected .range-year-title { color: var(--accent); }
