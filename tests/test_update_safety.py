@@ -44,7 +44,9 @@ class SettingsTest(unittest.TestCase):
         self.client.environ_base['HTTP_X_CSRF_TOKEN'] = self.client.get('/api/csrf').json['csrf_token']
 
     def test_save_reload_and_invalid_inputs(self):
-        expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en', 'time_format': '24h'}
+        expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en', 'time_format': '24h',
+                    'show_seconds': False, 'show_date': True, 'date_format': 'm/d', 'show_weekday': True,
+                    'message_duration': 5, 'message_transition': 'fade'}
         self.assertEqual(self.client.post('/api/control', json=expected).status_code, 200)
         self.assertEqual(clock.load_display_settings(), expected)
         previous = self.path.read_bytes()

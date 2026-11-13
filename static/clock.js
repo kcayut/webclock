@@ -1,5 +1,6 @@
 // A null offset follows the device timezone, including daylight saving changes.
-function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language) {
+function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language, settings) {
+    settings = settings || {};
     var deviceTime = new Date(utcMs);
     var offset = timezoneOffset === null ? -deviceTime.getTimezoneOffset() / 60 : timezoneOffset;
     var targetTime = new Date(utcMs + offset * 3600000);
@@ -7,14 +8,21 @@ function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language) {
     var h = String(timeFormat === '12h' ? hour % 12 || 12 : hour).replace(/^(\d)$/, '0$1');
     var m = String(targetTime.getUTCMinutes()).replace(/^(\d)$/, '0$1');
 
-    document.getElementById('time').textContent = h + ':' + m;
+    var seconds = settings.show_seconds ? ':' + String(targetTime.getUTCSeconds()).replace(/^(\d)$/, '0$1') : '';
+    document.getElementById('time').textContent = h + ':' + m + seconds;
     var period = document.getElementById('time-period');
     if (period) {
         period.textContent = timeFormat === '12h' ? window.WebClockTime.period(hour, language) : '';
         period.style.display = timeFormat === '12h' ? 'inline-block' : 'none';
     }
-    document.getElementById('date-part').textContent = (targetTime.getUTCMonth() + 1) + '/' + targetTime.getUTCDate();
-    document.getElementById('day-part').textContent = weekDays[targetTime.getUTCDay()];
+    var month = targetTime.getUTCMonth() + 1, day = targetTime.getUTCDate();
+    var date = month + '/' + day;
+    if (settings.date_format === 'd/m') date = day + '/' + month;
+    if (settings.date_format === 'yyyy/m/d') date = targetTime.getUTCFullYear() + '/' + date;
+    if (settings.date_format === 'yyyy-mm-dd') date = targetTime.getUTCFullYear() + '-' +
+        String(month).replace(/^(\d)$/, '0$1') + '-' + String(day).replace(/^(\d)$/, '0$1');
+    document.getElementById('date-part').textContent = settings.show_date === false ? '' : date;
+    document.getElementById('day-part').textContent = settings.show_weekday === false ? '' : weekDays[targetTime.getUTCDay()];
 }
 
 function clockDisplaySettings(settings, utcMs, timezoneOffset) {

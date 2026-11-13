@@ -133,3 +133,12 @@ body.has-events {
 body:lang(en) {
     --clock-width: min(35vw, calc((100vw - 66px) / 3));
 }
+
+body.shows-seconds #time { font-size: 23vw; }
+body.shows-seconds.uses-12-hour #time { font-size: 21vw; }
+body.long-date #date-info { font-size: 7vw; }
+@supports (font-size: min(1vw, 1vh)) {
+    body.shows-seconds #time { font-size: min(23vw, var(--clock-size)); }
+    body.shows-seconds.uses-12-hour #time { font-size: min(21vw, var(--clock-size)); }
+    body.long-date #date-info { font-size: min(7vw, calc(var(--clock-size) * 13 / 35)); }
+}

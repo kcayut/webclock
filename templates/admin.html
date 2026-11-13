@@ -177,6 +177,35 @@
         </div>
         </div>
     </div>
+    <div class="panel">
+        <h2 data-i18n="clock_appearance">{{ translations[language].clock_appearance }}</h2>
+        <div class="fields display-fields">
+        {% for key in ['show_seconds', 'show_date', 'show_weekday'] %}
+        <label class="check"><input id="{{ key }}" type="checkbox" data-display-setting="{{ key }}" {% if settings[key] %}checked{% endif %} onchange="setDisplayOption(this)"> <span data-i18n="{{ key }}">{{ translations[language][key] }}</span></label>
+        {% endfor %}
+        <div class="field">
+            <label for="date_format" data-i18n="date_format">{{ translations[language].date_format }}</label>
+            <select id="date_format" data-display-setting="date_format" onchange="setDisplayOption(this)">
+            {% for format in ['m/d', 'd/m', 'yyyy/m/d', 'yyyy-mm-dd'] %}<option value="{{ format }}" {% if settings.date_format == format %}selected{% endif %}>{{ format }}</option>{% endfor %}
+            </select>
+        </div>
+        </div>
+    </div>
+    <div class="panel">
+        <h2 data-i18n="message_settings">{{ translations[language].message_settings }}</h2>
+        <div class="fields display-fields">
+        <div class="field">
+            <label for="message_duration" data-i18n="message_duration">{{ translations[language].message_duration }}</label>
+            <input id="message_duration" type="number" min="1" max="300" step="1" required value="{{ settings.message_duration }}" data-display-setting="message_duration" onchange="setDisplayOption(this)">
+        </div>
+        <div class="field">
+            <label for="message_transition" data-i18n="message_transition">{{ translations[language].message_transition }}</label>
+            <select id="message_transition" data-display-setting="message_transition" onchange="setDisplayOption(this)">
+            {% for value in ['fade', 'left', 'up'] %}<option value="{{ value }}" data-i18n="transition_{{ value }}" {% if settings.message_transition == value %}selected{% endif %}>{{ translations[language]['transition_' + value] }}</option>{% endfor %}
+            </select>
+        </div>
+        </div>
+    </div>
     </div>
 
     <div id="display-panel-advanced" class="management-tab-panel" role="tabpanel" aria-labelledby="display-tab-advanced" data-tab-group="display" data-management-tab-panel="advanced" hidden>
@@ -655,6 +684,14 @@
             if (window.WebClockRangePicker) window.WebClockRangePicker.applyLanguage();
         }
 
+        function setDisplayOption(control) {
+            if (!control.reportValidity()) return;
+            var payload = {};
+            payload[control.getAttribute('data-display-setting')] = control.type === 'checkbox' ? control.checked :
+                (control.type === 'number' ? Number(control.value) : control.value);
+            return postSettings(payload);
+        }
+
         function setTimeFormat(format) {
             var select = document.getElementById('time-format-select');
             select.disabled = true;
@@ -724,6 +761,11 @@
                     ['start', 'end', 'brightness'].forEach(function (key) { document.getElementById('night-' + key).value = night[key]; });
                     document.getElementById('night-value').textContent = night.brightness;
                     document.getElementById('night-status').textContent = '';
+                    document.querySelectorAll('[data-display-setting]').forEach(function (control) {
+                        var value = settings[control.getAttribute('data-display-setting')];
+                        if (control.type === 'checkbox') control.checked = value;
+                        else control.value = value;
+                    });
                     applyTimeFormat(settings.time_format);
                 }).catch(function () {
                     settingsMessage = 'settings_load_error';

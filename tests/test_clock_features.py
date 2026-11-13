@@ -130,6 +130,34 @@ class ClockFeaturesTest(unittest.TestCase):
         self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
         self.assertEqual(clock.load_display_settings()['time_format'], '24h')
 
+    def test_clock_appearance_and_message_settings(self):
+        defaults = dict(show_seconds=False, show_date=True, date_format='m/d', show_weekday=True,
+                        message_duration=5, message_transition='fade')
+        Path(clock.SETTINGS_FILE).write_text('{}')
+        for key, value in defaults.items():
+            self.assertEqual(clock.load_display_settings()[key], value)
+        changed = dict(show_seconds=True, show_date=False, date_format='yyyy-mm-dd', show_weekday=False,
+                       message_duration=12, message_transition='up')
+        self.assertEqual(self.client.post('/api/control', json=changed).status_code, 200)
+        for key, value in changed.items():
+            self.assertEqual(clock.load_display_settings()[key], value)
+            self.assertEqual(self.status_at('2026-10-01T10:30')['settings'][key], value)
+        backup = self.client.get('/api/backup').json
+        self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
+        self.assertEqual(self.client.get('/api/backup').json, backup)
+        before = Path(clock.SETTINGS_FILE).read_bytes()
+        for invalid in [dict(show_seconds=1), dict(show_date='false'), dict(show_weekday=None),
+                        dict(date_format='invalid'), dict(message_duration=0), dict(message_duration=301),
+                        dict(message_duration=1.5), dict(message_duration=True), dict(message_duration='5'),
+                        dict(message_transition='invalid')]:
+            self.assertEqual(self.client.post('/api/control', json=invalid).status_code, 400)
+            self.assertEqual(Path(clock.SETTINGS_FILE).read_bytes(), before)
+        for language in clock.SUPPORTED_LANGUAGES:
+            page = self.client.get('/admin?lang=' + language).text
+            common = page.split('id="display-panel-common"')[1].split('id="display-panel-advanced"')[0]
+            for key in defaults:
+                self.assertIn('data-display-setting="' + key + '"', common)
+
     def test_night_and_backup_roundtrip_validation_rollback(self):
         night = dict(enabled=True, start='22:00', end='07:00', brightness=12, black=True)
         self.assertEqual(self.client.post('/api/control', json={'night': night}).status_code, 200)

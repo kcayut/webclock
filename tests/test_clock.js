@@ -76,6 +76,17 @@ for (const [instant, language, time, period] of [
 context.renderClock(Date.parse('2026-10-01T23:59:00Z'), 0, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
 assert.equal(nodes.time.textContent, '23:59');
 assert.equal(nodes['time-period'].style.display, 'none');
+for (const [format, expected] of [['m/d', '1/2'], ['d/m', '2/1'], ['yyyy/m/d', '2027/1/2'], ['yyyy-mm-dd', '2027-01-02']]) {
+    context.renderClock(Date.parse('2027-01-01T16:03:04Z'), 8, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], '24h', 'en',
+        {show_seconds: true, date_format: format, show_weekday: false});
+    assert.equal(nodes.time.textContent, '00:03:04');
+    assert.equal(nodes['date-part'].textContent, expected);
+    assert.equal(nodes['day-part'].textContent, '');
+}
+context.renderClock(Date.parse('2027-01-01T16:03:04Z'), 8, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], '12h', 'en', {show_date: false});
+assert.equal(nodes.time.textContent, '12:03');
+assert.equal(nodes['date-part'].textContent, '');
+assert.equal(nodes['day-part'].textContent, 'Sat');
 console.log('Clock checks passed: device timezone, DST, date rollover, resume, server override, no network.');
 
 // Night mode follows configured wall time; it restores the user's daytime value.
@@ -179,6 +190,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             },
         },
         setInterval: (callback, delay) => ticks.push({callback, delay}),
+        clearInterval(id) { if (ticks[id - 1]) ticks[id - 1].cleared = true; },
         setTimeout() {}, clearTimeout() {},
         XMLHttpRequest: function () {
             this.open = (method, url) => {
@@ -211,6 +223,33 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
     now += 60000;
     tick.callback();
     assert.notEqual(node('time').textContent, before);
+    if (!failOptionalEditor) {
+        const original = legacy.copyDisplaySettings(legacy.activeSettings);
+        const timerCount = ticks.length;
+        for (const invalid of [{show_seconds: 1}, {show_date: 'false'}, {show_weekday: null},
+            {date_format: 'invalid'}, {message_duration: 0}, {message_duration: 301},
+            {message_duration: 1.5}, {message_duration: '5'}, {message_transition: 'invalid'}]) {
+            assert.equal(legacy.normalizeDisplaySettings(invalid), null);
+        }
+        assert.equal(legacy.applySettings({show_seconds: true, show_date: false, show_weekday: false,
+            date_format: 'yyyy-mm-dd', message_duration: 9, message_transition: 'left'}), true);
+        legacy.updateClock();
+        assert.match(node('time').textContent, /^\d\d:\d\d:\d\d$/);
+        assert.equal(node('date-info').style.display, 'none');
+        assert.equal(node('list-container').getAttribute('data-transition'), 'left');
+        legacy.renderList([{text: 'A'}, {text: 'B'}]);
+        assert.equal(ticks[ticks.length - 1].delay, 9000);
+        const previous = ticks[ticks.length - 1];
+        legacy.applySettings({message_duration: 2, message_transition: 'up'});
+        legacy.renderList([{text: 'A'}, {text: 'B'}]);
+        assert.equal(previous.cleared, true);
+        assert.equal(ticks[ticks.length - 1].delay, 2000);
+        legacy.renderList([]);
+        assert.equal(ticks[ticks.length - 1].cleared, true);
+        legacy.applySettings(original);
+        legacy.updateClock();
+        ticks.splice(timerCount);
+    }
     if (bootSettings) {
         assert.equal(legacy.activeSettings.brightness, bootSettings.brightness);
         assert.equal(legacy.activeSettings.timezone_offset, 8);

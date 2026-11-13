@@ -112,6 +112,12 @@ DEFAULT_SETTINGS = {
     'timezone_offset': 8,
     'language': deployment_language(),
     'time_format': '24h',
+    'show_seconds': False,
+    'show_date': True,
+    'date_format': 'm/d',
+    'show_weekday': True,
+    'message_duration': 5,
+    'message_transition': 'fade',
 }
 # ponytail: single-process file storage; use a database before adding writer processes.
 settings_lock = RLock()
