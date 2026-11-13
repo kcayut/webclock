@@ -153,24 +153,16 @@
             });
         }
         function weekRange() {
-            var start = 8, end = 22;
-            if (state.start && state.end && sameDay(state.start, state.end)) {
-                start = Math.min(start, Math.floor((state.start.getHours() * 60 + state.start.getMinutes()) / 60));
-                end = Math.max(end, Math.ceil((state.end.getHours() * 60 + state.end.getMinutes()) / 60));
-            }
-            start = Math.max(0, Math.min(23, start));
-            end = Math.max(start + 1, Math.min(24, end));
-            return {start: start, end: end};
+            return {start: 0, end: 24};
         }
         function weekMinutes(event, column) {
             var grid = weekView.querySelector('[data-week-grid]');
             var startHour = Number(grid.getAttribute('data-week-start-hour'));
             var endHour = Number(grid.getAttribute('data-week-end-hour'));
-            var row = Number(grid.getAttribute('data-week-row-height')) || 34;
             var rect = column.getBoundingClientRect();
-            var slot = Math.floor((event.clientY - rect.top) / (row / 2));
-            slot = Math.max(0, Math.min((endHour - startHour) * 2 - 1, slot));
-            return startHour * 60 + slot * SLOT;
+            var raw = startHour * 60 + (event.clientY - rect.top) / Math.max(1, rect.height) * (endHour - startHour) * 60;
+            var snapped = Math.round(raw / SLOT) * SLOT;
+            return Math.max(startHour * 60, Math.min(endHour * 60, snapped));
         }
         function paintWeekSelection() {
             var grid = weekView.querySelector('[data-week-grid]');
@@ -272,8 +264,9 @@
             else if (state.view === 'week') renderWeek();
             else renderYear();
         }
-        function finishSelection() {
+        function finishSelection(event) {
             if (!state.selecting) return;
+            if (event && typeof event.clientX === 'number' && typeof event.clientY === 'number') updateSelection(event);
             state.selecting = false;
             state.container = null;
             if (state.start && state.end) commit();
@@ -296,7 +289,7 @@
             if (container === monthView) paintMonthSelection(); else paintYearSelection();
             paintSummary();
         });
-        document.addEventListener('pointermove', function (event) {
+        function updateSelection(event) {
             if (!state.selecting || !state.anchor || !state.container) return;
             var element = document.elementFromPoint(event.clientX, event.clientY);
             if (state.container === weekView) {
@@ -306,10 +299,16 @@
                 if (!currentDate) return;
                 var currentMinute = weekMinutes(event, column);
                 var current = withTime(currentDate, currentMinute);
-                var start = current < state.anchor ? current : state.anchor;
-                var end = current < state.anchor ? state.anchor : current;
-                state.start = start;
-                state.end = new Date(end.getTime() + SLOT * 60000);
+                if (current < state.anchor) {
+                    state.start = current;
+                    state.end = new Date(state.anchor.getTime() + SLOT * 60000);
+                } else if (current > state.anchor) {
+                    state.start = state.anchor;
+                    state.end = current;
+                } else {
+                    state.start = state.anchor;
+                    state.end = new Date(state.anchor.getTime() + SLOT * 60000);
+                }
                 paintWeekSelection();
                 paintSummary();
                 return;
@@ -328,9 +327,10 @@
             }
             if (state.container === monthView) paintMonthSelection(); else paintYearSelection();
             paintSummary();
-        });
+        }
+        document.addEventListener('pointermove', updateSelection);
         document.addEventListener('pointerup', finishSelection);
-        document.addEventListener('pointercancel', finishSelection);
+        document.addEventListener('pointercancel', function () { finishSelection(); });
         weekView.addEventListener('pointerdown', function (event) {
             var column = event.target.closest('[data-week-column]');
             if (!column || !weekView.contains(column)) return;
