@@ -8,6 +8,7 @@
     <title>{{ translations[language].admin_title }}</title>
     {% include 'brand_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='range-picker.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='time-inputs.css') }}">
 </head>
 
@@ -22,7 +23,47 @@
             <option value="range" {% if mode == 'range' %}selected{% endif %} data-i18n="range_mode">{{ translations[language].range_mode }}</option>
             <option value="daily" {% if mode == 'daily' %}selected{% endif %} data-i18n="daily_mode">{{ translations[language].daily_mode }}</option>
         </select>
-        <div class="window-fields fields">
+        <div class="range-picker" data-range-picker {% if mode != 'range' %}hidden{% endif %}>
+            <button type="button" class="range-picker-toggle" data-range-toggle aria-expanded="false" aria-controls="range-panel-{{ suffix }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>
+                <span data-i18n="range_pick">{{ translations[language].range_pick }}</span>
+                <span class="range-picker-summary" data-range-summary></span>
+            </button>
+            <div id="range-panel-{{ suffix }}" class="range-picker-panel" data-range-panel hidden>
+                <div class="range-picker-toolbar">
+                    <div class="range-picker-views" role="tablist" aria-label="{{ translations[language].display_window }}">
+                        <button type="button" role="tab" id="range-tab-month-{{ suffix }}" aria-controls="range-view-month-{{ suffix }}" data-range-view="month" aria-selected="true" data-i18n="range_month">{{ translations[language].range_month }}</button>
+                        <button type="button" role="tab" id="range-tab-week-{{ suffix }}" aria-controls="range-view-week-{{ suffix }}" data-range-view="week" aria-selected="false" data-i18n="range_week">{{ translations[language].range_week }}</button>
+                        <button type="button" role="tab" id="range-tab-year-{{ suffix }}" aria-controls="range-view-year-{{ suffix }}" data-range-view="year" aria-selected="false" data-i18n="range_year">{{ translations[language].range_year }}</button>
+                    </div>
+                    <div class="range-picker-nav">
+                        <button type="button" data-range-prev data-i18n-aria-label="range_prev" aria-label="{{ translations[language].range_prev }}">&#8249;</button>
+                        <span class="range-picker-label" data-range-label></span>
+                        <button type="button" data-range-next data-i18n-aria-label="range_next" aria-label="{{ translations[language].range_next }}">&#8250;</button>
+                        <button type="button" data-range-today data-i18n="range_today">{{ translations[language].range_today }}</button>
+                    </div>
+                </div>
+                <div id="range-view-month-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-month-{{ suffix }}" data-range-view-panel="month"></div>
+                <div id="range-view-week-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-week-{{ suffix }}" data-range-view-panel="week" hidden></div>
+                <div id="range-view-year-{{ suffix }}" class="range-picker-view" role="tabpanel" aria-labelledby="range-tab-year-{{ suffix }}" data-range-view-panel="year" hidden></div>
+                <div class="range-picker-times fields">
+                    <div class="field">
+                        <label for="range-time-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
+                        <input id="range-time-start-{{ suffix }}" type="time" data-range-time="start">
+                    </div>
+                    <div class="field">
+                        <label for="range-time-end-{{ suffix }}" data-i18n="display_end">{{ translations[language].display_end }}</label>
+                        <input id="range-time-end-{{ suffix }}" type="time" data-range-time="end">
+                    </div>
+                </div>
+                <p class="help" data-i18n="range_hint">{{ translations[language].range_hint }}</p>
+                <div class="range-picker-actions">
+                    <button type="button" data-range-clear data-i18n="range_clear">{{ translations[language].range_clear }}</button>
+                    <button type="button" class="primary" data-range-done data-i18n="range_done">{{ translations[language].range_done }}</button>
+                </div>
+            </div>
+        </div>
+        <div class="window-fields fields" {% if mode == 'range' %}hidden{% endif %}>
             <div class="field">
                 <label for="display-start-{{ suffix }}" data-i18n="display_start">{{ translations[language].display_start }}</label>
                 <input id="display-start-{{ suffix }}" type="{{ 'time' if mode == 'daily' else 'datetime-local' }}" name="display_start" value="{{ values.get('display_start', '') }}">
@@ -100,6 +141,7 @@
         <input id="note-time-{{ suffix }}" type="time" name="note_time" value="{{ values.get('note_time', values.get('due_date', '')[11:]) }}">
         </div>
         </div>
+        <p class="help" data-i18n="note_datetime_hint">{{ translations[language].note_datetime_hint }}</p>
     {% endmacro %}
     <main id="management-main" class="management-content" tabindex="-1">
     <section class="management-panel{{ ' is-current' if not error else '' }}" data-management-panel="display" aria-labelledby="display-title">
@@ -544,11 +586,18 @@
         };
 
         function setWindowMode(select) {
-            select.closest('fieldset').querySelector('.repeat-days').hidden = select.value !== 'daily';
-            select.closest('fieldset').querySelectorAll('.window-fields input[name]').forEach(function (input) {
+            var fieldset = select.closest('fieldset'), daily = select.value === 'daily';
+            fieldset.querySelector('.repeat-days').hidden = !daily;
+            fieldset.querySelector('.window-fields').hidden = !daily;
+            var picker = fieldset.querySelector('[data-range-picker]');
+            fieldset.querySelectorAll('.window-fields input[name]').forEach(function (input) {
                 input.value = '';
-                input.type = select.value === 'daily' ? 'time' : 'datetime-local';
+                input.type = daily ? 'time' : 'datetime-local';
             });
+            if (picker) {
+                picker.hidden = daily;
+                if (!daily && window.WebClockRangePicker) window.WebClockRangePicker.refresh(picker);
+            }
             applyTimeFormat(currentTimeFormat);
         }
 
@@ -567,6 +616,7 @@
             document.querySelectorAll('[data-time-value]').forEach(function (el) {
                 el.textContent = WebClockTime.format(el.getAttribute('data-time-value'), currentTimeFormat, currentLanguage);
             });
+            if (window.WebClockRangePicker) window.WebClockRangePicker.applyLanguage();
         }
 
         function setTimeFormat(format) {
@@ -714,6 +764,7 @@
         if (editingDialog) editingDialog.showModal();
 
     </script>
+    <script defer src="{{ url_for('static', filename='range-picker.js') }}"></script>
     <script defer src="{{ url_for('static', filename='calendar-chooser.js') }}"></script>
     <script defer src="{{ url_for('static', filename='group-assignment.js') }}"></script>
     <script defer src="{{ url_for('static', filename='calendar-settings.js') }}"></script>

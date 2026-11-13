@@ -1,0 +1,69 @@
+/* Teams-like display-window range picker. */
+.range-picker { margin: 12px 0 18px; }
+.range-picker-toggle { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--surface); color: var(--ink); font-weight: 600; text-align: left; }
+.range-picker-toggle svg { width: 22px; height: 22px; color: var(--accent); }
+.range-picker-summary { margin-left: auto; color: var(--accent); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.range-picker-toggle[aria-expanded="true"] { border-color: var(--accent); background: var(--tint); }
+.range-picker-panel { margin-top: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.range-picker-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.range-picker-views { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); }
+.range-picker-views button { min-height: 34px; padding: 5px 13px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; }
+.range-picker-views button:hover { border-color: transparent; background: var(--hover); color: var(--ink); }
+.range-picker-views button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.range-picker-nav { display: flex; align-items: center; gap: 6px; }
+.range-picker-nav > button { min-height: 34px; padding: 5px 10px; font-size: 14px; }
+.range-picker-nav [data-range-prev], .range-picker-nav [data-range-next] { width: 34px; padding: 0; font-size: 20px; }
+.range-picker-label { min-width: 9em; text-align: center; font-size: 14px; font-weight: 600; }
+.range-picker-view { min-width: 0; }
+[data-range-view-panel="week"] { overflow-x: auto; }
+.range-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-bottom: 4px; color: var(--muted); font-size: 12px; text-align: center; }
+.range-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; touch-action: none; user-select: none; }
+.range-day { min-height: 40px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink); font-size: 14px; font-weight: 500; }
+.range-day:hover { border-color: var(--line); background: var(--hover); }
+.range-day.is-outside { color: var(--muted); opacity: .5; }
+.range-day.is-today { box-shadow: inset 0 0 0 1px var(--accent); }
+.range-day.is-selected { background: var(--tint); color: var(--tint-ink); }
+.range-day.is-start, .range-day.is-end { background: var(--accent); color: var(--accent-ink); }
+.range-day.is-start:not(.is-end) { border-radius: 6px 0 0 6px; }
+.range-day.is-end:not(.is-start) { border-radius: 0 6px 6px 0; }
+.range-day.is-start.is-end { border-radius: 6px; }
+.range-week-head { min-width: 620px; display: grid; grid-template-columns: 56px repeat(7, minmax(72px, 1fr)); gap: 2px; margin-bottom: 4px; color: var(--muted); font-size: 12px; text-align: center; }
+.range-week-head span:first-child { text-align: left; }
+.range-week-head .is-today { color: var(--accent); font-weight: 600; }
+.range-week-scroll { min-width: 620px; max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.range-week-body { display: grid; grid-template-columns: 56px minmax(0, 1fr); min-width: 620px; }
+.range-time-axis { display: grid; grid-auto-rows: 22px; padding-right: 6px; color: var(--muted); font-size: 11px; text-align: right; }
+.range-time-axis span { line-height: 22px; }
+.range-time-axis .is-half { color: transparent; }
+.range-week-grid { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); grid-auto-rows: 22px; gap: 1px; background: var(--line); touch-action: pan-y; user-select: none; }
+.range-slot { min-height: 22px; padding: 0; border: 0; border-radius: 0; background: var(--surface); }
+.range-slot:hover { border-color: transparent; background: var(--hover); }
+.range-slot.is-half { background: var(--canvas); }
+.range-slot.is-selected { background: var(--tint); }
+.range-slot.is-start, .range-slot.is-end { background: var(--accent); }
+.range-year-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.range-year-month { display: block; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: left; }
+.range-year-month:hover { border-color: var(--accent); background: var(--hover); }
+.range-year-month.is-selected { border-color: var(--accent); background: var(--tint); color: var(--tint-ink); }
+.range-year-month > strong { display: block; margin-bottom: 6px; font-size: 14px; }
+.range-mini-week, .range-mini-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; color: var(--muted); font-size: 10px; text-align: center; }
+.range-mini-week i, .range-mini-days i { display: block; min-height: 16px; line-height: 16px; font-style: normal; }
+.range-mini-days i.is-outside { opacity: .35; }
+.range-mini-days i.is-today { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 3px; }
+.range-picker-times { margin-top: 14px; }
+.range-picker-times .field { margin-bottom: 0; }
+.range-picker-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.range-picker-panel .help { margin: 8px 0 0; }
+@media (max-width: 760px) {
+    .range-picker-toggle { align-items: flex-start; flex-wrap: wrap; }
+    .range-picker-summary { flex-basis: 100%; margin-left: 32px; }
+    .range-picker-panel { padding: 10px; }
+    .range-picker-toolbar { align-items: stretch; }
+    .range-picker-views { width: 100%; }
+    .range-picker-views button { flex: 1; }
+    .range-picker-nav { width: 100%; justify-content: space-between; }
+    .range-picker-label { flex: 1; }
+    .range-picker-times { grid-template-columns: 1fr; }
+    .range-year-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .range-day { min-height: 36px; }
+}
