@@ -182,16 +182,15 @@
             var row = Number(grid.getAttribute('data-week-row-height')) || 34;
             var gridHeight = (endHour - startHour) * row;
             var selected = [];
-            weekView.querySelectorAll('[data-week-column]').forEach(function (column, index) {
+            weekView.querySelectorAll('[data-week-column]').forEach(function (column) {
                 var date = parseDay(column.getAttribute('data-range-date'));
                 if (!date) return;
                 var dayStart = withTime(date, 0), dayEnd = withTime(addDays(date, 1), 0);
                 var start = Math.max(state.start.getTime(), dayStart.getTime());
                 var end = Math.min(state.end.getTime(), dayEnd.getTime());
-                if (end > start) selected.push({column: column, index: index, date: date, start: start, end: end});
+                if (end > start) selected.push({column: column, date: date, start: start, end: end});
             });
             if (!selected.length) return;
-            var first = selected[0].index, last = selected[selected.length - 1].index;
             selected.forEach(function (item) {
                 var overlay = item.column.querySelector('[data-week-selection]');
                 if (!overlay) return;
@@ -201,10 +200,6 @@
                 height = Math.max(6, Math.min(gridHeight - top, height));
                 overlay.style.top = top + 'px';
                 overlay.style.height = height + 'px';
-                overlay.classList.toggle('is-first', item.index === first);
-                overlay.classList.toggle('is-last', item.index === last);
-                overlay.classList.toggle('is-clipped-top', state.start < withTime(item.date, startHour * 60));
-                overlay.classList.toggle('is-clipped-bottom', state.end > withTime(item.date, endHour * 60));
                 overlay.hidden = false;
             });
         }
