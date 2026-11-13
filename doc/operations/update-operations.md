@@ -138,7 +138,7 @@ sudo bash docker_update.sh --prune-backups 3 --yes # 確認刪除預覽中的舊
 
 ## HA 的完成判定
 
-1. 先備份 App 與 HA 設定；依發行說明指定順序更新。沒有不相容公告時，先 Server App，再 HACS Integration＋卡片。
+1. 先備份 App 與 HA 設定；依發行說明指定順序更新。沒有不相容說明時，先 Server App，再 HACS Integration＋卡片。
 2. HACS 下載後重新啟動 HA，檢查感測器的 `integration_version`、`server_version`、`version_alignment`；這些是實際執行中的資訊。
 3. 舊 Server 沒有回報版本時顯示 `unknown`；不同版本顯示 `mixed`，不憑版號差異破壞現有連線。相同版本僅代表版號對齊，不代表實機相容驗收通過。
 4. 瀏覽器仍載入舊卡片時會顯示重新載入提示。重載後確認時鐘、行事曆、鬧鐘與原裝置身份仍正常。

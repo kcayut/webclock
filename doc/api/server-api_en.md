@@ -81,9 +81,9 @@ Text reminders reuse `manual_notes.json` and the existing form routes: POST `/ad
 
 A stored note may include `targets: {group_ids: [], device_ids: []}`. Each ID list accepts at most 100 entries, deduplicated on save; IDs contain 1–128 ASCII `[A-Za-z0-9_-]` characters. A group or device match is sufficient, subject to current device/group authorization. Targeted reminders are excluded from the server-local calendar source and from the group content assignment catalog. Date, range/daily, weekday and enabled conditions use the management timezone, independently of alarm calculations in `Asia/Taipei`.
 
-`GET /api/v2/device/display` includes matching reminders in the normal `events` list. The response no longer has a separate `announcements` field or an announcement expiry. Announcement records in old backups or stored data are removed on first read and are never delivered or displayed.
+`GET /api/v2/device/display` includes matching reminders in the normal `events` list.
 
-Forms reject missing or foreign-owner targets. Version 1 `/api/backup` `notes` retains only regular reminders and `targets`; announcement fields in historical backups are ignored. Full host backups preserve the raw data, and historical restoration still revokes device credentials.
+Forms reject missing or foreign-owner targets. Version 1 `/api/backup` `notes` retains only regular reminders and `targets`. Full host backups preserve the raw data, and historical restoration still revokes device credentials.
 
 ## Startup and layout
 
@@ -131,7 +131,7 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
 }
 ```
 
-- `type`: only `alarm` is accepted. Retired `reminder`/`announcement` schedules are rejected and removed from stored data on read.
+- `type`: only `alarm` is accepted. Other retired schedule types are rejected and removed from stored data on read.
 - `rule`: one of `{}` for daily, `{"weekdays":[1,3,5]}`, `{"workday_only":true}`, `{"holiday_only":true}`, or `{"dates":["2026-10-03"]}`.
 - `skip_holidays`: filters holidays for daily, weekday, or explicit-date rules. Make-up workdays remain workdays. Combining it with `holiday_only=true` returns 400.
 - `browser_sound`: `bell`, `beep`, `digital`, `chime`, `melody`, `pulse`, `sonar`, or `silent`. It is independent from old hardware sound fields.

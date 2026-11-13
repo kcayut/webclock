@@ -99,8 +99,6 @@ In the **Text reminder** form, select groups or devices under **Display targets*
 
 Targeted reminders appear in the event list and next-event countdown like any other reminder. They are excluded from the server-local calendar source and from the group content assignment catalog. Reminders have no separate expiry time; use the display window, pause, or delete to stop showing one. An editor retains deleted targets with a warning until they are deselected and saved.
 
-Announcement records from older versions are removed on first read and are no longer delivered or displayed. Admin JSON backups retain only regular reminders and their targets; full host backups preserve the raw files, and historical restoration still invalidates old device credentials.
-
 ### Browser-local reminders and the connection panel
 
 Open the connection panel with the connection-status button at the bottom left of the clock. Enter reminder text and an optional time, then add or delete it. These reminders stay in `localStorage` for the current site and browser and appear when the server is unavailable. The time is display text: it does not play a sound or hide the reminder afterward. New reminders have no date and remain until deleted; edit by deleting and adding again.

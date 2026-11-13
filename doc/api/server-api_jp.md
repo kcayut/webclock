@@ -81,9 +81,9 @@ display・alarms は `schema_version: 3`、`identity`、config・schedule・holi
 
 保存する note に `targets: {group_ids: [], device_ids: []}` を追加できます。各 ID 配列は最大 100 件で、保存時に重複を除きます。ID は ASCII `[A-Za-z0-9_-]` の 1–128 文字です。グループまたは端末のどちらかに一致し、現在の端末・グループ認可が有効なら表示します。対象指定の通知はサーバー側 local カレンダーやグループ内容の割り当て一覧には含めません。日付、range／daily、曜日、enabled は管理タイムゾーンで判定し、アラームの `Asia/Taipei` 規則とは独立しています。
 
-`GET /api/v2/device/display` は対象に一致する通知を通常の `events` に含めます。独立した `announcements` 欄やお知らせの有効期限は提供しません。旧バックアップや保存データ内のお知らせ記録は最初の読み込み時に削除し、配信も表示も行いません。
+`GET /api/v2/device/display` は対象に一致する通知を通常の `events` に含めます。
 
-フォームは存在しない対象や他 owner の対象を拒否します。version 1 `/api/backup` の `notes` は通常の通知と `targets` のみを保持し、過去のバックアップ内のお知らせ欄は無視します。完全ホストバックアップは元データを保持し、履歴復元時は端末資格情報を無効化します。
+フォームは存在しない対象や他 owner の対象を拒否します。version 1 `/api/backup` の `notes` は通常の通知と `targets` のみを保持します。完全ホストバックアップは元データを保持し、履歴復元時は端末資格情報を無効化します。
 
 ## 起動と構成
 
@@ -131,7 +131,7 @@ webclock_state/              非公開の実行データ。Git に追加しな�
 }
 ```
 
-- `type`：`alarm` のみ受け付けます。廃止した `reminder`／`announcement` は拒否し、保存データの読み込み時に自動削除します。
+- `type`：`alarm` のみ受け付けます。その他の廃止済みスケジュール種別は拒否し、保存データの読み込み時に自動削除します。
 - `rule`：毎日の `{}`、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}` のいずれかです。
 - `skip_holidays`：毎日・曜日・指定日の休日を除外します。振替出勤日は勤務日です。`holiday_only=true` との併用は 400 を返します。
 - `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar`、`silent`。旧ハードウェアの音声項目とは独立しています。

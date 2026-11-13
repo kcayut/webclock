@@ -93,9 +93,9 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 
 儲存的 note 可加 `targets: {group_ids: [], device_ids: []}`。兩個 ID 陣列各最多 100 筆，ID 為 1–128 字元的 ASCII `[A-Za-z0-9_-]`，保存時去重；指定群組或指定裝置任一命中即可，但仍須通過目前裝置／群組授權。指定對象的提醒不會成為伺服器 local 行事曆來源，也不列入群組內容的可指派清單。日期、range／daily、星期與 enabled 都使用管理時區判定，與鬧鐘的 `Asia/Taipei` 規則分開。
 
-`GET /api/v2/device/display` 會把符合對象的提醒放入一般 `events`。回應不再提供獨立 `announcements` 欄位，也沒有公告到期時間；舊備份或舊資料中的公告記錄會在第一次讀取時移除，不投遞也不顯示。
+`GET /api/v2/device/display` 會把符合對象的提醒放入一般 `events`。
 
-表單拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 只保留一般提醒與 `targets`；歷史備份中的公告欄位會被忽略。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。
+表單拒絕不存在或其他 owner 的目標。`/api/backup` 的 version 1 `notes` 只保留一般提醒與 `targets`。完整主機備份保留原資料，歷史還原照舊撤銷裝置憑證。
 
 ## 啟動與目錄
 
@@ -156,7 +156,7 @@ webclock_state/              私人執行資料，不進 Git
 }
 ```
 
-- `type`：只接受 `alarm`；`reminder`／`announcement` 已淘汰，API 會拒絕，讀取舊資料時會自動移除。
+- `type`：只接受 `alarm`；其他已淘汰的排程類型會拒絕，讀取舊資料時會自動移除。
 - `rule` 擇一：`{}` 每天、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}`。
 - `skip_holidays`：可在每天、星期或指定日期規則上過濾假日。補班日仍是工作日；`holiday_only=true` 同時 `skip_holidays=true` 會回 400。
 - `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar` 或 `silent`。這是網頁專用音色，和舊硬體 `sound` 欄位分開；`silent` 保留視覺提示。

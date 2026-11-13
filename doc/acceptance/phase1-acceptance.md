@@ -78,7 +78,7 @@ git diff --check
 
 沿用 `webclock/data/taiwan_calendar.json` 與 `HolidayService`，以維護者核對後隨版本發布的方式更新，不加常駐下載器或排程。現有檔案覆蓋 2023-01-01 至 2027-12-31，`source.verified_at` 為 2026-09-23；這是檔案既有來源紀錄，並非本次重新驗證全部年份。
 
-1. 每次準備新年度版本或官方修訂時，從人事行政總處的[政府行政機關辦公日曆表資料集](https://data.gov.tw/dataset/14718)取得該年度正式 CSV，對照核定公告。資料集定義「是否放假」`0` 為上班、`2` 為放假；本次於 2026-10-02 核對來源頁。下載來源若不存在、欄位未知或資料不完整，保留舊資料與原 coverage，不能先拉長範圍。
+1. 每次準備新年度版本或官方修訂時，從人事行政總處的[政府行政機關辦公日曆表資料集](https://data.gov.tw/dataset/14718)取得該年度正式 CSV，對照官方核定資料。資料集定義「是否放假」`0` 為上班、`2` 為放假；本次於 2026-10-02 核對來源頁。下載來源若不存在、欄位未知或資料不完整，保留舊資料與原 coverage，不能先拉長範圍。
 2. 保存官方 URL、原始檔名、SHA-256、取得／核對日期與修訂依據。依既有 schema 1 更新 `holidays` 的日期與名稱、`makeup_workdays` 的週末上班日；維持 `Asia/Taipei`。週末預設放假，補班清單優先，平日放假必須列入 `holidays`。若使用既有產生工具輔助，仍以官方逐日結果核對，並如實更新 `source.generator`。
 3. 確認每個新增年度有完整 365／366 個唯一日期，沒有缺日、重複或無效旗標；用 `HolidayService.get_day_type()` 逐日對照 CSV 的工作／假日結果。核對跨年、閏日、平日假期、補班與已涵蓋年度修訂，將比對摘要和原檔 hash 寫入既有 `source.verification_<year>`，成功後才延伸 `coverage.end` 與 `source.verified_at`。
 4. 執行排程／Server API 回歸，確認範圍外的前後日期仍為 `type=unknown`、`known=false`、`holiday=null`。依賴假日的規則不得回退成「週一至週五」猜測；未使用假日條件的普通排程維持原有計算方式。
