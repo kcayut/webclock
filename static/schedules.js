@@ -55,15 +55,10 @@
         t, onChange: renderAssignments,
         onSaved() { if (window.WebClockGroups && window.WebClockGroups.refresh) window.WebClockGroups.refresh(); }
     }) : null;
-    const assignmentEditor = assignments && $("schedule-group-assignment") ?
-        assignments.createEditor($("schedule-group-assignment")) : null;
     function renderAssignments() {
         if (!assignments) return;
         assignmentSummaries.forEach((element, id) => assignments.summary(element, assignments.get("schedule", id)));
-        if (assignmentEditor) {
-            const id = $("editor").hidden ? "" : $("schedule-id").value;
-            assignmentEditor.set(id ? {kind: "schedule", id} : null, id ? assignments.get("schedule", id) : null);
-        }
+        if (!$("editor").hidden) renderScheduleTargets();
         renderDevices();
     }
     const displayTime = value => window.WebClockTime.format(value, timeFormat, document.documentElement.lang);
@@ -327,18 +322,28 @@
             const description = repeat + " · " +
                 t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%";
             details.append(node("h3", schedule.name), node("p", description));
-            if (schedule.targets && schedule.targets.device_ids && schedule.targets.device_ids.length) {
-                const names = schedule.targets.device_ids.map(id => {
-                    const device = devices.find(item => item.id === id);
-                    return device && (device.name || device.id) || id;
-                });
-                details.append(node("p", format("target_devices_summary", {devices: names.join(" / ")}), "schedule-next"));
+            if (schedule.targets) {
+                const groups = assignments ? assignments.groups() || [] : [];
+                if (schedule.targets.group_ids && schedule.targets.group_ids.length) {
+                    const names = schedule.targets.group_ids.map(id => {
+                        const group = groups.find(item => item.id === id);
+                        return group && (group.name || group.id) || id;
+                    });
+                    details.append(node("p", format("target_groups_summary", {groups: names.join(" / ")}), "schedule-next"));
+                }
+                if (schedule.targets.device_ids && schedule.targets.device_ids.length) {
+                    const names = schedule.targets.device_ids.map(id => {
+                        const device = devices.find(item => item.id === id);
+                        return device && (device.name || device.id) || id;
+                    });
+                    details.append(node("p", format("target_devices_summary", {devices: names.join(" / ")}), "schedule-next"));
+                }
             }
             const next = nextTime(schedule.next_occurrence);
             if (paused) details.append(node("p", resumeMessage(paused, "resume_at"), "schedule-next"));
             details.append(node("p", format("next_ring", {datetime: next}), "schedule-next"));
             const actions = node("div", undefined, "schedule-row-actions");
-            if (assignments) {
+            if (assignments && !schedule.targets) {
                 const summary = node("span", undefined, "content-group-summary");
                 summary.setAttribute("data-schedule-assignment", schedule.id);
                 assignmentSummaries.set(schedule.id, summary);
@@ -563,20 +568,60 @@
         $("repeat-error").textContent = errorKey ? t(errorKey) : "";
         $("repeat-summary").textContent = repeatSummary();
     }
+    function renderScheduleTargetGroupStatus() {
+        $("schedule-target-group-status").textContent = scheduleTargetGroupIds.size ?
+            format("target_groups_selected", {count: scheduleTargetGroupIds.size}) : "";
+    }
     function renderScheduleTargetStatus() {
         $("schedule-target-status").textContent = scheduleTargetIds.size ?
             format("target_devices_selected", {count: scheduleTargetIds.size}) : "";
     }
     function renderScheduleTargets(force = false) {
-        const list = $("schedule-target-list");
-        if (!list) return;
+        const list = $("schedule-target-list"), groupList = $("schedule-target-groups");
+        if (!list || !groupList) return;
+        const groups = assignments ? assignments.groups() || [] : [];
         const authorized = devices.filter(device => device.can_revoke !== false);
-        const signature = authorized.map(device => device.id + ":" + (device.name || "") + ":" + (device.group_name || "")).join("|");
-        if (!force && signature === scheduleTargetDeviceSignature && list.children.length) {
+        const signature = groups.map(group => group.id + ":" + (group.name || "")).join("|") + "||" +
+            authorized.map(device => device.id + ":" + (device.name || "") + ":" + (device.group_name || "")).join("|");
+        if (!force && signature === scheduleTargetDeviceSignature && list.children.length && groupList.children.length) {
+            renderScheduleTargetGroupStatus();
             renderScheduleTargetStatus();
             return;
         }
         scheduleTargetDeviceSignature = signature;
+
+        groupList.replaceChildren();
+        const knownGroups = new Set(groups.map(group => group.id));
+        groups.forEach(group => {
+            const label = node("label", undefined, "check group-choice");
+            const input = node("input");
+            input.type = "checkbox";
+            input.value = group.id;
+            input.checked = scheduleTargetGroupIds.has(group.id);
+            input.addEventListener("change", () => {
+                if (input.checked) scheduleTargetGroupIds.add(group.id);
+                else scheduleTargetGroupIds.delete(group.id);
+                renderScheduleTargetGroupStatus();
+            });
+            label.append(input, node("span", group.name || group.id));
+            groupList.append(label);
+        });
+        scheduleTargetGroupIds.forEach(id => {
+            if (knownGroups.has(id)) return;
+            const label = node("label", undefined, "check group-choice");
+            const input = node("input");
+            input.type = "checkbox";
+            input.value = id;
+            input.checked = true;
+            input.addEventListener("change", () => {
+                if (!input.checked) scheduleTargetGroupIds.delete(id);
+                renderScheduleTargetGroupStatus();
+            });
+            label.append(input, node("span", format("target_groups_missing", {id})));
+            groupList.append(label);
+        });
+        if (!groupList.children.length) groupList.append(node("p", t("target_groups_empty"), "help"));
+
         list.replaceChildren();
         const known = new Set(authorized.map(device => device.id));
         authorized.forEach(device => {
@@ -609,6 +654,7 @@
             list.append(label);
         });
         if (!list.children.length) list.append(node("p", t("target_devices_empty"), "help"));
+        renderScheduleTargetGroupStatus();
         renderScheduleTargetStatus();
     }
     function fail(key, field) {

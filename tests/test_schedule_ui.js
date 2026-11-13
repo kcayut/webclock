@@ -68,10 +68,14 @@ const englishLabels = {
     repeat_holiday_hint: "Rings only on Taiwan holidays.",
     no_calendar_occurrence: "No matching upcoming event in the selected calendars.",
     no_future_date: "No future ring time for the selected dates.",
-    target_devices: "Devices", target_devices_hint: "Optionally select specific devices.",
+    target_groups: "Selected groups", target_groups_hint: "When selected, show this alarm only on these groups.",
+    target_groups_empty: "No groups are available.", target_groups_missing: "Removed group ({id})",
+    target_groups_selected: "{count} group(s) selected.",
+    target_groups_summary: "Selected groups: {groups}",
+    target_devices: "Selected devices", target_devices_hint: "When selected, show this alarm only on these devices.",
     target_devices_empty: "No authorized devices are available.", target_devices_missing: "Removed device ({id})",
     target_devices_selected: "{count} device(s) selected; the alarm is delivered only to them.",
-    target_devices_summary: "Devices: {devices}",
+    target_devices_summary: "Selected devices: {devices}",
     weekday_select_all: "Select all", weekday_clear: "Clear", weekdays_hint: "Choose one or more days.",
     repeat_summary_pair: "{repeat} · {when}", repeat_when_at: "Rings at {time}",
     repeat_when_event: "{minutes} min before the event", repeat_when_day: "On event days at {time}",
@@ -132,8 +136,8 @@ $("schedule-form").reset = () => {
 };
 const pending = [], requests = [], intervals = [], navigation = {}, inputRefreshes = [];
 const assignmentValues = {alarm: {group_ids: ["work"], partial_group_ids: []}};
-let assignmentGroups = [];
-const assignmentEditors = [], assignmentSummaries = new Set();
+let assignmentGroups = [{id: "alpha", name: "Alpha", enabled: true}];
+const assignmentSummaries = new Set();
 let assignmentOptions, assignmentLoads = 0, assignmentLanguages = 0, groupRefreshes = 0;
 let operatingIdentity = null, operatingIdentityFailed = false, operatingIdentityPending = null, chosenGroup = null;
 const timeouts = new Map();
@@ -176,10 +180,6 @@ const context = vm.createContext({
                     target.textContent = assignment.group_ids.join(" · ") || "Unassigned";
                 },
                 removeSummary(target) { assert.equal(assignmentSummaries.delete(target), true); },
-                createEditor(container) {
-                    assert.equal(container, $("schedule-group-assignment"));
-                    return {set(item, assignment) { assignmentEditors.push(plain({item, assignment})); }};
-                },
                 applyLanguage() { assignmentLanguages++; }
             };
         }},
@@ -286,7 +286,6 @@ const completionTimeout = setTimeout(() => {
     assert.equal(alarmSummary.textContent, "work");
 
     qa.edit({...row, rule: {weekdays: [1, 2, 3, 4, 5, 6, 7]}, browser_volume: 0});
-    assert.deepEqual(assignmentEditors.at(-1).item, {kind: "schedule", id: "alarm"});
     $("schedule-name").value = "Unsent schedule draft";
     $("schedule-name").focus();
     assignmentValues.alarm = {group_ids: ["home", "work"], partial_group_ids: []};
@@ -299,9 +298,17 @@ const completionTimeout = setTimeout(() => {
     assert.equal(groupRefreshes, 1, "Saving assignments refreshes the group management view");
     assert.equal($("schedule-volume").value, "0", "Saved mute must not fall back to maximum volume");
     await $("add-schedule").trigger("click");
-    assert.deepEqual(assignmentEditors.at(-1), {item: null, assignment: null}, "A new schedule has no persistent assignment target yet");
     assert.equal($("schedule-volume").value, "100");
     assert.equal($("schedule-volume-value").textContent, "100%");
+    const groupTargetInput = descendants($("schedule-target-groups")).find(input => input.value === "alpha");
+    assert.ok(groupTargetInput, "The editor lists groups for direct targeting");
+    groupTargetInput.checked = true;
+    await groupTargetInput.trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().targets), {group_ids: ["alpha"], device_ids: []});
+    assert.match($("schedule-target-group-status").textContent, /1 group/);
+    groupTargetInput.checked = false;
+    await groupTargetInput.trigger("change");
+    assert.equal(qa.scheduleData().targets, undefined, "No group selection leaves the alarm on group content assignment");
     const targetInput = descendants($("schedule-target-list")).find(input => input.value === "desk");
     assert.ok(targetInput, "The editor lists authorized devices");
     targetInput.checked = true;
