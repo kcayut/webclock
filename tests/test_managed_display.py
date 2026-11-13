@@ -93,6 +93,40 @@ class ManagedDisplayTest(unittest.TestCase):
         self.assertEqual([event['text'] for event in self.get(client_b).json['events']], ['device-target'])
         self.assertNotIn('announcements', self.get(client_a).json)
 
+    def test_targeted_alarms_are_delivered_only_to_matching_devices(self):
+        group_a = self.group('A')
+        group_b = self.group('B')
+        client_a, _ = self.device(group_a)
+        client_b, identity_b = self.device(group_b)
+        base = dict(name='alarm', type='alarm', time='07:30', rule={}, enabled=True,
+                    skipped_occurrences=[], browser_sound='silent', browser_volume=0, skip_holidays=False)
+        clock.save_json(self.root / 'schedules.json', [
+            dict(base, id='group-target', targets={'group_ids': [group_a['id']], 'device_ids': []}),
+            dict(base, id='device-target', targets={'group_ids': [], 'device_ids': [identity_b['device_id']]}),
+            dict(base, id='unassigned'),
+        ])
+        self.assertEqual(self.get(client_a, 'browser-alarms').json['enabled_ids'], ['group-target'])
+        self.assertEqual(self.get(client_b, 'browser-alarms').json['enabled_ids'], ['device-target'])
+
+    def test_management_schedule_device_targets_require_existing_devices(self):
+        group = self.group('A')
+        _, identity = self.device(group)
+        client = clock.app.test_client()
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        client.post('/login', base_url='https://localhost', data={
+            'username': 'owner', 'password': 'a-long-test-password', 'csrf_token': token})
+        token = client.get('/api/csrf', base_url='https://localhost').json['csrf_token']
+        base = dict(name='targeted alarm', type='alarm', time='07:30', rule={}, enabled=True)
+        valid = dict(base, id='targeted',
+                     targets={'group_ids': [], 'device_ids': [identity['device_id']]})
+        response = client.post('/api/v1/schedules', base_url='https://localhost', json=valid,
+                               headers={'X-CSRF-Token': token})
+        self.assertEqual(response.status_code, 201, response.text)
+        invalid = dict(base, id='invalid-target', targets={'group_ids': [], 'device_ids': ['missing-device']})
+        response = client.post('/api/v1/schedules', base_url='https://localhost', json=invalid,
+                               headers={'X-CSRF-Token': token})
+        self.assertEqual(response.status_code, 400)
+
     def test_global_windows_use_management_zone_without_widening_group_grants(self):
         settings = clock.load_calendar_settings()
         rule = dict(source_id='a', uid='wanted', scope='occurrence', recurrence_id='',

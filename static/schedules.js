@@ -48,6 +48,7 @@
     let serverSynced = 0, previewTimer, previewRequest = 0, previewTime = null, previewDraft = null;
     let pauseRequest = 0, nextPauseEnd = null, editorPausedUntil = null, saving = false;
     let calendarEvents = [], calendarTarget = null, calendarRequest = 0, day = {}, holidayCoverage = null;
+    let scheduleTargetIds = new Set(), scheduleTargetGroupIds = new Set(), scheduleTargetDeviceSignature = "";
     let timeFormat = document.body.getAttribute("data-time-format") === "12h" ? "12h" : "24h";
     const assignmentSummaries = new Map();
     const assignments = window.WebClockAssignments ? window.WebClockAssignments.create({
@@ -326,6 +327,13 @@
             const description = repeat + " · " +
                 t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%";
             details.append(node("h3", schedule.name), node("p", description));
+            if (schedule.targets && schedule.targets.device_ids && schedule.targets.device_ids.length) {
+                const names = schedule.targets.device_ids.map(id => {
+                    const device = devices.find(item => item.id === id);
+                    return device && (device.name || device.id) || id;
+                });
+                details.append(node("p", format("target_devices_summary", {devices: names.join(" / ")}), "schedule-next"));
+            }
             const next = nextTime(schedule.next_occurrence);
             if (paused) details.append(node("p", resumeMessage(paused, "resume_at"), "schedule-next"));
             details.append(node("p", format("next_ring", {datetime: next}), "schedule-next"));
@@ -464,6 +472,7 @@
             $("editor-title").textContent = t($("schedule-id").value ? "edit_alarm" : "add_alarm");
             renderCalendarSources(selectedCalendarSources());
             renderDateList();
+            renderScheduleTargets(true);
             setCalendarMode();
             queuePreview();
             renderEditorTime();
@@ -553,6 +562,54 @@
         const errorKey = repeatErrorKey();
         $("repeat-error").textContent = errorKey ? t(errorKey) : "";
         $("repeat-summary").textContent = repeatSummary();
+    }
+    function renderScheduleTargetStatus() {
+        $("schedule-target-status").textContent = scheduleTargetIds.size ?
+            format("target_devices_selected", {count: scheduleTargetIds.size}) : "";
+    }
+    function renderScheduleTargets(force = false) {
+        const list = $("schedule-target-list");
+        if (!list) return;
+        const authorized = devices.filter(device => device.can_revoke !== false);
+        const signature = authorized.map(device => device.id + ":" + (device.name || "") + ":" + (device.group_name || "")).join("|");
+        if (!force && signature === scheduleTargetDeviceSignature && list.children.length) {
+            renderScheduleTargetStatus();
+            return;
+        }
+        scheduleTargetDeviceSignature = signature;
+        list.replaceChildren();
+        const known = new Set(authorized.map(device => device.id));
+        authorized.forEach(device => {
+            const label = node("label", undefined, "check group-choice");
+            const input = node("input");
+            input.type = "checkbox";
+            input.value = device.id;
+            input.checked = scheduleTargetIds.has(device.id);
+            input.addEventListener("change", () => {
+                if (input.checked) scheduleTargetIds.add(device.id);
+                else scheduleTargetIds.delete(device.id);
+                renderScheduleTargetStatus();
+            });
+            label.append(input, node("span", (device.name || device.id) +
+                (device.group_name ? " · " + device.group_name : "")));
+            list.append(label);
+        });
+        scheduleTargetIds.forEach(id => {
+            if (known.has(id)) return;
+            const label = node("label", undefined, "check group-choice");
+            const input = node("input");
+            input.type = "checkbox";
+            input.value = id;
+            input.checked = true;
+            input.addEventListener("change", () => {
+                if (!input.checked) scheduleTargetIds.delete(id);
+                renderScheduleTargetStatus();
+            });
+            label.append(input, node("span", format("target_devices_missing", {id})));
+            list.append(label);
+        });
+        if (!list.children.length) list.append(node("p", t("target_devices_empty"), "help"));
+        renderScheduleTargetStatus();
     }
     function fail(key, field) {
         const error = new Error(t(key));
@@ -688,6 +745,10 @@
         document.querySelectorAll('[name="weekday"]').forEach(input => input.checked = false);
         $("schedule-repeat-mode").value = "once";
         renderDateList();
+        scheduleTargetIds = new Set(schedule && schedule.targets ? schedule.targets.device_ids : []);
+        scheduleTargetGroupIds = new Set(schedule && schedule.targets ? schedule.targets.group_ids : []);
+        scheduleTargetDeviceSignature = "";
+        renderScheduleTargets(true);
         $("schedule-id").value = schedule ? schedule.id : "";
         $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
         $("schedule-volume").value = String(schedule && schedule.browser_volume != null ? schedule.browser_volume : 100);
@@ -866,6 +927,13 @@
         data.name = data.name.trim() || t("alarm");
         data.browser_sound = $("schedule-sound").value;
         data.browser_volume = Number($("schedule-volume").value);
+        const targetDeviceIds = Array.from(scheduleTargetIds).sort();
+        const targetGroupIds = Array.from(scheduleTargetGroupIds).sort();
+        if (targetDeviceIds.length || targetGroupIds.length) {
+            data.targets = {group_ids: targetGroupIds, device_ids: targetDeviceIds};
+        } else if (schedules.some(schedule => schedule.id === id && schedule.targets)) {
+            data.targets = null;
+        }
         if (calendarMode === "event" && !data.time) data.time = "07:30";
         if (calendarMode !== "event" && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.time) || ($("schedule-time")._clockTimeControl || {}).invalid)) throw fail("select_time", "time");
         if (!linked && mode === "once") {
@@ -955,6 +1023,7 @@
         deviceDataStale = false;
         operatingDevice = null;
         renderDevices();
+        if (!$("editor").hidden) renderScheduleTargets();
         identity.then(result => {
             if (request !== deviceRequest) return;
             operatingDevice = result;

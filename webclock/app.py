@@ -1383,9 +1383,17 @@ def managed_content(identity):
         calendar_settings = load_calendar_settings()
         source_rows = get_calendar_sources()
         sources = {row['id'] for row in source_rows}
-        schedules = [row for row in read_schedules(content_directory())
-                     if row['id'] in content['schedule_ids']
-                     and not set((row.get('calendar_link') or {}).get('source_ids', [])) - (sources | {'local'})]
+        schedules = []
+        for row in read_schedules(content_directory()):
+            targets = row.get('targets')
+            if targets:
+                if identity['group_id'] not in targets['group_ids'] and identity['device_id'] not in targets['device_ids']:
+                    continue
+            elif row['id'] not in content['schedule_ids']:
+                continue
+            if set((row.get('calendar_link') or {}).get('source_ids', [])) - (sources | {'local'}):
+                continue
+            schedules.append(row)
         needed = set(content['calendar_source_ids']) | {
             target['source_id'] for target in content.get('calendar_targets', [])} | {
             source for row in schedules for source in (row.get('calendar_link') or {}).get('source_ids', [])}

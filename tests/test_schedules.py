@@ -249,6 +249,20 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(validate_schedule(dict(linked, calendar_link=None))['skipped_occurrences'], event_skips)
         self.assertEqual(self.linked(mode='day', skipped_occurrences=event_skips)['skipped_occurrences'], event_skips)
 
+    def test_schedule_targets_are_normalized_and_validated(self):
+        targeted = self.schedule(targets={'group_ids': ['group-b', 'group-a', 'group-a'],
+                                          'device_ids': ['device-b', 'device-a']})
+        self.assertEqual(targeted['targets'], {'group_ids': ['group-a', 'group-b'],
+                                               'device_ids': ['device-a', 'device-b']})
+        self.assertNotIn('targets', self.schedule(targets={'group_ids': [], 'device_ids': []}))
+        self.assertNotIn('targets', self.schedule(targets=None))
+        for invalid in ([], {}, {'group_ids': [], 'device_ids': [], 'other': []},
+                        {'group_ids': ['bad id'], 'device_ids': []},
+                        {'group_ids': [1], 'device_ids': []},
+                        {'group_ids': [], 'device_ids': ['device'] * 101}):
+            with self.subTest(targets=invalid), self.assertRaises(ValueError):
+                self.schedule(targets=invalid)
+
     def test_validation_rejects_ambiguous_or_unsafe_values(self):
         invalid = [dict(time='24:00'), dict(time='7:30'), dict(volume=70), dict(repeat='once'),
                    dict(rule={'weekdays': [0]}), dict(rule={'weekdays': [True]}),

@@ -46,6 +46,19 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         if link and set(link['source_ids']) - {source['id'] for source in source_catalog()}:
             raise ValueError('Selected calendar source no longer exists')
 
+    def check_targets(row):
+        targets = row.get('targets')
+        if not targets:
+            return
+        if device_access is None:
+            raise ValueError('Schedule targets are unavailable')
+        access = device_access()
+        owner = owner_id()
+        groups = {group['id'] for group in access.list_groups(owner)}
+        devices = {device['id'] for device in access.list_devices(owner, include_legacy=False)}
+        if set(targets['group_ids']) - groups or set(targets['device_ids']) - devices:
+            raise ValueError('Selected schedule target no longer exists')
+
     def skip_occurrence(row, event, now, expected=None):
         if any(datetime.fromisoformat(value) >= now for value in row['skipped_occurrences']):
             raise ValueError('Occurrence already skipped; wait for resume')
@@ -89,6 +102,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
                     raise ValueError('Expected a schedule object')
                 row = validate_schedule(dict(data, id=data.get('id', uuid.uuid4().hex)))
                 check_sources(row)
+                check_targets(row)
                 if len(rows) >= 1000 or any(item['id'] == row['id'] for item in rows):
                     raise ValueError('Duplicate schedule ID or schedule limit reached')
                 rows.append(row)
@@ -122,6 +136,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         row = validate_schedule(dict(old, **data))
         if not old or 'calendar_link' in data:
             check_sources(row)
+        if 'targets' in data:
+            check_targets(row)
         now = taipei_now()
         event = next_occurrence(row, holidays, now, calendar_events)
         result = dict(server_time=now.isoformat(), timezone='Asia/Taipei')
@@ -153,6 +169,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             row = validate_schedule(dict(old, **data))
             if 'calendar_link' in data:
                 check_sources(row)
+            if 'targets' in data:
+                check_targets(row)
             if skip:
                 now = taipei_now()
                 skip_occurrence(row, next_occurrence(row, holidays, now, calendar_events), now, expected)

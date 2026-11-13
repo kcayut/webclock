@@ -143,6 +143,8 @@ webclock_state/              非公開の実行データ。Git に追加しな�
 
 アラームには `calendar_link` を指定できます。省略または `null` の場合は固定時刻です。
 
+- `targets`：省略または `null`。`{"group_ids":[],"device_ids":[]}` で、既存のグループ／端末 ID を各最大 100 件指定できます。指定した場合は一致するグループまたは端末にだけアラームを送り、グループ内容のスケジュール割り当ては無視します。
+
 ```json
 {"calendar_link":{"mode":"event","source_ids":["local","work"],"offset_minutes":15}}
 ```

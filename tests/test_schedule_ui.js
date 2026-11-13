@@ -68,6 +68,10 @@ const englishLabels = {
     repeat_holiday_hint: "Rings only on Taiwan holidays.",
     no_calendar_occurrence: "No matching upcoming event in the selected calendars.",
     no_future_date: "No future ring time for the selected dates.",
+    target_devices: "Devices", target_devices_hint: "Optionally select specific devices.",
+    target_devices_empty: "No authorized devices are available.", target_devices_missing: "Removed device ({id})",
+    target_devices_selected: "{count} device(s) selected; the alarm is delivered only to them.",
+    target_devices_summary: "Devices: {devices}",
     weekday_select_all: "Select all", weekday_clear: "Clear", weekdays_hint: "Choose one or more days.",
     repeat_summary_pair: "{repeat} · {when}", repeat_when_at: "Rings at {time}",
     repeat_when_event: "{minutes} min before the event", repeat_when_day: "On event days at {time}",
@@ -298,6 +302,15 @@ const completionTimeout = setTimeout(() => {
     assert.deepEqual(assignmentEditors.at(-1), {item: null, assignment: null}, "A new schedule has no persistent assignment target yet");
     assert.equal($("schedule-volume").value, "100");
     assert.equal($("schedule-volume-value").textContent, "100%");
+    const targetInput = descendants($("schedule-target-list")).find(input => input.value === "desk");
+    assert.ok(targetInput, "The editor lists authorized devices");
+    targetInput.checked = true;
+    await targetInput.trigger("change");
+    assert.deepEqual(plain(qa.scheduleData().targets), {group_ids: [], device_ids: ["desk"]});
+    assert.match($("schedule-target-status").textContent, /1 device/);
+    targetInput.checked = false;
+    await targetInput.trigger("change");
+    assert.equal(qa.scheduleData().targets, undefined, "No device selection leaves the alarm on group assignment");
     assert.equal($("weekday-field").hidden, true, "A new one-time alarm hides weekday controls");
     assert.equal($("repeat-once-field").hidden, false, "The one-time date field is visible");
     assert.equal($("schedule-date-picker").disabled, false, "The one-time date is optional and editable");

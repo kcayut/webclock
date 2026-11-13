@@ -258,8 +258,9 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 | `browser_sound`、`browser_volume` | 預設 `bell`、100；音色與音量限制見上節 |
 | `skipped_occurrences` | 預設 `[]`，最多 3660 筆含時區的 ISO 日期時間，每筆最長 40 字元；儲存時轉為台灣時區、排序並去重 |
 | `calendar_link` | 可省略或 `null`；只適用 `alarm`，來源 1–50 筆，需為既存來源 ID；其餘語意見上節 |
+| `targets` | 可省略或 `null`；`{"group_ids":[],"device_ids":[]}`，各最多 100 筆且需為既存群組／裝置。有選取時只傳送到符合的群組或裝置，並忽略群組內容的排程指派 |
 
-`PUT` 合併指定的頂層欄位，未提供的欄位保留；提供 `rule` 或 `calendar_link` 時替換該物件，不是深層合併。`calendar_link: null` 解除聯動，`skipped_occurrences: []` 清除略過記錄。
+`PUT` 合併指定的頂層欄位，未提供的欄位保留；提供 `rule` 或 `calendar_link` 時替換該物件，不是深層合併。`calendar_link: null` 解除聯動，`targets: null` 清除目標裝置／群組，`skipped_occurrences: []` 清除略過記錄。
 
 | 操作 | 成功回應 |
 | --- | --- |

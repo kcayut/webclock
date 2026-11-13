@@ -143,6 +143,8 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
 
 An alarm may include `calendar_link`; omit it or use `null` for a fixed-time schedule.
 
+- `targets`: optional or `null`; `{"group_ids":[],"device_ids":[]}` with at most 100 existing group/device IDs each. When present, only matching groups or devices receive the alarm and group-content schedule assignment is ignored.
+
 ```json
 {"calendar_link":{"mode":"event","source_ids":["local","work"],"offset_minutes":15}}
 ```

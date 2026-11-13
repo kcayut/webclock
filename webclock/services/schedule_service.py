@@ -13,7 +13,7 @@ from .storage import load_json, save_json, storage_lock
 
 TAIPEI = timezone(timedelta(hours=8), 'Asia/Taipei')
 FIELDS = {'id', 'name', 'type', 'time', 'rule', 'enabled', 'skipped_occurrences',
-          'browser_sound', 'browser_volume', 'skip_holidays', 'calendar_link'}
+          'browser_sound', 'browser_volume', 'skip_holidays', 'calendar_link', 'targets'}
 # Retain old prototype settings on disk, outside the management/API contract.
 LEGACY_DEVICE_FIELDS = {'sound', 'volume', 'repeat', 'snooze_minutes'}
 
@@ -35,6 +35,20 @@ def validate_calendar_target(target, sources):
 def calendar_target_matches(event, target):
     return (event.get('source_id') == target['source_id'] and event.get('uid') == target['uid']
             and (target['scope'] == 'series' or event.get('recurrence_id', '') == target['recurrence_id']))
+
+
+def validate_schedule_targets(targets):
+    if targets is None:
+        return None
+    if (not isinstance(targets, dict) or set(targets) != {'group_ids', 'device_ids'}
+            or any(not isinstance(values, list) or len(values) > 100
+                   or any(not isinstance(value, str)
+                          or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value)
+                          for value in values)
+                   for values in targets.values())):
+        raise ValueError('Invalid schedule targets')
+    result = {key: sorted(set(values)) for key, values in targets.items()}
+    return result if result['group_ids'] or result['device_ids'] else None
 
 
 def validate_schedule(data):
@@ -66,6 +80,12 @@ def validate_schedule(data):
         raise ValueError('Browser volume must be an integer from 0 to 100')
     if type(result['skip_holidays']) is not bool:
         raise ValueError('Invalid holiday exclusion setting')
+    if 'targets' in result:
+        targets = validate_schedule_targets(result['targets'])
+        if targets is None:
+            result.pop('targets', None)
+        else:
+            result['targets'] = targets
     link = result.get('calendar_link')
     if link is not None:
         if (result['type'] != 'alarm' or not isinstance(link, dict)

@@ -63,7 +63,10 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 #schedule-time-field .time-input-separator { font-size: 28px; }
 #schedule-time-field .time-input-period { flex-basis: 100%; margin-top: 8px; }
 .setting-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); align-items: center; gap: 16px; margin: 0; padding: 0 0 18px; }
-.setting-row > label { margin: 0; font-size: 15px; }
+.setting-row > label, .setting-row > .setting-label { margin: 0; font-size: 15px; }
+.schedule-target-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 18px; }
+.schedule-target-options .group-choice { min-height: 44px; }
+#schedule-target-status:empty { display: none; }
 .form-section .help { font-size: 14px; margin: 4px 0 0; }
 .form-section > .help { margin: 0 0 12px; }
 .setting-switch { justify-content: space-between; font-weight: 600; gap: 20px; }
