@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0
+
+- Server、App、HACS 整合與卡片同步至 1.4.0。
+- Server 提供時鐘日期／秒數／星期與訊息顯示設定，並整理鬧鐘觸發、重複及對象選擇。
+- 網頁鬧鐘支援略過與恢復，每次響鈴最長一小時。
+- 保留 HA 原生更新入口、Ingress 與持久資料；App 仍標示 experimental。
+
 ## 1.3.0
 
 - Server、App、HACS 整合與卡片同步至 1.3.0。
