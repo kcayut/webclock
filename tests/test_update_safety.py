@@ -46,13 +46,15 @@ class SettingsTest(unittest.TestCase):
     def test_save_reload_and_invalid_inputs(self):
         expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en', 'time_format': '24h',
                     'show_seconds': False, 'show_date': True, 'date_format': 'm/d', 'show_weekday': True,
-                    'message_duration': 5, 'message_transition': 'fade'}
+                    'message_duration': 5, 'message_transition': 'fade', 'clock_style': 'classic', 'clock_theme': 'auto'}
         self.assertEqual(self.client.post('/api/control', json=expected).status_code, 200)
         self.assertEqual(clock.load_display_settings(), expected)
         previous = self.path.read_bytes()
         for data in ({'brightness': 101}, {'brightness': True}, {'brightness': 3.5},
                      {'timezone_offset': '-13'}, {'language': 'unknown'}, {'language': 'zh-CN'},
-                     {'mode': 'invalid'}, {'other': 1}, [], None):
+                     {'mode': 'invalid'}, {'clock_style': 'neon'}, {'clock_style': None},
+                     {'clock_style': []}, {'clock_theme': 'neon'}, {'clock_theme': None},
+                     {'clock_theme': []}, {'other': 1}, [], None):
             with self.subTest(data=data):
                 response = self.client.post('/api/control', data=json.dumps(data), content_type='application/json')
                 self.assertEqual(response.status_code, 400)
@@ -420,7 +422,7 @@ class UpdaterTest(unittest.TestCase):
         updater.check_saved_data(layout, layout, dict(self.settings, time_format='24h'))
         new_defaults = dict(self.settings, time_format='24h', show_seconds=False, show_date=True,
                             date_format='m/d', show_weekday=True, message_duration=5,
-                            message_transition='fade')
+                            message_transition='fade', clock_style='classic')
         updater.check_saved_data(layout, layout, new_defaults)
         self.assertEqual(settings.read_bytes(), before)
         for value in ('12h', 'invalid', None):
@@ -431,10 +433,44 @@ class UpdaterTest(unittest.TestCase):
              patch.object(updater.time, 'sleep'):
             updater.wait_healthy('http://localhost', self.settings)
 
+    def test_clock_style_migration_preserves_legal_values_and_rejects_unknown(self):
+        old = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'ja'}
+        migrated = updater.migrated_settings(old)
+        self.assertEqual(migrated['clock_style'], 'classic')
+        self.assertEqual(migrated['clock_theme'], 'auto')
+        self.assertEqual(updater.migrated_settings(migrated), migrated)
+        for theme in ('auto', 'dark', 'light'):
+            self.assertEqual(updater.migrated_settings(dict(old, clock_theme=theme))['clock_theme'], theme)
+        self.assertEqual(updater.migrated_settings(dict(old, clock_style='paper'))['clock_style'], 'paper')
+        for retired in ('glass', 'orbit'):
+            mapped = updater.migrated_settings(dict(old, clock_style=retired))
+            self.assertEqual(mapped['clock_style'], 'classic')
+            self.assertEqual(mapped['brightness'], 35)
+        self.assertTrue(updater.settings_match(dict(old, clock_style='paper'),
+                                               dict(old, clock_style='paper')))
+        self.assertTrue(updater.settings_match(dict(old, clock_style='glass'),
+                                               dict(old, clock_style='classic')))
+        self.assertFalse(updater.settings_match(dict(old, clock_style='paper'),
+                                                dict(old, clock_style='flip')))
+        for invalid in ('neon', None, 1, ['flip'], {'id': 'flip'}, True):
+            with self.subTest(value=invalid), self.assertRaisesRegex(RuntimeError, 'clock style'):
+                updater.migrated_settings(dict(old, clock_style=invalid))
+        for invalid in ('neon', None, 1, ['dark'], {'id': 'dark'}, True):
+            with self.subTest(value=invalid), self.assertRaisesRegex(RuntimeError, 'clock theme'):
+                updater.migrated_settings(dict(old, clock_theme=invalid))
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            updater.check_saved_data((state, state / 'notes.json'), (state, state / 'notes.json'),
+                                     dict(old, clock_style='glass'))
+            with self.assertRaisesRegex(RuntimeError, 'Could not capture'):
+                updater.check_saved_data((state, state / 'notes.json'), (state, state / 'notes.json'),
+                                         dict(old, clock_style='neon'))
+
     def test_settings_match_normalizes_additive_defaults_in_either_direction(self):
         old = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en'}
         new = dict(old, show_seconds=False, show_date=True, date_format='m/d',
-                   show_weekday=True, message_duration=5, message_transition='fade')
+                   show_weekday=True, message_duration=5, message_transition='fade',
+                   clock_style='classic')
         self.assertTrue(updater.settings_match(new, old))
         self.assertTrue(updater.settings_match(old, new))
         self.assertTrue(updater.settings_match(dict(new, brightness=40), dict(old, brightness=40)))

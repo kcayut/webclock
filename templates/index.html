@@ -307,6 +307,7 @@
 </head>
 
 <body data-deployment-mode="{{ deployment_mode }}">
+    <div id="clock-backdrop" aria-hidden="true"></div>
     <button id="alarm-bell" type="button" aria-label="{{ translations[language].alarm_set }}">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4M12 2v2"/></svg>
     </button>
@@ -375,6 +376,9 @@
             language: {{ language | tojson }}
         });
     </script>
+    <!-- Optional style assets must not prevent the essential clock above from starting. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='clock-styles.css') }}">
+    <script src="{{ url_for('static', filename='clock-styles.js') }}"></script>
     <script src="{{ url_for('static', filename='device-session.js') }}"></script>
     <script>window.WebClockEnrollmentTranslations = {{ device_enrollment_translations | tojson }};</script>
     <script src="{{ url_for('static', filename='time-format.js') }}"></script>
@@ -401,6 +405,7 @@
             var pack = I18N[currentLanguage] || I18N['zh-TW'];
             return pack[key] || I18N['zh-TW'][key] || key;
         }
+
 
         function setLanguage(language) {
             if (!I18N[language] || currentLanguage === language) return;
@@ -487,7 +492,7 @@
                 language: currentLanguage,
                 time_format: '24h',
                 show_seconds: false, show_date: true, date_format: 'm/d', show_weekday: true,
-                message_duration: 5, message_transition: 'fade',
+                message_duration: 5, message_transition: 'fade', clock_style: 'classic', clock_theme: 'auto',
                 night: {enabled: false, start: '22:00', end: '07:00', brightness: 15, black: false}
             };
         }
@@ -502,6 +507,8 @@
                 show_seconds: settings.show_seconds, show_date: settings.show_date,
                 date_format: settings.date_format, show_weekday: settings.show_weekday,
                 message_duration: settings.message_duration, message_transition: settings.message_transition,
+                clock_style: settings.clock_style,
+                clock_theme: settings.clock_theme || 'auto',
                 night: {
                     enabled: settings.night.enabled,
                     start: settings.night.start,
@@ -543,7 +550,7 @@
                 mode: true, brightness: true, timezone_offset: true,
                 language: true, time_format: true, night: true,
                 show_seconds: true, show_date: true, date_format: true, show_weekday: true,
-                message_duration: true, message_transition: true
+                message_duration: true, message_transition: true, clock_style: true, clock_theme: true
             };
             var key;
             for (key in candidate) {
@@ -591,6 +598,14 @@
             if (owns(candidate, 'message_transition')) {
                 if (['fade', 'left', 'up'].indexOf(candidate.message_transition) < 0) return null;
                 base.message_transition = candidate.message_transition;
+            }
+            if (owns(candidate, 'clock_style')) {
+                if (['classic', 'flip', 'segment', 'paper'].indexOf(candidate.clock_style) < 0) return null;
+                base.clock_style = candidate.clock_style;
+            }
+            if (owns(candidate, 'clock_theme')) {
+                if (['auto', 'dark', 'light'].indexOf(candidate.clock_theme) < 0) return null;
+                base.clock_theme = candidate.clock_theme;
             }
             if (owns(candidate, 'night')) {
                 var night = candidate.night;
@@ -658,6 +673,7 @@
             document.getElementById('day-part').style.display = normalized.show_weekday ? '' : 'none';
             document.getElementById('date-info').style.display = normalized.show_date || normalized.show_weekday ? '' : 'none';
             document.getElementById('date-part').style.marginRight = normalized.show_weekday ? '' : '0';
+            document.body.classList.toggle('no-date-info', !(normalized.show_date || normalized.show_weekday));
             document.getElementById('list-container').setAttribute('data-transition', normalized.message_transition);
             if (normalized.language) {
                 setLanguage(normalized.language);
@@ -680,6 +696,13 @@
         function applyDisplay() {
             var effective = clockDisplaySettings(activeSettings, getClockUtcMs(), timezoneOffset);
             document.body.classList.toggle('force-black', effective.mode === 'black');
+            document.body.classList.toggle('night-active', !!effective.night);
+            var theme = effective.night ? 'dark' :
+                (typeof clockTheme === 'function' ? clockTheme(activeSettings) : 'dark');
+            document.body.classList.toggle('clock-theme-dark', theme === 'dark');
+            document.body.classList.toggle('clock-theme-light', theme === 'light');
+            var backdrop = document.getElementById('clock-backdrop');
+            if (backdrop) backdrop.style.opacity = effective.brightness / 100;
             document.getElementById('clock-container').style.opacity = effective.brightness / 100;
             document.getElementById('list-container').style.opacity = effective.brightness / 100;
         }

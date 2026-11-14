@@ -6,6 +6,8 @@ on:
     paths:
       - index.html
       - static/clock.css
+      - static/clock-styles.css
+      - static/clock-styles.js
       - static/clock.js
       - static/time-format.js
       - static/time-inputs.js
@@ -46,7 +48,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/webclock-pages/static"
           cp index.html sw.js "$RUNNER_TEMP/webclock-pages/"
-          cp static/clock.css static/clock.js static/offline.js static/time-format.js static/time-inputs.js static/time-inputs.css "$RUNNER_TEMP/webclock-pages/static/"
+          cp static/clock.css static/clock-styles.css static/clock-styles.js static/clock.js static/offline.js static/time-format.js static/time-inputs.js static/time-inputs.css "$RUNNER_TEMP/webclock-pages/static/"
           cp -R static/brand "$RUNNER_TEMP/webclock-pages/static/"
       - uses: actions/upload-pages-artifact@v4
         with:

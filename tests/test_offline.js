@@ -53,6 +53,8 @@ async function checkScope(scope) {
         assert.equal(await (await fetchPage(scope + '?test=1')).text(), 'fresh:' + scope);
         assert.equal(await (await fetchPage(scope + 'index.html')).text(), 'fresh:' + scope);
         assert.ok((await (await fetchPage(scope + 'static/clock.js')).text()).startsWith('installed:'));
+        assert.ok((await (await fetchPage(scope + 'static/clock-styles.js')).text()).startsWith('installed:'));
+        assert.ok((await (await fetchPage(scope + 'static/clock-styles.css')).text()).startsWith('installed:'));
         assert.ok((await (await fetchPage(scope + 'static/time-format.js')).text()).startsWith('installed:'));
         assert.ok((await (await fetchPage(scope + 'static/time-inputs.js')).text()).startsWith('installed:'));
         assert.ok((await (await fetchPage(scope + 'static/time-inputs.css')).text()).startsWith('installed:'));

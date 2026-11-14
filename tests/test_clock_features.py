@@ -158,6 +158,110 @@ class ClockFeaturesTest(unittest.TestCase):
             for key in defaults:
                 self.assertIn('data-display-setting="' + key + '"', common)
 
+    def test_clock_style_api_roundtrip_default_backup_and_invalid_values(self):
+        for retired in ('glass', 'orbit'):
+            Path(clock.SETTINGS_FILE).write_text(json.dumps({'brightness': 41, 'clock_style': retired}))
+            before = Path(clock.SETTINGS_FILE).read_bytes()
+            loaded = clock.load_display_settings()
+            self.assertEqual(loaded['clock_style'], 'classic')
+            self.assertEqual(loaded['brightness'], 41)
+            self.assertEqual(Path(clock.SETTINGS_FILE).read_bytes(), before,
+                             'reading a retired style does not rewrite settings')
+        owner_path = Path(clock.SETTINGS_FILE).parent / 'owners' / 'owner2' / 'settings.json'
+        owner_path.parent.mkdir(parents=True)
+        owner_path.write_text(json.dumps({'language': 'ja', 'clock_style': 'orbit'}))
+        owner_before = owner_path.read_bytes()
+        owner_loaded = clock.load_display_settings(owner_path)
+        self.assertEqual(owner_loaded['clock_style'], 'classic')
+        self.assertEqual(owner_loaded['language'], 'ja')
+        self.assertEqual(owner_path.read_bytes(), owner_before)
+        Path(clock.SETTINGS_FILE).write_text('{}')
+        self.assertEqual(clock.load_display_settings()['clock_style'], 'classic')
+        self.assertEqual(clock.load_display_settings()['clock_theme'], 'auto')
+        current_style = 'classic'
+        for style in ('classic', 'flip', 'segment', 'paper'):
+            previous_revision = self.client.get('/api/control').json['revision']
+            response = self.client.post('/api/control', json={'clock_style': style})
+            self.assertEqual(response.status_code, 200, style)
+            self.assertEqual(clock.load_display_settings()['clock_style'], style)
+            self.assertEqual(self.status_at('2026-10-01T10:30')['settings']['clock_style'], style)
+            self.assertEqual(self.client.get('/api/control').json['settings']['clock_style'], style)
+            if style != current_style:
+                self.assertNotEqual(response.json['revision'], previous_revision)
+            current_style = style
+        current_theme = 'auto'
+        for theme in ('auto', 'dark', 'light'):
+            previous_revision = self.client.get('/api/control').json['revision']
+            response = self.client.post('/api/control', json={'clock_theme': theme})
+            self.assertEqual(response.status_code, 200, theme)
+            self.assertEqual(clock.load_display_settings()['clock_theme'], theme)
+            self.assertEqual(self.status_at('2026-10-01T10:30')['settings']['clock_theme'], theme)
+            self.assertEqual(self.client.get('/api/control').json['settings']['clock_theme'], theme)
+            if theme != current_theme:
+                self.assertNotEqual(response.json['revision'], previous_revision)
+            current_theme = theme
+        backup = self.client.get('/api/backup').json
+        backup['settings']['clock_style'] = 'paper'
+        backup['settings']['clock_theme'] = 'dark'
+        self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
+        self.assertEqual(clock.load_display_settings()['clock_style'], 'paper')
+        self.assertEqual(clock.load_display_settings()['clock_theme'], 'dark')
+        backup['settings'].pop('clock_style')
+        backup['settings'].pop('clock_theme')
+        self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
+        self.assertEqual(clock.load_display_settings()['clock_style'], 'classic')
+        self.assertEqual(clock.load_display_settings()['clock_theme'], 'auto')
+        for retired in ('glass', 'orbit'):
+            legacy = self.client.get('/api/backup').json
+            legacy['settings'].update(clock_style=retired, brightness=37)
+            self.assertEqual(self.client.post('/api/backup', json=legacy).status_code, 200)
+            self.assertEqual(clock.load_display_settings()['clock_style'], 'classic')
+            self.assertEqual(clock.load_display_settings()['brightness'], 37)
+        before = Path(clock.SETTINGS_FILE).read_bytes()
+        for invalid in ({'clock_style': 'neon'}, {'clock_style': 'glass'}, {'clock_style': 'orbit'},
+                        {'clock_style': None}, {'clock_style': 3},
+                        {'clock_style': ['flip']}, {'clock_style': {'id': 'flip'}}, {'clock_style': True},
+                        {'clock_theme': 'neon'}, {'clock_theme': None}, {'clock_theme': 3},
+                        {'clock_theme': ['dark']}, {'clock_theme': {'id': 'dark'}}, {'clock_theme': True}):
+            self.assertEqual(self.client.post('/api/control', json=invalid).status_code, 400, invalid)
+            self.assertEqual(Path(clock.SETTINGS_FILE).read_bytes(), before)
+        for invalid in ({'clock_style': 'neon'}, {'clock_style': None}, {'clock_style': 3},
+                        {'clock_style': ['flip']}, {'clock_style': {'id': 'flip'}}, {'clock_style': True},
+                        {'clock_theme': 'neon'}, {'clock_theme': None}, {'clock_theme': 3},
+                        {'clock_theme': ['dark']}, {'clock_theme': {'id': 'dark'}}, {'clock_theme': True}):
+            invalid_backup = self.client.get('/api/backup').json
+            invalid_backup['settings'].update(invalid)
+            self.assertEqual(self.client.post('/api/backup', json=invalid_backup).status_code, 400, invalid)
+            self.assertEqual(Path(clock.SETTINGS_FILE).read_bytes(), before)
+        for language in clock.SUPPORTED_LANGUAGES:
+            page = self.client.get('/admin?lang=' + language).text
+            self.assertIn('data-management-tab="styles"', page)
+            self.assertIn('data-i18n="clock_style_flip"', page)
+            self.assertIn('id="clock-style-preview"', page)
+            self.assertIn('id="clock_theme_auto"', page)
+            self.assertIn('id="clock_theme_dark"', page)
+            self.assertIn('id="clock_theme_light"', page)
+            for style in ('classic', 'flip', 'segment', 'paper'):
+                self.assertIn('id="clock_style_' + style + '"', page)
+            self.assertNotIn('id="clock_style_glass"', page)
+            self.assertNotIn('id="clock_style_orbit"', page)
+
+    def test_clock_style_preview_is_fixed_pure_and_does_not_write_settings(self):
+        before = self.client.get('/api/control').json
+        page = self.client.get('/admin/preview?style=paper&sample=1&show_seconds=1&lang=en&theme=dark')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        for required in ('static/clock-styles.css', 'static/clock-styles.js',
+                         '10:28', '2026', 'Team meeting', 'var theme = "dark"'):
+            self.assertIn(required, html)
+        for forbidden in ('device-session.js', 'device-enrollment.js', 'alarms.js',
+                          'alarm-audio.js', 'offline.js', 'setInterval(', 'fetch('):
+            self.assertNotIn(forbidden, html)
+        self.assertEqual(self.client.get('/api/control').json, before)
+        invalid = self.client.get('/admin/preview?style=neon&date_format=bad&time_format=99&lang=zz')
+        self.assertEqual(invalid.status_code, 200)
+        self.assertIn('style = "classic"', invalid.get_data(as_text=True))
+
     def test_night_and_backup_roundtrip_validation_rollback(self):
         night = dict(enabled=True, start='22:00', end='07:00', brightness=12, black=True)
         self.assertEqual(self.client.post('/api/control', json={'night': night}).status_code, 200)

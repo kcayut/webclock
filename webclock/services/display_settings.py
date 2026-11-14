@@ -5,9 +5,42 @@ from webclock.translations.common import SUPPORTED_LANGUAGES
 
 
 DEFAULT_NIGHT = {'enabled': False, 'start': '22:00', 'end': '07:00', 'brightness': 15, 'black': False}
+CLOCK_STYLES = ('classic', 'flip', 'segment', 'paper')
+RETIRED_CLOCK_STYLES = ('glass', 'orbit')
+CLOCK_THEMES = ('auto', 'dark', 'light')
+
+
+def migrate_clock_style(settings):
+    """Map clock styles retired from the product while preserving every other value."""
+    if not isinstance(settings, dict):
+        return settings
+    if settings.get('clock_style') in RETIRED_CLOCK_STYLES:
+        migrated = dict(settings)
+        migrated['clock_style'] = 'classic'
+        return migrated
+    return settings
+
+
+def migrate_display_overrides(overrides):
+    """Keep explicit overrides explicit, but map a retired clock style to classic."""
+    if not isinstance(overrides, dict) or overrides.get('clock_style') not in RETIRED_CLOCK_STYLES:
+        return overrides
+    migrated = dict(overrides)
+    migrated['clock_style'] = 'classic'
+    return migrated
+
+
+def effective_clock_theme(settings):
+    """Resolve auto to the style's historical default; explicit values win."""
+    theme = settings.get('clock_theme', 'auto')
+    if theme in ('dark', 'light'):
+        return theme
+    return 'light' if settings.get('clock_style') == 'paper' else 'dark'
+
+
 SETTING_FIELDS = {'mode', 'brightness', 'timezone_offset', 'language', 'time_format', 'night',
                   'show_seconds', 'show_date', 'date_format', 'show_weekday',
-                  'message_duration', 'message_transition'}
+                  'message_duration', 'message_transition', 'clock_style', 'clock_theme'}
 
 
 def validate_time(value):
@@ -34,6 +67,12 @@ def validate_settings(data):
         raise ValueError('Invalid language')
     if 'time_format' in result and result['time_format'] not in ('24h', '12h'):
         raise ValueError('Invalid time format')
+    if 'clock_style' in result and (not isinstance(result['clock_style'], str)
+                                    or result['clock_style'] not in CLOCK_STYLES):
+        raise ValueError('Invalid clock style')
+    if 'clock_theme' in result and (not isinstance(result['clock_theme'], str)
+                                    or result['clock_theme'] not in CLOCK_THEMES):
+        raise ValueError('Invalid clock theme')
     for key in ('show_seconds', 'show_date', 'show_weekday'):
         if key in result and type(result[key]) is not bool:
             raise ValueError('Invalid ' + key)

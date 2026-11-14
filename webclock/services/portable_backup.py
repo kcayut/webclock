@@ -20,7 +20,7 @@ from .control_access_service import ControlAccessService
 from .control_service import read_control_requests
 from .device_access_service import DeviceAccessService
 from .device_service import DeviceService, _identifier
-from .display_settings import DEFAULT_NIGHT, validate_settings
+from .display_settings import DEFAULT_NIGHT, migrate_clock_style, validate_settings
 from .event_service import read_events
 from .schedule_service import read_schedules
 from .storage import save_json, storage_lock
@@ -193,7 +193,7 @@ def validate(payload, validate_content=None):
             for directory in [root] + sorted((root / 'owners').iterdir() if (root / 'owners').exists() else []):
                 owner = auth['data_owner_id'] if directory == root else directory.name
                 settings = files.get((directory.relative_to(root).as_posix() + '/' if directory != root else '') + 'settings.json', {})
-                validate_settings(settings)
+                validate_settings(migrate_clock_style(settings))
                 read_schedules(directory)
                 if any(row['owner_id'] != owner for row in read_events(directory)):
                     raise BackupError('invalid_owner_data')

@@ -27,6 +27,7 @@ LEGACY_REVISION = '49969dcc16fe5d8d48cb73bfd5241df766f93174'
 NEW_DISPLAY_DEFAULTS = {
     'show_seconds': False, 'show_date': True, 'date_format': 'm/d',
     'show_weekday': True, 'message_duration': 5, 'message_transition': 'fade',
+    'clock_style': 'classic', 'clock_theme': 'auto',
 }
 
 

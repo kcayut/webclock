@@ -11,6 +11,7 @@ import time
 from uuid import uuid4
 
 from .device_service import DeviceService, _identifier
+from .display_settings import migrate_display_overrides
 from .storage import load_json, revision, save_json, storage_lock
 from .schedule_service import validate_calendar_target, calendar_target_matches
 
@@ -146,6 +147,7 @@ class DeviceAccessService:
                         or set(row['content']) - (CONTENT_FIELDS | CALENDAR_FIELDS)):
                     raise ValueError('Invalid stored group')
                 _name(row['name'])
+                row['display_overrides'] = migrate_display_overrides(row['display_overrides'])
                 self._settings(row['display_overrides'])
                 for key in CONTENT_FIELDS:
                     _reference_ids(key, row['content'][key])
@@ -194,6 +196,7 @@ class DeviceAccessService:
                         or type(row['assignment_revision']) is not int or row['assignment_revision'] < 1):
                     raise ValueError('Invalid stored device identity')
                 if 'display_overrides' in row:
+                    row['display_overrides'] = migrate_display_overrides(row['display_overrides'])
                     self._device_overrides(row['display_overrides'])
                 if 'content_overrides' in row:
                     self._device_content_overrides(row['content_overrides'], stored=True)

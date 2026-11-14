@@ -78,15 +78,17 @@ async function checkSettings() {
     fields['csrf-token'] = {content:'settings-csrf-token'};
     let mode = 'failure', requests = [], reloaded = false;
     const context = {currentTimeFormat:'24h', settingsRevision:'first', settingsQueue:Promise.resolve(), settingsConflict:false,
-        settingsPending:0, settingsMessage:'', settingsEdits:0, document:{getElementById:id=>fields[id]},
+        settingsPending:0, settingsMessage:'', settingsEdits:0, savedCommonSettings:{}, document:{getElementById:id=>fields[id]},
         fetch:async(url, options)=>{ requests.push({url,options}); return {ok:mode==='ok',status:mode==='conflict'?409:500,
             json:async()=>({revision:'version-'+requests.length})}; }, t:key=>key,
-        window:{location:{reload:()=>{reloaded=true;}}}};
+        window:{location:{reload:()=>{reloaded=true;}}, addEventListener:()=>{}}};
     context.applyTimeFormat = format => {context.currentTimeFormat = format;fields['time-format-select'].value=format;};
     vm.createContext(context);
     const begin = admin.indexOf('function setTimeFormat(');
     vm.runInContext(admin.slice(begin, admin.indexOf('        applyTimeFormat(currentTimeFormat);', begin)) +
         admin.slice(admin.indexOf('function postSettings('), admin.indexOf('function saveNight(')), context);
+    context.updateClockStyleUi = () => {};
+    context.updateClockStylePreview = () => {};
     await context.setTimeFormat('12h');
     assert.equal(fields['time-format-select'].value,'12h');
     assert.equal(fields['time-format-select'].disabled,false);

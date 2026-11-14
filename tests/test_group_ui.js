@@ -48,6 +48,7 @@ const labels = {
 };
 $('schedule-i18n').textContent = JSON.stringify({en: labels, 'zh-TW': {...labels, group_unsaved: '未儲存'}, ja: {...labels, group_unsaved: '未保存'}});
 const defaultSettings = {brightness: 80, mode: 'normal', timezone_offset: 8, time_format: '24h', language: 'zh-TW',
+    clock_style: 'classic',
     night: {enabled: true, start: '22:00', end: '07:00', brightness: 15, black: true}};
 const content = {calendar_source_ids: [], manual_note_ids: [], schedule_ids: []};
 const makeRow = (id, name) => ({id, name, revision: id + '-r1', enabled: true, display_overrides: {}, content: plain(content), effective_settings: plain(defaultSettings)});
@@ -273,6 +274,25 @@ async function deviceSettingsChecks() {
     pending.resolve(settings('latest', {brightness: 50})); await reloading;
     assert.equal(field('brightness').value, '5', 'Slow reload keeps later edits');
     assert.equal(save.disabled, true);
+
+    let stylePending, styleDevice = {id: 'style-test', display_settings: settings('style-one')};
+    const styleEditor = window.WebClockDeviceSettings.create({t: key => 'en:' + key, onBusy() {},
+        request(id, method, data) { return new Promise((resolve) => { stylePending = {id, method, data, resolve}; }); }});
+    const styleRoot = styleEditor.render(styleDevice);
+    const styleControls = descendants(styleRoot), styleForm = styleRoot.children.find(child => child.tag === 'form');
+    const styleField = name => $('device-style-test-' + name);
+    assert.equal(styleField('clock_style').disabled, true);
+    assert.equal(styleField('clock_style').value, 'classic');
+    await trigger('device-style-test-clock_style-policy', 'change', 'custom');
+    await trigger('device-style-test-clock_style', 'change', 'flip');
+    const styleSave = styleForm.trigger('submit');
+    assert.equal(stylePending.data.display_overrides.clock_style, 'flip');
+    stylePending.resolve(settings('style-two', {clock_style: 'flip'})); await styleSave;
+    assert.equal(styleField('clock_style').value, 'flip');
+    await trigger('device-style-test-clock_style-policy', 'change', 'inherit');
+    assert.equal(styleField('clock_style').disabled, true);
+    assert.equal(styleField('clock_style').value, 'classic');
+    void styleControls;
 }
 async function deviceContentChecks() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/device-content.js'), 'utf8'), context);

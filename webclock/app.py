@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request, redirect, url_for, abort, send_from_directory, g, session, has_request_context
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 import requests
 from icalendar import Calendar
 import recurring_ical_events
@@ -33,7 +33,10 @@ from webclock.api.device import conditional
 from webclock.api import register_api
 from webclock.csrf import register_csrf
 from webclock.services.auth_service import AuthService
-from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings, validate_time
+from webclock.services.display_settings import (
+    CLOCK_STYLES, CLOCK_THEMES, DEFAULT_NIGHT, effective_clock_theme,
+    migrate_clock_style, validate_settings, validate_time,
+)
 from webclock.auth import register_auth
 from webclock.access_control import register_access_control
 from webclock.services.device_access_service import AccessError, DeviceAccessService, calendar_content_allows
@@ -118,6 +121,8 @@ DEFAULT_SETTINGS = {
     'show_weekday': True,
     'message_duration': 5,
     'message_transition': 'fade',
+    'clock_style': 'classic',
+    'clock_theme': 'auto',
 }
 # ponytail: single-process file storage; use a database before adding writer processes.
 settings_lock = RLock()
@@ -164,7 +169,7 @@ def active_settings():
 def load_display_settings(path=None):
     try:
         with open(path or settings_path(), encoding='utf-8') as f:
-            saved = validate_settings(json.load(f))
+            saved = validate_settings(migrate_clock_style(json.load(f)))
     except FileNotFoundError:
         saved = {}
     except ValueError as exc:
@@ -801,6 +806,56 @@ def index():
     return render_template('index.html', **context)
 
 
+@app.route('/admin/preview')
+def admin_preview():
+    """A fixed-time, network-free preview using the real clock stylesheet and renderer."""
+    settings = dict(active_settings())
+    language = request.args.get('lang', settings.get('language', DEFAULT_SETTINGS['language']))
+    if language not in SUPPORTED_LANGUAGES:
+        language = settings.get('language', DEFAULT_SETTINGS['language'])
+    style = request.args.get('style', settings.get('clock_style', 'classic'))
+    if style not in CLOCK_STYLES:
+        style = 'classic'
+    date_format = request.args.get('date_format', settings.get('date_format', 'm/d'))
+    if date_format not in ('m/d', 'd/m', 'yyyy/m/d', 'yyyy-mm-dd'):
+        date_format = settings.get('date_format', 'm/d')
+    time_format = request.args.get('time_format', settings.get('time_format', '24h'))
+    if time_format not in ('24h', '12h'):
+        time_format = settings.get('time_format', '24h')
+    common = {
+        'show_seconds': settings.get('show_seconds', False),
+        'show_date': settings.get('show_date', True),
+        'show_weekday': settings.get('show_weekday', True),
+    }
+    for key in common:
+        value = request.args.get(key)
+        if value in ('0', '1'):
+            common[key] = value == '1'
+    orientation = 'portrait' if request.args.get('orientation') == 'portrait' else 'landscape'
+    theme = request.args.get('theme', settings.get('clock_theme', 'auto'))
+    if theme not in CLOCK_THEMES:
+        theme = settings.get('clock_theme', 'auto')
+    preview_night = request.args.get('night') == '1'
+    effective_theme = 'dark' if preview_night else effective_clock_theme(
+        dict(settings, clock_style=style, clock_theme=theme))
+    context = template_context()
+    context.update(
+        language=language,
+        preview_style=style,
+        preview_theme=effective_theme,
+        preview_settings=dict(common, date_format=date_format, time_format=time_format,
+                              clock_style=style, clock_theme=theme),
+        preview_orientation=orientation,
+        preview_sample=request.args.get('sample') != '0',
+        preview_night=preview_night,
+        preview_holiday=bool(holiday_service.is_holiday(date(2026, 11, 14))),
+        preview_sample_message=UI_TRANSLATIONS[language]['clock_style_sample_message'],
+        preview_weekdays=UI_TRANSLATIONS[language]['weekdays'],
+        preview_loading=UI_TRANSLATIONS[language]['clock_style_loading'],
+    )
+    return render_template('clock_preview.html', **context)
+
+
 @app.route('/admin')
 def admin(error=None, editing_id=None):
     with settings_lock:
@@ -981,7 +1036,7 @@ def backup():
                     or type(data['version']) is not int or data['version'] != 1
                     or ('owner_id' in data and data['owner_id'] != content_owner())):
                 raise ValueError('Unknown backup format')
-            settings = dict(DEFAULT_SETTINGS, **validate_settings(data['settings']))
+            settings = dict(DEFAULT_SETTINGS, **validate_settings(migrate_clock_style(data['settings'])))
             if not {'mode', 'brightness', 'timezone_offset', 'language'} <= set(data['settings']):
                 raise ValueError('Incomplete settings')
             if not isinstance(data['notes'], list) or len(data['notes']) > 1000:

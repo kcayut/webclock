@@ -1,0 +1,1047 @@
+/*
+ * Optional clock presentation for classic, flip, segment and paper.
+ * flip, segment and paper are the legacy Safari path: ordinary values,
+ * inline-block/absolute layout and prefixed flex only.
+ */
+#clock-backdrop {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 0;
+    background: #000;
+    opacity: 1;
+    pointer-events: none;
+}
+
+#clock-container,
+#list-container {
+    position: relative;
+    z-index: 1;
+}
+
+.clock-deco {
+    display: none;
+    pointer-events: none;
+}
+
+.clock-style-enhanced .clock-deco {
+    display: block;
+}
+
+.clock-style-enhanced #time,
+.clock-style-enhanced #time-period {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.clock-style-enhanced #date-info {
+    white-space: normal;
+}
+
+/* The styled message area is intentionally clean; the carousel counter is a classic-only aid. */
+body.clock-style-enhanced #event-counter {
+    display: none;
+}
+
+#list-container {
+    display: none;
+    width: 95%;
+    height: 25vh;
+    margin-top: 0;
+    overflow: hidden;
+    -webkit-flex-shrink: 0;
+    flex-shrink: 0;
+}
+
+/* Shared message layout, also used by the pure preview route. */
+.event-row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 72%;
+    opacity: 0;
+    display: -webkit-flex;
+    display: flex;
+    -webkit-align-items: center;
+    align-items: center;
+    -webkit-justify-content: center;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 10vh;
+    transition: opacity 0.5s ease-in-out;
+}
+
+.event-row.active {
+    opacity: 1;
+    z-index: 10;
+}
+
+.event-content-wrapper {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.event-time {
+    display: inline-block;
+    margin-right: 20px;
+    color: #F39C12;
+    font-weight: bold;
+}
+
+.clock-deco .clock-seconds {
+    display: none;
+}
+
+body.shows-seconds .clock-deco .clock-seconds {
+    display: inline-block;
+}
+
+.clock-period {
+    font-variant-numeric: normal;
+    letter-spacing: 0.12em;
+}
+
+body:not(.uses-12-hour) .clock-deco .clock-period {
+    display: none;
+}
+
+/* Flip clock: large split panels sized from width like classic clock. */
+.clock-style-flip {
+    color: #F5F2EA;
+}
+
+.clock-style-flip #clock-backdrop {
+    background: #101214;
+}
+
+.clock-style-flip #clock-container {
+    width: 96vw;
+}
+
+.clock-style-flip .flip-row {
+    width: 94vw;
+    margin: 0 auto;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.clock-style-flip .flip-main {
+    display: inline-block;
+    vertical-align: top;
+    width: 100%;
+    white-space: nowrap;
+}
+
+.clock-style-flip.shows-seconds .flip-main {
+    width: 84%;
+}
+
+.clock-style-flip .flip-panel {
+    position: relative;
+    display: inline-block;
+    vertical-align: top;
+    width: 46.5%;
+    height: 37.5vw;
+    background: #24282D;
+    border: 1px solid #30353B;
+    border-radius: 18px;
+    box-shadow: 0 3px 0 #08090A, 0 14px 30px rgba(0, 0, 0, 0.32);
+    overflow: hidden;
+}
+
+.clock-style-flip .flip-panel:after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: #111315;
+}
+
+.clock-style-flip .flip-digits {
+    display: block;
+    width: 100%;
+    font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 34.5vw;
+    line-height: 37.5vw;
+    font-weight: 600;
+    text-align: center;
+}
+
+.clock-style-flip .flip-colon {
+    position: relative;
+    display: inline-block;
+    width: 5%;
+    height: 37.5vw;
+    vertical-align: top;
+}
+
+.clock-style-flip .flip-dot {
+    position: absolute;
+    left: 50%;
+    width: 1.15vw;
+    height: 1.15vw;
+    max-width: 18px;
+    max-height: 18px;
+    min-width: 7px;
+    min-height: 7px;
+    -webkit-transform: translateX(-50%);
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: #8E949E;
+}
+
+.clock-style-flip .flip-dot:first-child { top: 39%; }
+.clock-style-flip .flip-dot:last-child { top: 57%; }
+
+.clock-style-flip .flip-seconds {
+    display: none;
+    width: 12%;
+    height: 16.5vw;
+    margin-left: 2%;
+    background: #24282D;
+    border: 1px solid #30353B;
+    border-radius: 12px;
+    box-shadow: 0 2px 0 #08090A;
+    color: #E2C28E;
+    font-size: 9.75vw;
+    line-height: 16.5vw;
+    text-align: center;
+    vertical-align: middle;
+}
+
+body.shows-seconds .clock-style-flip .flip-seconds {
+    display: inline-block;
+}
+
+.clock-style-flip.shows-seconds .flip-panel {
+    height: 32.2vw;
+}
+
+.clock-style-flip.shows-seconds .flip-digits {
+    font-size: 27vw;
+    line-height: 32.2vw;
+}
+
+.clock-style-flip.shows-seconds .flip-colon {
+    height: 32.2vw;
+}
+
+.clock-style-flip .clock-period {
+    margin-bottom: 0.7vw;
+    color: #B8BDC6;
+    font-size: 2.7vw;
+}
+
+.clock-style-flip #date-info {
+    margin-top: 2vw;
+    color: #C4C9D1;
+    font-size: 4.9vw;
+}
+
+.clock-style-flip #day-part {
+    padding: 0 1.2vw;
+    border-radius: 4px;
+}
+
+.clock-style-flip #day-part.holiday-highlight {
+    background: transparent;
+    color: #FF8E84;
+    font-weight: 600;
+}
+
+.clock-style-flip #list-container {
+    width: 90vw;
+    height: 13.5vw;
+    max-height: 160px;
+    margin: 2vw auto 0;
+    background: rgba(36, 40, 45, 0.38);
+    border-radius: 12px;
+}
+
+.clock-style-flip .event-row {
+    color: #C7CCD4;
+    font-size: 4.65vw;
+}
+
+.clock-style-flip .event-time {
+    color: #E8B45A;
+}
+
+/* Seven-segment: fixed geometry sized from width like classic clock. */
+.clock-style-segment {
+    color: #D7DFD9;
+}
+
+.clock-style-segment #clock-backdrop {
+    background: #070B09;
+}
+
+.clock-style-segment #clock-container {
+    width: 96vw;
+}
+
+.clock-style-segment .segment-row {
+    display: block;
+    width: 100%;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.clock-style-segment .segment-digit {
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+    width: 20vw;
+    height: 34vw;
+    margin: 0 0.8vw;
+}
+
+.clock-style-segment.shows-seconds .segment-digit {
+    width: 13.5vw;
+    height: 22.5vw;
+}
+
+.clock-style-segment .segment {
+    position: absolute;
+    display: block;
+    background: #263028;
+    border-radius: 6px;
+}
+
+.clock-style-segment .segment.on {
+    background: #FFD166;
+    box-shadow: 0 0 4px rgba(255, 209, 102, 0.18);
+}
+
+.clock-style-segment .segment-a,
+.clock-style-segment .segment-g,
+.clock-style-segment .segment-d {
+    left: 12%;
+    width: 76%;
+    height: 7.5%;
+}
+
+.clock-style-segment .segment-a { top: 1%; }
+.clock-style-segment .segment-g { top: 46.25%; }
+.clock-style-segment .segment-d { bottom: 1%; }
+
+.clock-style-segment .segment-b,
+.clock-style-segment .segment-c,
+.clock-style-segment .segment-e,
+.clock-style-segment .segment-f {
+    width: 12%;
+    height: 38%;
+}
+
+.clock-style-segment .segment-b { right: 2%; top: 7%; }
+.clock-style-segment .segment-c { right: 2%; bottom: 7%; }
+.clock-style-segment .segment-e { left: 2%; bottom: 7%; }
+.clock-style-segment .segment-f { left: 2%; top: 7%; }
+
+.clock-style-segment .segment-colon {
+    display: inline-block;
+    vertical-align: middle;
+    width: 3.4vw;
+    text-align: center;
+}
+
+.clock-style-segment .segment-dot {
+    display: block;
+    width: 1.15vw;
+    height: 1.15vw;
+    max-width: 17px;
+    max-height: 17px;
+    min-width: 7px;
+    min-height: 7px;
+    margin: 6vw auto;
+    border-radius: 50%;
+    background: #FFD166;
+}
+
+.clock-style-segment.shows-seconds .segment-dot {
+    margin: 3.75vw auto;
+}
+
+.clock-style-segment .segment-seconds {
+    vertical-align: bottom;
+    margin-left: 1.5vw;
+}
+
+.clock-style-segment .segment-seconds .segment-digit {
+    width: 5.5vw;
+    height: 10vw;
+    margin: 0 0.35vw;
+}
+
+.clock-style-segment .segment-seconds .segment {
+    border-radius: 3px;
+}
+
+.clock-style-segment .clock-period {
+    margin-bottom: 0.7vw;
+    color: #FFD166;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 2.4vw;
+}
+
+.clock-style-segment #date-info {
+    margin-top: 2vw;
+    color: #D7DFD9;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 4.9vw;
+}
+
+.clock-style-segment #day-part {
+    padding: 0 1vw;
+}
+
+.clock-style-segment #day-part.holiday-highlight {
+    background: transparent;
+    color: #FF9E8F;
+}
+
+.clock-style-segment #list-container {
+    width: 84vw;
+    height: 16.5vw;
+    max-height: 170px;
+    margin: 2vw auto 0;
+}
+
+.clock-style-segment .event-row {
+    color: #D7DFD9;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 4.65vw;
+}
+
+.clock-style-segment .event-time {
+    color: #FFD166;
+}
+
+/* Paper: full-bleed minimal typographic page, no card or divider. */
+.clock-style-paper {
+    color: #252B30;
+}
+
+.clock-style-paper #clock-backdrop {
+    background: #F2EEE5;
+}
+
+.clock-style-paper #clock-container {
+    width: 90vw;
+    padding-top: 7vw;
+    text-align: center;
+    white-space: normal;
+}
+
+.clock-style-paper .clock-deco-paper {
+    display: block;
+    width: 100%;
+}
+
+.clock-style-paper .paper-time {
+    display: block;
+    width: 100%;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.clock-style-paper .paper-time-main {
+    display: inline-block;
+    color: #252B30;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 34.5vw;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    white-space: nowrap;
+}
+
+.clock-style-paper.shows-seconds .paper-time-main {
+    font-size: 27vw;
+}
+
+.clock-style-paper .paper-seconds {
+    display: none;
+    margin-left: 1vw;
+    color: #252B30;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 8.25vw;
+    line-height: 1;
+    vertical-align: baseline;
+}
+
+.clock-style-paper.shows-seconds .paper-seconds {
+    display: inline-block;
+}
+
+.clock-style-paper .clock-period {
+    display: none;
+    margin: 0 0 0.8vw;
+    color: #5D6267;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 2.55vw;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+}
+
+.clock-style-paper.uses-12-hour .clock-period {
+    display: block;
+}
+
+.clock-style-paper #date-info {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: block;
+    color: #5D6267;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 4.35vw;
+    line-height: 1.3;
+    text-align: center;
+    white-space: normal;
+}
+
+.clock-style-paper #date-part {
+    display: inline-block;
+    margin: 0 1.2vw 0 0;
+    color: #252B30;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 4.35vw;
+    line-height: 1.2;
+    word-wrap: break-word;
+}
+
+.clock-style-paper #day-part {
+    display: inline-block;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #5D6267;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 3.6vw;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+    word-wrap: break-word;
+}
+
+.clock-style-paper #day-part.holiday-highlight {
+    background: transparent;
+    color: #A63D33;
+}
+
+.clock-style-paper #list-container {
+    width: 90vw;
+    height: 15vw;
+    max-height: 160px;
+    margin: 2vw auto 0;
+    text-align: left;
+}
+
+.clock-style-paper .event-row {
+    height: 100%;
+    color: #5D6267;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+    font-size: 4.35vw;
+    text-align: left;
+    white-space: normal;
+}
+
+.clock-style-paper .event-content-wrapper {
+    display: -webkit-flex;
+    display: flex;
+    width: 100%;
+    -webkit-align-items: center;
+    align-items: center;
+    -webkit-justify-content: space-between;
+    justify-content: space-between;
+    white-space: normal;
+}
+
+.clock-style-paper .event-time {
+    margin-right: 2vw;
+    color: #252B30;
+    font-weight: 600;
+}
+
+.clock-style-paper .event-content-wrapper > span:last-child {
+    min-width: 0;
+    max-height: 2.7em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+    text-align: right;
+    white-space: normal;
+}
+
+.clock-style-paper.no-date-info #clock-container {
+    padding-top: 4vw;
+}
+
+.clock-style-paper.night-active {
+    color: #EAE4D9;
+}
+
+.clock-style-paper.night-active #clock-backdrop {
+    background: #171A1D;
+}
+
+.clock-style-paper.night-active #date-part,
+.clock-style-paper.night-active .paper-time-main,
+.clock-style-paper.night-active .paper-seconds,
+.clock-style-paper.night-active .event-time {
+    color: #EAE4D9;
+}
+
+.clock-style-paper.night-active #date-info,
+.clock-style-paper.night-active #day-part,
+.clock-style-paper.night-active .clock-period,
+.clock-style-paper.night-active .event-row {
+    color: #BFB8AE;
+}
+
+
+/* Theme palettes.  Base colors above are the historical defaults:
+ * classic/flip/segment dark and paper light.  The body carries exactly one
+ * clock-theme-* class; auto is resolved before this point. */
+body.clock-theme-light:not(.clock-style-enhanced) #clock-backdrop {
+    background: #F4F1E8;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) #time,
+body.clock-theme-light:not(.clock-style-enhanced) #time-period,
+body.clock-theme-light:not(.clock-style-enhanced) #date-part {
+    color: #1F2328;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) #date-info,
+body.clock-theme-light:not(.clock-style-enhanced) #day-part {
+    color: #3F4A43;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) #day-part.holiday-highlight {
+    background: #A63D33;
+    color: #FFFFFF;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) .event-row {
+    color: #4B5563;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) .event-time {
+    color: #9A5B13;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) #event-counter {
+    color: #6B7280;
+}
+
+body.clock-theme-light:not(.clock-style-enhanced) #connection-toggle {
+    background: #FFFFFF;
+    border-color: #D8D2C4;
+    color: #5D6267;
+}
+
+body.clock-theme-light.clock-style-flip {
+    color: #1F2328;
+}
+
+body.clock-theme-light.clock-style-flip #clock-backdrop {
+    background: #F4F1E8;
+}
+
+body.clock-theme-light.clock-style-flip .flip-panel {
+    background: #FFFFFF;
+    border-color: #E2DCD2;
+    box-shadow: 0 3px 0 #D8D0C3, 0 14px 30px rgba(31, 35, 40, 0.14);
+}
+
+body.clock-theme-light.clock-style-flip .flip-panel:after {
+    background: #EAE3D8;
+}
+
+body.clock-theme-light.clock-style-flip .flip-digits {
+    color: #1F2328;
+}
+
+body.clock-theme-light.clock-style-flip .flip-dot {
+    background: #7A828C;
+}
+
+body.clock-theme-light.clock-style-flip .flip-seconds {
+    background: #FFFFFF;
+    border-color: #E2DCD2;
+    box-shadow: 0 2px 0 #D8D0C3;
+    color: #9A5B13;
+}
+
+body.clock-theme-light.clock-style-flip .clock-period,
+body.clock-theme-light.clock-style-flip #date-info,
+body.clock-theme-light.clock-style-flip #day-part {
+    color: #4B5563;
+}
+
+body.clock-theme-light.clock-style-flip #day-part.holiday-highlight {
+    color: #A63D33;
+}
+
+body.clock-theme-light.clock-style-flip #list-container {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+body.clock-theme-light.clock-style-flip .event-row {
+    color: #4B5563;
+}
+
+body.clock-theme-light.clock-style-flip .event-time {
+    color: #9A5B13;
+}
+
+body.clock-theme-light.clock-style-segment {
+    color: #2F3A33;
+}
+
+body.clock-theme-light.clock-style-segment #clock-backdrop {
+    background: #F4F1E8;
+}
+
+body.clock-theme-light.clock-style-segment .segment {
+    background: #D8D2C4;
+}
+
+body.clock-theme-light.clock-style-segment .segment.on {
+    background: #C2410C;
+    box-shadow: 0 0 4px rgba(194, 65, 12, 0.16);
+}
+
+body.clock-theme-light.clock-style-segment .segment-dot {
+    background: #C2410C;
+}
+
+body.clock-theme-light.clock-style-segment .clock-period,
+body.clock-theme-light.clock-style-segment .event-time {
+    color: #B45309;
+}
+
+body.clock-theme-light.clock-style-segment #date-info,
+body.clock-theme-light.clock-style-segment #day-part,
+body.clock-theme-light.clock-style-segment .event-row {
+    color: #2F3A33;
+}
+
+body.clock-theme-light.clock-style-segment #day-part.holiday-highlight {
+    color: #A63D33;
+}
+
+body.clock-theme-dark.clock-style-paper {
+    color: #EAE4D9;
+}
+
+body.clock-theme-dark.clock-style-paper #clock-backdrop {
+    background: #171A1D;
+}
+
+body.clock-theme-dark.clock-style-paper #date-part,
+body.clock-theme-dark.clock-style-paper .paper-time-main,
+body.clock-theme-dark.clock-style-paper .paper-seconds,
+body.clock-theme-dark.clock-style-paper .event-time {
+    color: #EAE4D9;
+}
+
+body.clock-theme-dark.clock-style-paper #date-info,
+body.clock-theme-dark.clock-style-paper #day-part,
+body.clock-theme-dark.clock-style-paper .clock-period,
+body.clock-theme-dark.clock-style-paper .event-row {
+    color: #BFB8AE;
+}
+
+body.clock-theme-dark.clock-style-paper #day-part.holiday-highlight {
+    color: #FF9E8F;
+}
+
+body.force-black #clock-backdrop {
+    background: #000 !important;
+    background-image: none !important;
+}
+
+body.force-black {
+    background: #000 !important;
+}
+
+/* Portrait: width-limited reading scale, same as classic. */
+@media (orientation: portrait) {
+    .clock-style-flip .flip-row {
+        width: 94vw;
+    }
+
+    .clock-style-flip .flip-main,
+    body.clock-style-flip.shows-seconds .flip-main {
+        width: 100%;
+    }
+
+    .clock-style-flip .flip-panel {
+        height: 42vw;
+    }
+
+    .clock-style-flip .flip-digits {
+        font-size: 34vw;
+        line-height: 42vw;
+    }
+
+    .clock-style-flip .flip-colon {
+        height: 42vw;
+    }
+
+    .clock-style-flip.shows-seconds .flip-panel {
+        height: 32vw;
+    }
+
+    .clock-style-flip.shows-seconds .flip-digits {
+        font-size: 25vw;
+        line-height: 32vw;
+    }
+
+    .clock-style-flip.shows-seconds .flip-colon {
+        height: 32vw;
+    }
+
+    body.clock-style-flip.shows-seconds .flip-seconds {
+        display: block;
+        width: 24vw;
+        height: 14vw;
+        margin: 2vw 0 0 auto;
+        font-size: 8vw;
+        line-height: 14vw;
+    }
+
+    .clock-style-flip #date-info {
+        font-size: 5.8vw;
+    }
+
+    .clock-style-flip #list-container {
+        height: 14vw;
+        max-height: none;
+    }
+
+    .clock-style-flip .event-row {
+        font-size: 5.2vw;
+    }
+
+    .clock-style-segment .segment-digit {
+        width: 16.5vw;
+        height: 34vw;
+        margin: 0 0.45vw;
+    }
+
+    .clock-style-segment.shows-seconds .segment-digit {
+        width: 10.5vw;
+        height: 24vw;
+    }
+
+    .clock-style-segment .segment-seconds .segment-digit {
+        width: 4.5vw;
+        height: 11vw;
+    }
+
+    .clock-style-segment .segment-colon {
+        width: 3vw;
+    }
+
+    .clock-style-segment .segment-dot {
+        margin: 6vw auto;
+    }
+
+    .clock-style-segment.shows-seconds .segment-dot {
+        margin: 4vw auto;
+    }
+
+    .clock-style-segment #date-info {
+        font-size: 5.8vw;
+    }
+
+    .clock-style-segment #list-container {
+        height: 14vw;
+        max-height: none;
+    }
+
+    .clock-style-segment .event-row {
+        font-size: 5.2vw;
+    }
+
+    .clock-style-paper #clock-container {
+        width: 92vw;
+        padding-top: 12vw;
+    }
+
+    .clock-style-paper .paper-time-main {
+        font-size: 34vw;
+    }
+
+    .clock-style-paper.shows-seconds .paper-time-main {
+        font-size: 24vw;
+    }
+
+    .clock-style-paper .paper-seconds {
+        font-size: 7vw;
+    }
+
+    .clock-style-paper .clock-period {
+        font-size: 2.8vw;
+    }
+
+    .clock-style-paper #date-info {
+        font-size: 5.2vw;
+    }
+
+    .clock-style-paper #date-part {
+        font-size: 5.6vw;
+    }
+
+    .clock-style-paper #day-part {
+        font-size: 4.8vw;
+    }
+
+    .clock-style-paper #list-container {
+        width: 92vw;
+        height: 14vw;
+        max-height: none;
+    }
+
+    .clock-style-paper .event-row {
+        font-size: 5.2vw;
+    }
+}
+
+/* Short landscape windows: cap width-derived sizes by height. */
+@media (max-height: 600px) and (orientation: landscape) {
+    .clock-style-flip .flip-panel {
+        height: 63vh;
+    }
+
+    .clock-style-flip .flip-digits {
+        font-size: 54vh;
+        line-height: 63vh;
+    }
+
+    .clock-style-flip .flip-colon {
+        height: 63vh;
+    }
+
+    .clock-style-flip.shows-seconds .flip-panel {
+        height: 52vh;
+    }
+
+    .clock-style-flip.shows-seconds .flip-digits {
+        font-size: 44vh;
+        line-height: 52vh;
+    }
+
+    .clock-style-flip.shows-seconds .flip-colon {
+        height: 52vh;
+    }
+
+    .clock-style-flip #date-info,
+    .clock-style-segment #date-info,
+    .clock-style-paper #date-info {
+        font-size: 3.8vh;
+    }
+
+    .clock-style-paper #date-part {
+        font-size: 3.8vh;
+    }
+
+    .clock-style-paper #day-part {
+        font-size: 3.2vh;
+    }
+
+    .clock-style-flip #list-container,
+    .clock-style-segment #list-container,
+    .clock-style-paper #list-container {
+        height: 12vh;
+        max-height: none;
+        margin-top: 1vh;
+    }
+
+    .clock-style-flip .event-row,
+    .clock-style-segment .event-row,
+    .clock-style-paper .event-row {
+        font-size: 4vh;
+    }
+
+    .clock-style-segment .segment-digit {
+        width: 17vw;
+        height: 60vh;
+    }
+
+    .clock-style-segment.shows-seconds .segment-digit {
+        width: 11.5vw;
+        height: 38vh;
+    }
+
+    .clock-style-segment .segment-seconds .segment-digit {
+        width: 4.8vw;
+        height: 17vh;
+    }
+
+    .clock-style-paper #clock-container {
+        padding-top: 11vh;
+    }
+
+    .clock-style-paper .paper-time-main {
+        font-size: 60vh;
+    }
+
+    .clock-style-paper.shows-seconds .paper-time-main {
+        font-size: 46vh;
+    }
+
+    .clock-style-paper .paper-seconds {
+        font-size: 14vh;
+    }
+}
+
+@media (max-width: 600px) {
+    .clock-style-flip #date-info,
+    .clock-style-segment #date-info {
+        font-size: 5.4vw;
+    }
+
+    .clock-style-flip #list-container,
+    .clock-style-segment #list-container {
+        width: 90vw;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .clock-style-flip .flip-panel {
+        -webkit-animation: none !important;
+        animation: none !important;
+    }
+}
+
+@-webkit-keyframes flip-tick {
+    from { opacity: 0.55; -webkit-transform: translateY(-4px); }
+    to { opacity: 1; -webkit-transform: translateY(0); }
+}
+
+@keyframes flip-tick {
+    from { opacity: 0.55; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.clock-style-flip .flip-panel.flip-tick {
+    -webkit-animation: flip-tick 0.18s ease-out;
+    animation: flip-tick 0.18s ease-out;
+}

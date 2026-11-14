@@ -345,3 +345,237 @@ details[open] > summary { margin-bottom: 10px; }
 @media (max-width: 680px) {
     .content-group-summary { max-width: 100%; }
 }
+
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+.clock-style-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin: 18px 0;
+}
+.clock-style-card {
+    position: relative;
+    display: block;
+    min-width: 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: var(--surface);
+    cursor: pointer;
+}
+.clock-style-frame {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    pointer-events: none;
+}
+.clock-style-card > input {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+}
+.clock-style-card > input:checked ~ .clock-style-frame {
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 0 3px var(--tint);
+}
+.clock-style-card > input:focus-visible ~ .clock-style-frame {
+    outline: 3px solid #70a69d;
+    outline-offset: 2px;
+}
+.clock-style-card > input:checked ~ .clock-style-copy .clock-style-selected,
+.clock-style-card > input:checked ~ .clock-style-check {
+    display: inline-flex;
+}
+.clock-style-thumb {
+    position: relative;
+    display: block;
+    padding-top: 75%;
+    overflow: hidden;
+    border-radius: 7px;
+    background: #111;
+}
+.clock-style-thumb svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.clock-style-copy {
+    position: relative;
+    z-index: 1;
+    display: block;
+    padding: 10px 34px 2px 2px;
+}
+.clock-style-name {
+    display: block;
+    color: var(--ink);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+.clock-style-desc {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+.clock-style-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 8px;
+    margin-top: 9px;
+}
+.clock-style-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--tint);
+    color: var(--tint-ink);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+}
+.clock-style-badge-muted {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-weight: 500;
+}
+.clock-style-check {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: none;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 15px;
+    font-weight: 700;
+}
+.clock-style-selected {
+    display: none;
+    margin-top: 7px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+}
+.clock-style-theme {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 18px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.clock-style-theme legend {
+    width: 100%;
+    margin-bottom: 0;
+}
+.clock-style-theme .check {
+    min-height: 36px;
+}
+.clock-style-theme-hint {
+    margin: 10px 0 16px;
+}
+.clock-style-save-actions {
+    align-items: center;
+}
+.clock-style-message {
+    min-height: 1.6em;
+    margin: 8px 0 0;
+    color: var(--accent);
+}
+.clock-style-note {
+    margin: 8px 0 0;
+    padding: 9px 12px;
+    border-left: 3px solid var(--accent);
+    background: var(--tint);
+    color: var(--tint-ink);
+}
+.clock-style-preview-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 24px;
+    margin: 20px 0 12px;
+}
+.clock-style-orientation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 18px;
+    margin: 0;
+}
+.clock-style-orientation legend {
+    width: 100%;
+    margin-bottom: 0;
+}
+.clock-style-orientation .check,
+.clock-style-sample-toggle {
+    min-height: 36px;
+}
+.clock-style-preview-frame {
+    position: relative;
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #000;
+}
+.clock-style-preview-frame:before {
+    content: "";
+    display: block;
+    padding-top: 75%;
+}
+.clock-style-preview-frame.is-portrait {
+    max-width: 540px;
+}
+.clock-style-preview-frame.is-portrait:before {
+    padding-top: 133.3333%;
+}
+.clock-style-preview-frame iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+@media (max-width: 1150px) {
+    .clock-style-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+    .clock-style-options { grid-template-columns: minmax(0, 1fr); }
+    .clock-style-preview-controls { align-items: flex-start; }
+}

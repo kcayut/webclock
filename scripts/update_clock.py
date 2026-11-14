@@ -206,15 +206,26 @@ def http_json(url, data=None, headers=None, tls_handler=None):
 SETTINGS_DEFAULTS = {
     'mode': 'normal', 'brightness': 100, 'timezone_offset': 8, 'time_format': '24h',
     'show_seconds': False, 'show_date': True, 'date_format': 'm/d', 'show_weekday': True,
-    'message_duration': 5, 'message_transition': 'fade',
+    'message_duration': 5, 'message_transition': 'fade', 'clock_style': 'classic',
+    'clock_theme': 'auto',
 }
+CLOCK_STYLES = ('classic', 'flip', 'segment', 'paper')
+RETIRED_CLOCK_STYLES = ('glass', 'orbit')
+CLOCK_THEMES = ('auto', 'dark', 'light')
 
 
 def migrated_settings(settings):
-    """Return the current settings schema, preserving every stored value."""
+    """Return the current settings schema, preserving every stored legal value."""
     if not isinstance(settings, dict):
         raise RuntimeError('Invalid display settings')
-    return dict(SETTINGS_DEFAULTS, **settings)
+    if 'clock_style' in settings and settings['clock_style'] not in CLOCK_STYLES + RETIRED_CLOCK_STYLES:
+        raise RuntimeError('Invalid clock style')
+    if 'clock_theme' in settings and settings['clock_theme'] not in CLOCK_THEMES:
+        raise RuntimeError('Invalid clock theme')
+    migrated = dict(SETTINGS_DEFAULTS, **settings)
+    if migrated.get('clock_style') in RETIRED_CLOCK_STYLES:
+        migrated['clock_style'] = 'classic'
+    return migrated
 
 
 def settings_match(saved, expected):
@@ -507,10 +518,12 @@ def check_saved_data(current, target, snapshot):
     current, target = active_data_layout(current), active_data_layout(target)
     required = {'mode', 'brightness', 'timezone_offset', 'language'}
     optional = {'night', 'time_format', 'show_seconds', 'show_date', 'date_format',
-                'show_weekday', 'message_duration', 'message_transition'}
+                'show_weekday', 'message_duration', 'message_transition', 'clock_style', 'clock_theme'}
     if (not isinstance(snapshot, dict) or not required <= set(snapshot)
             or set(snapshot) - (required | optional)
-            or snapshot.get('time_format', '24h') not in ('24h', '12h')):
+            or snapshot.get('time_format', '24h') not in ('24h', '12h')
+            or snapshot.get('clock_style', 'classic') not in CLOCK_STYLES + RETIRED_CLOCK_STYLES
+            or snapshot.get('clock_theme', 'auto') not in CLOCK_THEMES):
         raise RuntimeError('Could not capture current display settings.')
     for state in {current[0], target[0]}:
         settings = state / 'settings.json'

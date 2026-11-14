@@ -11,7 +11,7 @@ from webclock.services import portable_backup as backup
 from webclock.services.auth_service import AuthService
 from webclock.services.control_access_service import ControlAccessService
 from webclock.services.device_access_service import AccessError, DeviceAccessService
-from webclock.services.display_settings import DEFAULT_NIGHT, validate_settings
+from webclock.services.display_settings import DEFAULT_NIGHT, migrate_clock_style, validate_settings
 from webclock.services.storage import load_json, save_json
 
 
@@ -37,7 +37,7 @@ class PortableBackupTest(unittest.TestCase):
         save_json(self.source_notes, [{'id': 7, 'text': 'Primary owner reminder'}])
         save_json(self.source / 'owners' / self.member / 'manual_notes.json',
                   [{'id': 3, 'text': 'Private member reminder'}])
-        save_json(self.source / 'settings.json', {'brightness': 0, 'language': 'en'})
+        save_json(self.source / 'settings.json', {'brightness': 0, 'language': 'en', 'clock_style': 'paper'})
         save_json(self.source / 'owners' / self.member / 'settings.json', {'brightness': 71})
         self.calendar = {'sources': [{'id': 'work', 'name': 'Work', 'provider': 'ics',
             'url': 'https://example.invalid/private-subscription-token', 'display_enabled': True}],
@@ -57,6 +57,35 @@ class PortableBackupTest(unittest.TestCase):
         self.target.mkdir()
         self.notes = self.root / 'external-target-notes.json'
         save_json(self.target / 'options.json', {'language': 'zh-TW', 'display_port': 5000})
+
+    def test_legacy_retired_clock_styles_are_migrated_on_restore(self):
+        payload = copy.deepcopy(self.payload)
+        payload['files']['settings.json']['clock_style'] = 'glass'
+        access = payload['files']['device-access.json']
+        access['groups'][self.group]['display_overrides'] = {'clock_style': 'orbit', 'brightness': 33}
+        access['devices'][self.identity['device_id']]['display_overrides'] = {'clock_style': 'glass', 'brightness': 44}
+        target = self.root / 'legacy-retired-style'
+        target.mkdir()
+        notes = self.root / 'legacy-retired-notes.json'
+        result = backup.restore(payload, target, notes)
+        self.assertTrue(result['preserve_devices'])
+        stored = load_json(target / 'settings.json', {})
+        self.assertEqual(stored['clock_style'], 'glass')
+        self.assertEqual(migrate_clock_style(stored)['clock_style'], 'classic')
+        self.assertEqual(migrate_clock_style(stored)['brightness'], 0)
+        auth = AuthService(target / 'auth.json')
+        access_bytes = (target / 'device-access.json').read_bytes()
+        mine = devices(target, auth)
+        group = mine.get_group(self.owner, self.group)
+        self.assertEqual(group['display_overrides']['clock_style'], 'classic')
+        self.assertEqual(group['effective_settings']['clock_style'], 'classic')
+        self.assertEqual(group['effective_settings']['brightness'], 33)
+        device = mine.get_device_display(self.owner, self.identity['device_id'])
+        self.assertEqual(device['display_overrides']['clock_style'], 'classic')
+        self.assertEqual(device['effective_settings']['clock_style'], 'classic')
+        self.assertEqual(device['effective_settings']['brightness'], 44)
+        self.assertEqual((target / 'device-access.json').read_bytes(), access_bytes,
+                         'legacy backup reads migrate in memory without rewriting')
 
     def test_encryption_authentication_and_validation(self):
         raw = backup.encrypt(self.payload, PASSWORD)
@@ -104,6 +133,7 @@ class PortableBackupTest(unittest.TestCase):
                           result['groups'], result['devices']), (2, 1, 2, 1, 1))
         self.assertEqual(load_json(self.notes, []), load_json(self.source_notes, []))
         self.assertEqual(load_json(self.target / 'calendar.json', {}), self.calendar)
+        self.assertEqual(load_json(self.target / 'settings.json', {})['clock_style'], 'paper')
         self.assertEqual(load_json(self.target / 'options.json', {}),
                          {'language': 'zh-TW', 'display_port': 5000})
         self.assertEqual(load_json(self.target / 'owners' / self.member / 'manual_notes.json', []),

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ translations[language].clock_style_preview_title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='clock.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='clock-styles.css') }}">
+    <style>
+        html, body { width: 100%; height: 100%; }
+        body.clock-preview { padding: 0; }
+        #list-container { display: none; }
+        #event-counter { display: none; }
+        #preview-status {
+            position: fixed; left: 8px; bottom: 8px; z-index: 200;
+            font-size: 12px; color: #aaa;
+        }
+    </style>
+</head>
+
+<body class="clock-preview{{ ' night-active' if preview_night else '' }}">
+    <div id="clock-backdrop" aria-hidden="true"></div>
+    <main id="clock-container" aria-label="{{ translations[language].clock_style_preview_title }}">
+        <div id="time-period"></div>
+        <div id="time">10:28</div>
+        <div id="date-info">
+            <span id="date-part">...</span>
+            <span id="day-part">...</span>
+        </div>
+    </main>
+    <div id="list-container">
+        <div id="event-counter"></div>
+    </div>
+    <p id="preview-status" role="status">{{ preview_loading }}</p>
+
+    <script src="{{ url_for('static', filename='clock-styles.js') }}"></script>
+    <script src="{{ url_for('static', filename='clock.js') }}"></script>
+    <script src="{{ url_for('static', filename='time-format.js') }}"></script>
+    <script>
+        (function () {
+            var style = {{ preview_style | tojson }};
+            var settings = {{ preview_settings | tojson }};
+            var weekDays = {{ preview_weekdays | tojson }};
+            var sampleMessage = {{ preview_sample_message | tojson }};
+            var language = {{ language | tojson }};
+            var sample = {{ 'true' if preview_sample else 'false' }};
+            var holiday = {{ 'true' if preview_holiday else 'false' }};
+            var theme = {{ preview_theme | tojson }};
+            var orientation = {{ preview_orientation | tojson }};
+            var body = document.body;
+            var classes = ['clock-preview', 'clock-theme-' + theme];
+            if (settings.time_format === '12h') classes.push('uses-12-hour');
+            if (settings.show_seconds) classes.push('shows-seconds');
+            if (settings.date_format.indexOf('yyyy') === 0) classes.push('long-date');
+            if (sample) classes.push('has-events');
+            if ({{ 'true' if preview_night else 'false' }}) classes.push('night-active');
+            body.className = classes.join(' ');
+            body.setAttribute('data-preview-style', style);
+            body.setAttribute('data-preview-orientation', orientation);
+            document.getElementById('date-part').style.display = settings.show_date ? '' : 'none';
+            document.getElementById('day-part').style.display = settings.show_weekday ? '' : 'none';
+            document.getElementById('date-info').style.display =
+                settings.show_date || settings.show_weekday ? '' : 'none';
+            if (!settings.show_date && !settings.show_weekday) {
+                classes.push('no-date-info');
+                body.className = classes.join(' ');
+            }
+            document.getElementById('date-part').style.marginRight = settings.show_weekday ? '' : '0';
+            if (holiday) document.getElementById('day-part').className = 'holiday-highlight';
+
+            if (sample) {
+                var container = document.getElementById('list-container');
+                var row = document.createElement('div');
+                var wrapper = document.createElement('span');
+                var time = document.createElement('span');
+                var text = document.createElement('span');
+                row.className = 'event-row active';
+                wrapper.className = 'event-content-wrapper';
+                time.className = 'event-time';
+                time.textContent = window.WebClockTime.format('14:30', settings.time_format, language);
+                text.textContent = sampleMessage;
+                wrapper.appendChild(time);
+                wrapper.appendChild(text);
+                row.appendChild(wrapper);
+                container.appendChild(row);
+                container.style.display = 'block';
+                document.getElementById('event-counter').textContent = '1 / 1';
+            }
+
+            window.renderClock(Date.UTC(2026, 10, 14, 10, 28, 36), 0, weekDays,
+                settings.time_format, language, settings);
+            document.getElementById('preview-status').textContent = '';
+        }());
+    </script>
+</body>
+
+</html>

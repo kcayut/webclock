@@ -29,6 +29,11 @@ const context = vm.createContext({
 vm.runInContext('Number.isFinite = undefined;', context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static/time-format.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), context);
+assert.equal(vm.runInContext("clockTheme({clock_style: 'paper'})", context), 'light');
+assert.equal(vm.runInContext("clockTheme({clock_style: 'flip'})", context), 'dark');
+assert.equal(vm.runInContext("clockTheme({clock_style: 'paper', clock_theme: 'dark'})", context), 'dark');
+assert.equal(vm.runInContext("clockTheme({clock_style: 'flip', clock_theme: 'light'})", context), 'light');
+assert.equal(vm.runInContext("clockTheme({clock_style: 'flip', clock_theme: 'auto'})", context), 'dark');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 for (const [, script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
     vm.runInContext(script, context);
@@ -61,6 +66,18 @@ assert.equal(nodes.time.textContent, '12:35');
 context.renderClock(Date.parse('2026-09-14T20:00:00Z'), 8,
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
 assert.deepEqual(Object.values(nodes).map(node => node.textContent), ['04:00', '9/15', 'Tue']);
+for (const [instant, offset, seconds] of [
+    ['2026-11-14T00:00:00Z', 0, 0], ['2026-11-14T00:00:00Z', 8, 8 * 3600],
+    ['2026-11-14T13:30:45Z', -5, 8 * 3600 + 30 * 60 + 45]
+]) {
+    const data = context.clockTimeData(Date.parse(instant), offset,
+        ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], '24h', 'en',
+        {clock_style: 'flip', show_seconds: true});
+    assert.equal(data.style, 'flip');
+    assert.equal(data.daySeconds, seconds);
+    assert.equal(data.timeText, String(Math.floor(seconds / 3600)).padStart(2, '0') + ':' +
+        String(Math.floor(seconds / 60) % 60).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0'));
+}
 nodes['time-period'] = {style: {}};
 for (const [instant, language, time, period] of [
     ['2026-10-01T00:05:00Z', 'zh-TW', '12:05', '上午'],
@@ -260,6 +277,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         assert.match(node('date-part').textContent, /^\d{1,2}\/\d{1,2}$/);
         assert.ok(node('day-part').textContent);
         assert.equal(node('clock-container').style.opacity, bootSettings.brightness / 100);
+        assert.equal(node('clock-backdrop').style.opacity, bootSettings.brightness / 100);
         assert.equal(node('body').classList.contains('force-black'), false);
         assert.equal(storage['webclock.settings'], bootSettings.raw,
             'startup does not overwrite an unreadable or legacy cache');
@@ -457,6 +475,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         legacy.enterServerMode({events: [], settings: {brightness: 35},
             next_event: {text: 'Meeting', starts_at: now + 300000}});
         assert.equal(node('clock-container').style.opacity, 0.35);
+        assert.equal(node('clock-backdrop').style.opacity, 0.35);
         assert.equal(node('list-container').style.opacity, 0.35);
         assert.equal(node('list-container').style.display, 'none');
         assert.equal(node('body').classList.contains('has-events'), false);
@@ -531,12 +550,14 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         assert.equal(legacy.activeSettings.brightness, 45,
             'a storage write failure does not reject an otherwise valid live setting');
         assert.equal(node('clock-container').style.opacity, 0.45);
+        assert.equal(node('clock-backdrop').style.opacity, 0.45);
         assert.equal(storage['webclock.settings'], savedValidSettings,
             'a storage write failure leaves the previous stored settings intact');
         legacy.enterStandaloneMode();
         assert.equal(legacy.activeSettings.brightness, 45,
             'disconnecting after a failed save must not restore stale cached settings');
         assert.equal(node('clock-container').style.opacity, 0.45);
+        assert.equal(node('clock-backdrop').style.opacity, 0.45);
         const beforeWriteFailureTick = node('time').textContent;
         now += 60000;
         tick.callback();
@@ -547,6 +568,8 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         legacy.enterServerMode({events: [], settings: {brightness: 0}});
         assert.equal(node('clock-container').style.opacity, 0,
             'an explicit zero brightness remains a valid user setting');
+        assert.equal(node('clock-backdrop').style.opacity, 0,
+            'the style backdrop follows zero brightness');
         legacy.enterServerMode({events: [], settings: {brightness: 35, mode: 'black'}});
         assert.equal(node('body').classList.contains('force-black'), true,
             'manual black mode remains valid');
@@ -561,6 +584,8 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
         }, server_timestamp: Date.parse('2026-10-01T15:59:00Z')});
         assert.equal(node('clock-container').style.opacity, 0,
             'zero night brightness remains valid independently of black mode');
+        assert.equal(node('clock-backdrop').style.opacity, 0,
+            'zero night brightness also dims the style backdrop');
         assert.equal(node('body').classList.contains('force-black'), false);
         legacy.enterServerMode({events: [], settings: {night: {black: true}}});
         assert.equal(node('body').classList.contains('force-black'), true,
@@ -580,6 +605,8 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             'night mode ends automatically without another server response');
         assert.equal(node('clock-container').style.opacity, 0.35,
             'night end restores the last valid daytime brightness');
+        assert.equal(node('clock-backdrop').style.opacity, 0.35,
+            'night end also restores the style backdrop');
         legacy.enterServerMode({events: [], settings: {
             night: {enabled: false}, mode: 'normal', brightness: 35,
         }});
@@ -683,6 +710,7 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             server_timestamp: now, settings: {brightness: 0, mode: 'black'}}, false, 1200);
         assert.equal(node('body').classList.contains('force-black'), true);
         assert.equal(node('clock-container').style.opacity, 0);
+        assert.equal(node('clock-backdrop').style.opacity, 0);
         assert.equal(node('list-container').style.opacity, 0);
         assert.equal(node('list-container').children[0].children[0].children[0].textContent, 'Keep event carousel');
     }

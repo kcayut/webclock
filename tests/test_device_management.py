@@ -187,6 +187,89 @@ class DeviceManagementTest(unittest.TestCase):
         self.assertEqual(self.device_call(device).json['settings']['timezone_offset'], -5)
         self.assertEqual(self.rows()[device['identity']['device_id']]['display_settings'], moved.json['display_settings'])
 
+    def test_clock_style_inheritance_reset_and_owner_isolation(self):
+        device = self.device('Style device')
+        service, group_id = self.service(), device['identity']['group_id']
+        initial = self.display_settings(device).json
+        self.assertEqual(initial['effective_settings']['clock_style'], 'classic')
+        self.assertEqual(initial['sources']['clock_style'], 'default')
+        service.update_group(self.owner, group_id, {'display_overrides': {'clock_style': 'flip'}})
+        group_value = self.display_settings(device).json
+        self.assertEqual(group_value['effective_settings']['clock_style'], 'flip')
+        self.assertEqual(group_value['sources']['clock_style'], 'group')
+        device_value = self.display_settings(device, {'clock_style': 'segment'}).json
+        self.assertEqual(device_value['effective_settings']['clock_style'], 'segment')
+        self.assertEqual(device_value['sources']['clock_style'], 'device')
+        service.update_group(self.owner, group_id, {'display_overrides': {'clock_style': 'paper'}})
+        self.assertEqual(self.display_settings(device).json['effective_settings']['clock_style'], 'segment')
+        reset = self.display_settings(device, {}).json
+        self.assertEqual(reset['effective_settings']['clock_style'], 'paper')
+        self.assertEqual(reset['sources']['clock_style'], 'group')
+        service.update_group(self.owner, group_id, {'display_overrides': {}})
+        inherited = self.display_settings(device).json
+        self.assertEqual(inherited['effective_settings']['clock_style'], 'classic')
+        self.assertEqual(inherited['sources']['clock_style'], 'default')
+        before = service.path.read_bytes()
+        for invalid in ('neon', 'glass', 'orbit'):
+            self.assertEqual(self.display_settings(device, {'clock_style': invalid}).status_code, 400, invalid)
+        self.assertEqual(service.path.read_bytes(), before)
+        foreign = self.device('Foreign style device', owner='other-owner')
+        self.assertEqual(self.display_settings(foreign).status_code, 404)
+        clock.display_settings['clock_style'] = 'paper'
+        self.assertEqual(self.display_settings(device).json['effective_settings']['clock_style'], 'paper')
+        self.assertEqual(self.display_settings(device).json['sources']['clock_style'], 'default')
+
+    def test_clock_theme_inheritance_and_validation(self):
+        device = self.device('Theme device')
+        service, group_id = self.service(), device['identity']['group_id']
+        initial = self.display_settings(device).json
+        self.assertEqual(initial['effective_settings']['clock_theme'], 'auto')
+        self.assertEqual(initial['sources']['clock_theme'], 'default')
+        service.update_group(self.owner, group_id, {'display_overrides': {'clock_theme': 'dark'}})
+        group_value = self.display_settings(device).json
+        self.assertEqual(group_value['effective_settings']['clock_theme'], 'dark')
+        self.assertEqual(group_value['sources']['clock_theme'], 'group')
+        device_value = self.display_settings(device, {'clock_theme': 'light'}).json
+        self.assertEqual(device_value['effective_settings']['clock_theme'], 'light')
+        self.assertEqual(device_value['sources']['clock_theme'], 'device')
+        reset = self.display_settings(device, {}).json
+        self.assertEqual(reset['effective_settings']['clock_theme'], 'dark')
+        self.assertEqual(reset['sources']['clock_theme'], 'group')
+        service.update_group(self.owner, group_id, {'display_overrides': {}})
+        inherited = self.display_settings(device).json
+        self.assertEqual(inherited['effective_settings']['clock_theme'], 'auto')
+        self.assertEqual(inherited['sources']['clock_theme'], 'default')
+        before = service.path.read_bytes()
+        for invalid in ('neon', 'system', None, 1, ['dark'], {'id': 'dark'}, True):
+            self.assertEqual(self.display_settings(device, {'clock_theme': invalid}).status_code, 400, invalid)
+        self.assertEqual(service.path.read_bytes(), before)
+
+    def test_retired_clock_style_overrides_migrate_without_rewriting(self):
+        device = self.device('Retired style device')
+        service, group_id = self.service(), device['identity']['group_id']
+        device_id = device['identity']['device_id']
+        state = load_json(service.path, {})
+        state['groups'][group_id]['display_overrides'] = {'clock_style': 'glass', 'brightness': 21}
+        state['devices'][device_id]['display_overrides'] = {'clock_style': 'orbit', 'brightness': 9}
+        save_json(service.path, state)
+        before = service.path.read_bytes()
+        fresh = self.service()
+        group = fresh.get_group(self.owner, group_id)
+        self.assertEqual(group['display_overrides']['clock_style'], 'classic')
+        self.assertEqual(group['effective_settings']['clock_style'], 'classic')
+        self.assertEqual(group['effective_settings']['brightness'], 21)
+        settings = fresh.get_device_display(self.owner, device_id)
+        self.assertEqual(settings['display_overrides']['clock_style'], 'classic')
+        self.assertEqual(settings['effective_settings']['clock_style'], 'classic')
+        self.assertEqual(settings['effective_settings']['brightness'], 9)
+        self.assertEqual(settings['sources']['clock_style'], 'device')
+        self.assertEqual(service.path.read_bytes(), before,
+                         'reading legacy overrides migrates in memory without rewriting')
+        with self.assertRaises(ValueError):
+            fresh.update_group(self.owner, group_id, {'display_overrides': {'clock_style': 'glass'}})
+        self.assertEqual(service.path.read_bytes(), before,
+                         'new API writes still reject retired values')
+
     def test_device_display_conflicts_validation_and_owner_boundary(self):
         device = self.device()
         service = self.service()

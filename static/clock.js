@@ -1,28 +1,78 @@
-// A null offset follows the device timezone, including daylight saving changes.
-function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language, settings) {
+/*
+ * The single time source for every clock style.  Styles receive this snapshot
+ * and never read the device clock again, so the main time and decorations
+ * cannot drift apart.
+ */
+function clockTheme(settings) {
+    settings = settings || {};
+    var theme = settings.clock_theme;
+    if (theme === 'dark' || theme === 'light') return theme;
+    return settings.clock_style === 'paper' ? 'light' : 'dark';
+}
+
+function clockTimeData(utcMs, timezoneOffset, weekDays, timeFormat, language, settings) {
     settings = settings || {};
     var deviceTime = new Date(utcMs);
     var offset = timezoneOffset === null ? -deviceTime.getTimezoneOffset() / 60 : timezoneOffset;
     var targetTime = new Date(utcMs + offset * 3600000);
     var hour = targetTime.getUTCHours();
-    var h = String(timeFormat === '12h' ? hour % 12 || 12 : hour).replace(/^(\d)$/, '0$1');
+    var hour12 = hour % 12 || 12;
+    var h = String(timeFormat === '12h' ? hour12 : hour).replace(/^(\d)$/, '0$1');
     var m = String(targetTime.getUTCMinutes()).replace(/^(\d)$/, '0$1');
-
-    var seconds = settings.show_seconds ? ':' + String(targetTime.getUTCSeconds()).replace(/^(\d)$/, '0$1') : '';
-    document.getElementById('time').textContent = h + ':' + m + seconds;
-    var period = document.getElementById('time-period');
-    if (period) {
-        period.textContent = timeFormat === '12h' ? window.WebClockTime.period(hour, language) : '';
-        period.style.display = timeFormat === '12h' ? 'inline-block' : 'none';
-    }
+    var s = String(targetTime.getUTCSeconds()).replace(/^(\d)$/, '0$1');
     var month = targetTime.getUTCMonth() + 1, day = targetTime.getUTCDate();
     var date = month + '/' + day;
     if (settings.date_format === 'd/m') date = day + '/' + month;
     if (settings.date_format === 'yyyy/m/d') date = targetTime.getUTCFullYear() + '/' + date;
     if (settings.date_format === 'yyyy-mm-dd') date = targetTime.getUTCFullYear() + '-' +
         String(month).replace(/^(\d)$/, '0$1') + '-' + String(day).replace(/^(\d)$/, '0$1');
-    document.getElementById('date-part').textContent = settings.show_date === false ? '' : date;
-    document.getElementById('day-part').textContent = settings.show_weekday === false ? '' : weekDays[targetTime.getUTCDay()];
+    return {
+        utcMs: utcMs,
+        timezoneOffset: offset,
+        hour: hour,
+        hour12: hour12,
+        hourText: h,
+        minuteText: m,
+        secondText: s,
+        periodText: timeFormat === '12h' && window.WebClockTime ? window.WebClockTime.period(hour, language) : '',
+        timeText: h + ':' + m + (settings.show_seconds ? ':' + s : ''),
+        month: month,
+        day: day,
+        year: targetTime.getUTCFullYear(),
+        dateText: date,
+        weekdayText: weekDays ? weekDays[targetTime.getUTCDay()] : '',
+        daySeconds: hour * 3600 + targetTime.getUTCMinutes() * 60 + targetTime.getUTCSeconds(),
+        timeFormat: timeFormat,
+        language: language,
+        settings: settings,
+        style: settings.clock_style || 'classic',
+        theme: clockTheme(settings)
+    };
+}
+
+// A null offset follows the device timezone, including daylight saving changes.
+function renderClock(utcMs, timezoneOffset, weekDays, timeFormat, language, settings) {
+    settings = settings || {};
+    var data = clockTimeData(utcMs, timezoneOffset, weekDays, timeFormat, language, settings);
+    document.getElementById('time').textContent = data.timeText;
+    var period = document.getElementById('time-period');
+    if (period) {
+        period.textContent = data.periodText;
+        period.style.display = timeFormat === '12h' ? 'inline-block' : 'none';
+    }
+    document.getElementById('date-part').textContent = settings.show_date === false ? '' : data.dateText;
+    document.getElementById('day-part').textContent = settings.show_weekday === false ? '' : data.weekdayText;
+    try {
+        if (window.WebClockStyles && typeof window.WebClockStyles.render === 'function') {
+            window.WebClockStyles.render(data, document);
+        }
+    } catch (error) {
+        /* The basic #time text must remain visible if an optional renderer fails. */
+        try {
+            if (window.WebClockStyles && window.WebClockStyles.reset) window.WebClockStyles.reset(document);
+        } catch (ignored) {
+        }
+    }
 }
 
 function clockDisplaySettings(settings, utcMs, timezoneOffset) {
@@ -41,7 +91,8 @@ function clockDisplaySettings(settings, utcMs, timezoneOffset) {
         (start < end ? minutes >= start && minutes < end : minutes >= start || minutes < end);
     return {
         mode: settings.mode === 'black' || (active && night.black) ? 'black' : 'normal',
-        brightness: active ? night.brightness : (settings.brightness === undefined ? 100 : settings.brightness)
+        brightness: active ? night.brightness : (settings.brightness === undefined ? 100 : settings.brightness),
+        night: !!active
     };
 }
 
