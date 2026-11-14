@@ -69,7 +69,7 @@
 - `auto`：跟隨樣式的既有外觀。classic／flip／segment 使用深色，paper 使用淺色，既有安裝升級後不變。
 - `dark`／`light`：使用者的明確選擇，套用到所有樣式；切換樣式時保留。
 - 夜間時段仍強制深色色盤，避免淺色背景在低亮度房間過亮；退出夜間後恢復原本選擇。
-- 管理頁「時鐘樣式」分頁新增「色彩模式」：跟隨樣式／深色／淺色。它和樣式共用草稿、還原與儲存；預覽網址帶 `theme`，預覽與正式頁都只會有一個 `clock-theme-*` body class。
+- 管理頁「時鐘樣式」標題右側新增色彩模式膠囊切換：跟隨樣式／深色／淺色；四張樣式縮圖會同步切換成對應深／淺版本。它和樣式共用草稿、還原與儲存；預覽網址帶 `theme`，預覽與正式頁都只會有一個 `clock-theme-*` body class。
 - 群組與裝置頁也提供相同三種選項與「沿用」；缺欄位表示繼承，不明確寫入 `auto`。
 
 ### 2.2 四款色盤
@@ -100,6 +100,7 @@
 
 - 四款 × 深色／淺色：實際 `/` 與 `/admin/preview` 的 body class、背景色、時間色、flip 面板色、segment 亮段色完全一致，時間 font-size／框高差 ≤1px。
 - 深色與淺色的 backdrop、時間色、面板／段色確實不同；不是只換 class。
+- 管理頁色彩模式切換會更新 `data-theme-mode` 與四張縮圖：`auto` 時 flip 深色、paper 淺色；`light`／`dark` 時四張同步切換，並以 opacity 過場。
 - 夜間即使 `clock_theme=light`，實際頁 body 為 `clock-theme-dark`，paper 背景 `rgb(23, 26, 29)`。
 - 截圖：`theme-pair-<style>.png`（actual 深色左、淺色右）與 `theme-actual-vs-preview-<style>-<theme>.png`（actual 左、preview 右），共 20 張。
 
@@ -213,7 +214,7 @@ classic 90% scale, message/seconds/12h/long-date/no-date, responsiveness,
 brightness/night/black, delayed optional JS, and doc/development/screenshots/clock-styles
 ```
 
-另包含管理頁四張卡片、草稿、還原、切分頁保留、儲存成功與 409 保留草稿；全部頁面無未捕捉例外。
+另包含管理頁四張卡片、色彩模式膠囊與縮圖切換、草稿、還原、切分頁保留、儲存成功與 409 保留草稿；全部頁面無未捕捉例外。
 
 重跑時測試會把實際頁的固定樣本（2026-11-14，星期六）假日標記對齊 preview，避免結果依賴執行當天的星期。
 
@@ -255,7 +256,7 @@ git diff --check
 - `static/clock-styles.css`：四款布局；flip／segment／paper 改為 `vw` 基準，短 landscape 才用 `vh` 上限；paper 短橫向日期與 padding 修正；增強樣式隱藏 `#event-counter`；新增四款深色／淺色色盤。
 - `static/clock-styles.js`：只保留四款 ID 與 flip／segment／paper renderer；移除 glass／orbit、能力降級、`effectiveStyle`、光環進度。
 - `static/clock.js`：`clockTheme()` 解析 `auto`／`dark`／`light`，時間資料帶 theme。
-- `templates/admin.html`：四張樣式卡、色彩模式、預覽、草稿／409；移除 retired 縮圖、badge、簡化提示與今日進度。
+- `templates/admin.html`：四張樣式卡、標題右側色彩模式膠囊、深淺縮圖切換、預覽、草稿／409；移除 retired 縮圖、badge、簡化提示與今日進度。
 - `templates/index.html`：四值 normalize、`clock_theme`、core 先啟動、optional 樣式後載入、backdrop、亮度與主題 body class；移除 retired 值與 preview 專用狀態。
 - `templates/clock_preview.html`：純預覽頁使用同一 renderer／CSS，不輪詢、不加入裝置。
 - `webclock/services/display_settings.py`：四值 allowlist、`CLOCK_THEMES`、`effective_clock_theme`、`migrate_clock_style`、`migrate_display_overrides`。

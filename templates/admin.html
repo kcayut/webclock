@@ -122,17 +122,22 @@
             </div>
         </div>
     {% endmacro %}
+    {% macro clock_style_thumb_svg(style, theme) %}
+        {% set dark = theme == 'dark' %}
+        {% if style == 'classic' %}
+        <svg class="clock-style-thumb-{{ theme }}" viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="{{ '#050505' if dark else '#F4F1E8' }}"/><text x="80" y="66" text-anchor="middle" fill="{{ '#fff' if dark else '#1F2328' }}" font-size="34" font-family="Helvetica, Arial, sans-serif" font-weight="700">10:28</text><text x="80" y="92" text-anchor="middle" fill="{{ '#b9b9b9' if dark else '#3F4A43' }}" font-size="12" font-family="Helvetica, Arial, sans-serif">11/14 · Sat</text></svg>
+        {% elif style == 'flip' %}
+        <svg class="clock-style-thumb-{{ theme }}" viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="{{ '#101214' if dark else '#F4F1E8' }}"/><rect x="18" y="28" width="54" height="64" rx="6" fill="{{ '#24282D' if dark else '#FFFFFF' }}"{% if not dark %} stroke="#E2DCD2" stroke-width="1"{% endif %}/><rect x="88" y="28" width="54" height="64" rx="6" fill="{{ '#24282D' if dark else '#FFFFFF' }}"{% if not dark %} stroke="#E2DCD2" stroke-width="1"{% endif %}/><path d="M18 60h54M88 60h54" stroke="{{ '#111315' if dark else '#EAE3D8' }}"/><text x="45" y="72" text-anchor="middle" fill="{{ '#F5F2EA' if dark else '#1F2328' }}" font-size="30" font-family="Helvetica, Arial, sans-serif">10</text><text x="115" y="72" text-anchor="middle" fill="{{ '#F5F2EA' if dark else '#1F2328' }}" font-size="30" font-family="Helvetica, Arial, sans-serif">28</text><text x="80" y="69" text-anchor="middle" fill="{{ '#8E949E' if dark else '#7A828C' }}" font-size="20" font-family="Helvetica, Arial, sans-serif">:</text><text x="80" y="108" text-anchor="middle" fill="{{ '#B8BDC6' if dark else '#4B5563' }}" font-size="10" font-family="Helvetica, Arial, sans-serif">11/14 · Sat</text></svg>
+        {% elif style == 'segment' %}
+        <svg class="clock-style-thumb-{{ theme }}" viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="{{ '#070B09' if dark else '#F4F1E8' }}"/><g fill="{{ '#FFD166' if dark else '#C2410C' }}"><rect x="28" y="26" width="36" height="7" rx="2"/><rect x="24" y="33" width="7" height="24" rx="2"/><rect x="61" y="33" width="7" height="24" rx="2"/><rect x="28" y="57" width="36" height="7" rx="2"/><rect x="24" y="64" width="7" height="24" rx="2"/><rect x="61" y="64" width="7" height="24" rx="2"/><rect x="28" y="88" width="36" height="7" rx="2"/><rect x="98" y="26" width="36" height="7" rx="2"/><rect x="94" y="33" width="7" height="24" rx="2"/><rect x="131" y="33" width="7" height="24" rx="2"/><rect x="98" y="57" width="36" height="7" rx="2"/><rect x="94" y="64" width="7" height="24" rx="2"/><rect x="131" y="64" width="7" height="24" rx="2"/><rect x="98" y="88" width="36" height="7" rx="2"/></g><circle cx="80" cy="50" r="2.5" fill="{{ '#FFD166' if dark else '#C2410C' }}"/><circle cx="80" cy="72" r="2.5" fill="{{ '#FFD166' if dark else '#C2410C' }}"/></svg>
+        {% elif style == 'paper' %}
+        <svg class="clock-style-thumb-{{ theme }}" viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="{{ '#171A1D' if dark else '#F2EEE5' }}"/><text x="80" y="28" text-anchor="middle" fill="{{ '#BFB8AE' if dark else '#5D6267' }}" font-size="8" letter-spacing="1.4" font-family="Helvetica, Arial, sans-serif">11/14 · SAT</text><text x="80" y="79" text-anchor="middle" fill="{{ '#EAE4D9' if dark else '#252B30' }}" font-size="42" font-family="Georgia, serif">10:28</text><text x="24" y="108" fill="{{ '#BFB8AE' if dark else '#5D6267' }}" font-size="7" font-family="Helvetica, Arial, sans-serif">14:30</text><text x="136" y="108" text-anchor="end" fill="{{ '#BFB8AE' if dark else '#5D6267' }}" font-size="7" font-family="Helvetica, Arial, sans-serif">Team meeting</text></svg>
+        {% endif %}
+    {% endmacro %}
     {% macro clock_style_thumb(style) %}
     <span class="clock-style-thumb" aria-hidden="true">
-        {% if style == 'classic' %}
-        <svg viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="#050505"/><text x="80" y="66" text-anchor="middle" fill="#fff" font-size="34" font-family="Helvetica, Arial, sans-serif" font-weight="700">10:28</text><text x="80" y="92" text-anchor="middle" fill="#b9b9b9" font-size="12" font-family="Helvetica, Arial, sans-serif">11/14 · Sat</text></svg>
-        {% elif style == 'flip' %}
-        <svg viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="#101214"/><rect x="18" y="28" width="54" height="64" rx="6" fill="#24282D"/><rect x="88" y="28" width="54" height="64" rx="6" fill="#24282D"/><path d="M18 60h54M88 60h54" stroke="#111315"/><text x="45" y="72" text-anchor="middle" fill="#F5F2EA" font-size="30" font-family="Helvetica, Arial, sans-serif">10</text><text x="115" y="72" text-anchor="middle" fill="#F5F2EA" font-size="30" font-family="Helvetica, Arial, sans-serif">28</text><text x="80" y="69" text-anchor="middle" fill="#8E949E" font-size="20" font-family="Helvetica, Arial, sans-serif">:</text><text x="80" y="108" text-anchor="middle" fill="#B8BDC6" font-size="10" font-family="Helvetica, Arial, sans-serif">11/14 · Sat</text></svg>
-        {% elif style == 'segment' %}
-        <svg viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="#070B09"/><g fill="#FFD166"><rect x="28" y="26" width="36" height="7" rx="2"/><rect x="24" y="33" width="7" height="24" rx="2"/><rect x="61" y="33" width="7" height="24" rx="2"/><rect x="28" y="57" width="36" height="7" rx="2"/><rect x="24" y="64" width="7" height="24" rx="2"/><rect x="61" y="64" width="7" height="24" rx="2"/><rect x="28" y="88" width="36" height="7" rx="2"/><rect x="98" y="26" width="36" height="7" rx="2"/><rect x="94" y="33" width="7" height="24" rx="2"/><rect x="131" y="33" width="7" height="24" rx="2"/><rect x="98" y="57" width="36" height="7" rx="2"/><rect x="94" y="64" width="7" height="24" rx="2"/><rect x="131" y="64" width="7" height="24" rx="2"/><rect x="98" y="88" width="36" height="7" rx="2"/></g><circle cx="80" cy="50" r="2.5" fill="#FFD166"/><circle cx="80" cy="72" r="2.5" fill="#FFD166"/></svg>
-        {% elif style == 'paper' %}
-        <svg viewBox="0 0 160 120" role="presentation"><rect width="160" height="120" fill="#F2EEE5"/><text x="80" y="28" text-anchor="middle" fill="#5D6267" font-size="8" letter-spacing="1.4" font-family="Helvetica, Arial, sans-serif">11/14 · SAT</text><text x="80" y="79" text-anchor="middle" fill="#252B30" font-size="42" font-family="Georgia, serif">10:28</text><text x="24" y="108" fill="#5D6267" font-size="7" font-family="Helvetica, Arial, sans-serif">14:30</text><text x="136" y="108" text-anchor="end" fill="#5D6267" font-size="7" font-family="Helvetica, Arial, sans-serif">Team meeting</text></svg>
-        {% endif %}
+        {{ clock_style_thumb_svg(style, 'dark') }}
+        {{ clock_style_thumb_svg(style, 'light') }}
     </span>
     {% endmacro %}
     {% macro note_fields(values, suffix) %}
@@ -224,16 +229,38 @@
 
     <div id="display-panel-styles" class="management-tab-panel" role="tabpanel" aria-labelledby="display-tab-styles" data-tab-group="display" data-management-tab-panel="styles" hidden>
     <form id="clock-style-form" class="panel clock-style-settings" onsubmit="saveClockStyle(event)">
-        <h2 data-i18n="display_clock_style">{{ translations[language].display_clock_style }}</h2>
+        <div class="clock-style-heading">
+            <h2 data-i18n="display_clock_style">{{ translations[language].display_clock_style }}</h2>
+            <div class="clock-style-theme-block">
+                <div class="clock-style-theme-wrap">
+                    <span id="clock-theme-label" class="clock-style-theme-label" data-i18n="clock_theme">{{ translations[language].clock_theme }}</span>
+                    <div class="clock-style-theme" role="radiogroup" aria-labelledby="clock-theme-label" aria-describedby="clock-theme-hint">
+                        <label class="clock-theme-choice">
+                            <input type="radio" id="clock_theme_auto" name="clock_theme" value="auto" data-clock-theme-choice {% if settings.clock_theme == 'auto' %}checked{% endif %} onchange="setClockTheme(this.value)">
+                            <span class="clock-theme-choice-face"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg><span data-i18n="clock_theme_auto">{{ translations[language].clock_theme_auto }}</span></span>
+                        </label>
+                        <label class="clock-theme-choice">
+                            <input type="radio" id="clock_theme_dark" name="clock_theme" value="dark" data-clock-theme-choice {% if settings.clock_theme == 'dark' %}checked{% endif %} onchange="setClockTheme(this.value)">
+                            <span class="clock-theme-choice-face"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.6 9.7A5.8 5.8 0 0 1 6.3 2.4a5.8 5.8 0 1 0 7.3 7.3z" fill="currentColor"/></svg><span data-i18n="clock_theme_dark">{{ translations[language].clock_theme_dark }}</span></span>
+                        </label>
+                        <label class="clock-theme-choice">
+                            <input type="radio" id="clock_theme_light" name="clock_theme" value="light" data-clock-theme-choice {% if settings.clock_theme == 'light' %}checked{% endif %} onchange="setClockTheme(this.value)">
+                            <span class="clock-theme-choice-face"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="currentColor"/><g stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 1.2v1.7M8 13.1v1.7M1.2 8h1.7M13.1 8h1.7M3.2 3.2l1.2 1.2M11.6 11.6l1.2 1.2M12.8 3.2l-1.2 1.2M4.4 11.6l-1.2 1.2"/></g></svg><span data-i18n="clock_theme_light">{{ translations[language].clock_theme_light }}</span></span>
+                        </label>
+                    </div>
+                </div>
+                <p id="clock-theme-hint" class="help clock-style-theme-hint" data-i18n="clock_theme_hint">{{ translations[language].clock_theme_hint }}</p>
+            </div>
+        </div>
         <p class="help" data-i18n="clock_style_hint">{{ translations[language].clock_style_hint }}</p>
-        <fieldset class="clock-style-options">
+        <fieldset id="clock-style-options" class="clock-style-options" data-theme-mode="{{ settings.clock_theme if settings.clock_theme in ['auto', 'dark', 'light'] else 'auto' }}">
             <legend class="visually-hidden" data-i18n="display_clock_style">{{ translations[language].display_clock_style }}</legend>
             {% for style, name_key, desc_key in [
                 ('classic', 'clock_style_classic', 'clock_style_desc_classic'),
                 ('flip', 'clock_style_flip', 'clock_style_desc_flip'),
                 ('segment', 'clock_style_segment', 'clock_style_desc_segment'),
                 ('paper', 'clock_style_paper', 'clock_style_desc_paper')] %}
-            <label class="clock-style-card" for="clock_style_{{ style }}">
+            <label class="clock-style-card" for="clock_style_{{ style }}" data-default-theme="{{ 'light' if style == 'paper' else 'dark' }}">
                 <input type="radio" id="clock_style_{{ style }}" name="clock_style" value="{{ style }}" data-clock-style-choice {% if settings.clock_style == style %}checked{% endif %} onchange="setClockStyle(this.value)">
                 <span class="clock-style-frame" aria-hidden="true"></span>
                 {{ clock_style_thumb(style) }}
@@ -250,13 +277,6 @@
             </label>
             {% endfor %}
         </fieldset>
-        <fieldset class="clock-style-theme">
-            <legend data-i18n="clock_theme">{{ translations[language].clock_theme }}</legend>
-            <label class="check"><input type="radio" id="clock_theme_auto" name="clock_theme" value="auto" data-clock-theme-choice {% if settings.clock_theme == 'auto' %}checked{% endif %} onchange="setClockTheme(this.value)"> <span data-i18n="clock_theme_auto">{{ translations[language].clock_theme_auto }}</span></label>
-            <label class="check"><input type="radio" id="clock_theme_dark" name="clock_theme" value="dark" data-clock-theme-choice {% if settings.clock_theme == 'dark' %}checked{% endif %} onchange="setClockTheme(this.value)"> <span data-i18n="clock_theme_dark">{{ translations[language].clock_theme_dark }}</span></label>
-            <label class="check"><input type="radio" id="clock_theme_light" name="clock_theme" value="light" data-clock-theme-choice {% if settings.clock_theme == 'light' %}checked{% endif %} onchange="setClockTheme(this.value)"> <span data-i18n="clock_theme_light">{{ translations[language].clock_theme_light }}</span></label>
-        </fieldset>
-        <p class="help clock-style-theme-hint" data-i18n="clock_theme_hint">{{ translations[language].clock_theme_hint }}</p>
         <div class="actions clock-style-save-actions">
             <button id="clock-style-save" class="primary" type="submit" disabled data-i18n="clock_style_save">{{ translations[language].clock_style_save }}</button>
             <button id="clock-style-restore" type="button" onclick="restoreClockStyle()" disabled data-i18n="clock_style_restore">{{ translations[language].clock_style_restore }}</button>
@@ -865,6 +885,8 @@
             var unsaved = clockStyleDraft !== clockStyleSaved || clockThemeDraft !== clockThemeSaved;
             styleInputs().forEach(function (input) { input.checked = input.value === clockStyleDraft; });
             themeInputs().forEach(function (input) { input.checked = input.value === clockThemeDraft; });
+            var options = document.getElementById('clock-style-options');
+            if (options) options.setAttribute('data-theme-mode', clockThemeDraft);
             document.getElementById('clock-style-save').disabled = !unsaved || settingsConflict;
             document.getElementById('clock-style-restore').disabled = !unsaved;
             document.getElementById('clock-style-state').textContent = unsaved ? t('clock_style_unsaved') : '';

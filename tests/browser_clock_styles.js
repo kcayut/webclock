@@ -153,6 +153,10 @@ async function main() {
             await waitFor(() => evaluate('typeof window.clockStyleDraft === "string"'));
             await evaluate('postSettings(' + JSON.stringify(settings) + ')');
         }
+        async function thumbOpacity(style, theme) {
+            return evaluate('(function () { var card = document.getElementById("clock_style_' + style + '").closest(".clock-style-card"); ' +
+                'return getComputedStyle(card.querySelector(".clock-style-thumb-' + theme + '")).opacity; }())');
+        }
         const nightOff = {enabled: false, start: '22:00', end: '07:00', brightness: 15, black: false};
         const baseSettings = {
             mode: 'normal', brightness: 100, time_format: '24h', language: 'zh-TW',
@@ -204,6 +208,17 @@ async function main() {
         assert.equal(await evaluate('!!document.getElementById("clock_style_glass")'), false);
         assert.equal(await evaluate('!!document.getElementById("clock_style_orbit")'), false);
         assert.equal(await evaluate('document.querySelectorAll("[data-clock-theme-choice]").length'), 3);
+        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'auto');
+        assert.equal(await thumbOpacity('flip', 'dark'), '1', 'auto shows the dark flip thumbnail');
+        assert.equal(await thumbOpacity('flip', 'light'), '0');
+        assert.equal(await thumbOpacity('paper', 'dark'), '0');
+        assert.equal(await thumbOpacity('paper', 'light'), '1', 'auto shows the light paper thumbnail');
+        await evaluate('(function () { var input = document.getElementById("clock_theme_dark"); ' +
+            'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); }())');
+        await SLEEP(250);
+        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'dark');
+        assert.equal(await thumbOpacity('paper', 'dark'), '1', 'dark mode switches paper to its dark thumbnail');
+        assert.equal(await thumbOpacity('paper', 'light'), '0');
         await evaluate('(function () { var input = document.getElementById("clock_style_segment"); ' +
             'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); }())');
         const draft = await evaluate('({draft: clockStyleDraft, disabled: document.getElementById("clock-style-save").disabled, ' +
@@ -219,10 +234,20 @@ async function main() {
         assert.equal(themeDraft.draft, 'light');
         assert.equal(themeDraft.disabled, false);
         assert.match(themeDraft.src, /theme=light/);
+        await SLEEP(250);
+        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'light');
+        assert.equal(await thumbOpacity('flip', 'light'), '1', 'light mode switches flip to its light thumbnail');
+        assert.equal(await thumbOpacity('flip', 'dark'), '0');
+        assert.equal(await thumbOpacity('paper', 'light'), '1');
+        assert.equal(await thumbOpacity('paper', 'dark'), '0');
         await evaluate('document.querySelector(\'[data-management-tab="common"]\').click(); ' +
             'document.querySelector(\'[data-management-tab="styles"]\').click()');
         assert.equal(await evaluate('clockStyleDraft'), 'segment');
         await evaluate('document.getElementById("clock-style-restore").click()');
+        await SLEEP(250);
+        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'auto');
+        assert.equal(await thumbOpacity('flip', 'dark'), '1');
+        assert.equal(await thumbOpacity('paper', 'light'), '1');
         await evaluate('(function () { var input = document.getElementById("clock_style_segment"); ' +
             'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); ' +
             'var theme = document.getElementById("clock_theme_light"); theme.checked = true; ' +
