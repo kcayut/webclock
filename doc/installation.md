@@ -37,7 +37,7 @@ curl -fsSL https://github.com/kcayut/webclock/releases/latest/download/install.s
 
 安裝器下載並校驗正式版，使用 amd64／arm64 預建映像。完成後開啟 **`http://主機IP/admin`**。
 
-若主機的 80 埠已被占用，下載腳本後改執行下列指令，管理入口為 `http://主機IP:8080/admin`：
+若主機的 80 埠已被佔用，下載腳本後改執行下列指令，管理入口為 `http://主機IP:8080/admin`：
 
 ```bash
 WEBCLOCK_HTTP_PORT=8080 bash /tmp/webclock-install.sh --docker
@@ -136,7 +136,7 @@ Docker 加 `--docker`；私人 CA 加 `--tls-ca /absolute/path/ca.pem`，並在�
 | 安裝中斷 | 排除錯誤後，在原目錄以相同參數重跑 `bash setup.sh`；若留有 `.webclock-bootstrap`，可用原版本、原目錄重跑下載入口 |
 | 下載失敗／校驗不符 | 檢查 GitHub／GHCR 連線、磁碟空間及 Release 資產；不要略過校驗 |
 | `Unknown option` | 查看該腳本的 `--help`；`--dir`／`--version` 屬於 `install.sh`，`--build` 屬於 `setup.sh --docker` |
-| 連接埠占用 | Linux 改 `PORT`，Docker 改 `WEBCLOCK_HTTP_PORT`；已有 `.env` 時編輯該檔，容器內維持 5000 |
+| 連接埠佔用 | Linux 改 `PORT`，Docker 改 `WEBCLOCK_HTTP_PORT`；已有 `.env` 時編輯該檔，容器內維持 5000 |
 | Docker 無法連線 | 啟動 Docker，確認目前帳號可執行 `docker compose version` 及操作 daemon |
 | `manual_notes.json` 是目錄 | 停止容器並確認目錄為空，才用 `rmdir manual_notes.json` 移除；非空內容須保留 |
 | 平板無法連線 | 使用主機區網 IP，勿填 `localhost`；檢查防火牆、訪客網路隔離與埠映射 |

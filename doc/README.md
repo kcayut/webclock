@@ -2,7 +2,7 @@
 
 第一次使用，從[安裝指南](installation.md)選擇線上／離線、裸機、Docker 或 Home Assistant；安裝後的升級與故障復原見[更新維護](operations/update-operations.md)。
 
-自己維護主機時，手動與可攜更新工具的用途、位置及命令見 [`scripts/update/`](../scripts/update/README.md)。
+主機維護所需的手動與可攜更新工具，其用途、位置及命令見 [`scripts/update/`](../scripts/update/README.md)。
 
 | 資料夾／文件 | 內容 |
 | --- | --- |

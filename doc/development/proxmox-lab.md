@@ -25,7 +25,7 @@ bash /root/create_proxmox_lab.sh \
 
 可透過 Proxmox 介面確認 storage／bridge 名稱。VM ID 若在叢集中已被 VM 或 LXC 使用，腳本會在建立前停止。需要固定 HA OS 版本可加 `--ha-version 正式版tag`；預設從官方最新正式版解析。Ubuntu 使用官方 24.04 發行映像。兩者皆比對官方 HTTPS 來源的 SHA256；HA 資產無 digest 時停止。
 
-若最新 HA OS Release 沒有 `haos_ova-*.qcow2.xz`，腳本會停止；請查官方 Release，指定含 KVM 映像的正式版本。2026-11-12 的 18.5 沒有該映像，本次測試使用 `--ha-version 18.4`。
+若最新 HA OS Release 沒有 `haos_ova-*.qcow2.xz`，腳本會停止；請查官方 Release，指定含 KVM 映像的正式版本。測試環境使用 `--ha-version 18.4`（2026-11-12）。
 
 腳本成功只代表三台 VM 已送出啟動命令。首次開機需等待初始化；在路由器 DHCP 租約或 Proxmox Console 查 IP，再設定 DHCP 保留。Ubuntu 使用 `ubuntu` 帳號與上傳公鑰，沒有預設登入密碼。VM 預設不隨 Proxmox 自動開機。
 

@@ -56,11 +56,11 @@ Private caches are scoped to device identity. A 401/403, identity change or expi
 
 This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Enrolled schema 3 clocks receive private content from their effective device/group assignments.
 
-Device execution remains a firmware responsibility. [`firmware/`](../../firmware/README.md) now contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
+Device execution remains a firmware responsibility. [`firmware/`](../../firmware/README.md) contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
 
 See the [ESPHome device guide](../guides/esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
 
-There is currently one owner's management space. **Legacy self-mode devices use the same schedules and calendars**. Schema 3 resolves device overrides and group assignments for authenticated devices. Multiple user accounts and multi-tenancy are not implemented.
+Management data is scoped to the active owner. **Legacy self-mode devices use the same schedules and calendars**. Schema 3 resolves device overrides and group assignments for authenticated devices. Managed mode supports administrator and member accounts with separate data spaces; self mode serves the selected primary owner. See [account management](../operations/accounts-and-https.md).
 
 ### Per-item group assignment and display windows
 
@@ -218,7 +218,7 @@ In self mode, `GET /api/v1/browser-alarms` returns the following fields. Managed
 | `alarms[].occurrence_id` | occurrence identifier used to prevent duplicate playback |
 | `alarms[].starts_at` | trigger time in Unix milliseconds |
 | `alarms[].sound` | browser tone from `browser_sound` |
-| `alarms[].volume` | 0–100 from `browser_volume`; updated pages default to 100 when older responses omit it |
+| `alarms[].volume` | 0–100 from `browser_volume`; pages default to 100 when the response omits this field |
 | `holiday_coverage`, `holiday_known` | holiday-data range and availability |
 
 The query starts at the current minute so API latency does not skip an alarm that just became due. It is not a complete offline schedule snapshot. The page refreshes about every 15 seconds. A loaded next occurrence can fire during a brief disconnection, but reopening or loading later occurrences requires a connection. Alarms processed more than 60 seconds late are not replayed.
@@ -322,9 +322,9 @@ A rolling multi-day trigger list, such as seven days with an expiry, is a propos
 
 ## Legacy data and storage
 
-- Old audio APIs, sound files, the hardware sound service, and the simulated Python device were removed. The only current device command is `sync`.
-- Legacy schedule and device fields remain in stored files when present but are not exposed or applied. New APIs reject them.
-- Existing user data under `webclock_state/sounds/` or `webclock_state/fake-device/` is not deleted, but the server no longer reads it.
+- The device API supports only the `sync` command. It does not provide audio-file playback, a hardware sound service, or a simulated Python device.
+- Legacy schedule and device fields remain in stored files when present but are not exposed or applied. Schedule and device APIs reject them.
+- Existing user data under `webclock_state/sounds/` or `webclock_state/fake-device/` is not deleted, but the server does not read it.
 - Legacy root `manual_notes.json` is copied once to the state directory. `NOTES_FILE` and `WEBCLOCK_STATE_DIR` remain supported overrides.
 
 Back up the complete state directory, reminders, and `.env`. The `/admin` JSON export contains only display settings and manual reminders, not schedules or devices. See the [English guide](../guides/guide_en.md#backups-data-and-updates) for update and migration steps.

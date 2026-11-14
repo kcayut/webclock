@@ -1,8 +1,8 @@
 # 裝置與 AI 程式寫入 API
 
-Home Assistant、ESP 或 AI agent 可用同一套 HTTP API 建立、修改、刪除鬧鐘與 WebClock 本地行事曆事件，再獨立指派給已授權群組／裝置。這一版不含音檔上傳、本地重複事件或 Google／iCloud 寫回；鬧鐘可繼續使用既有內建音色、排程規則及外部重複行程聯動。
+Home Assistant、ESP 或 AI agent 可用同一套 HTTP API 建立、修改、刪除鬧鐘與 WebClock 本地行事曆事件，再獨立指派給已授權群組／裝置。API 不支援音檔上傳、本地重複事件或 Google／iCloud 寫回；鬧鐘支援內建音色、排程規則及外部重複行程聯動。
 
-程式建立的內容不會自動廣播；self 模式也一樣。新鬧鐘必須明確指派給已完成六碼加入的群組／裝置，接收端使用 v2 裝置同步；匿名 self 畫面及舊 schema 2 裝置不會取得這些程式鬧鐘。原本由後台建立的鬧鐘保留既有行為。WebClock 本地事件也預設不公開；管理者可另外選擇公開顯示事件，但聯動這類事件的鬧鐘不支援舊 schema 2。
+程式建立的內容不會自動廣播；self 模式也一樣。新鬧鐘必須明確指派給已完成六碼加入的群組／裝置，接收端使用 v2 裝置同步；匿名 self 畫面及舊 schema 2 裝置不會取得這些程式鬧鐘。後台建立的鬧鐘依管理頁的內容指派規則顯示。WebClock 本地事件也預設不公開；管理者可另外選擇公開顯示事件，但聯動這類事件的鬧鐘不支援舊 schema 2。
 
 ## self 與 managed 身份
 
@@ -13,9 +13,9 @@ Home Assistant、ESP 或 AI agent 可用同一套 HTTP API 建立、修改、刪
 | 傳輸 | 信任的區網可使用 HTTP；公開網路使用 HTTPS | 預設 HTTPS；主機可明確允許可信任內網 HTTP（見[連線設定](../operations/accounts-and-https.md#https)） |
 | 授權範圍 | 安裝實例的 owner、指定 scope 與資源 | 目前 owner、managed 模式、指定 scope 與資源 |
 
-即使 self 管理頁在可信任區網不需登入，新的程式寫入 API 仍必須帶憑證。顯示裝置 token、六碼加入碼、`DEVICE_API_TOKEN`、管理頁 Cookie 都不能取代程式憑證。self 憑證綁定 self；切換到 managed 後必須重新核發，不能沿用。HA App 的 self 儲存模式與 WebClock managed 登入是不同模式。
+即使 self 管理頁在可信任區網不需登入，程式寫入 API 仍必須帶憑證。顯示裝置 token、六碼加入碼、`DEVICE_API_TOKEN`、管理頁 Cookie 都不能取代程式憑證。self 憑證綁定 self；切換到 managed 後必須重新核發，不能沿用。HA App 的 self 儲存模式與 WebClock managed 登入是不同模式。
 
-在管理頁「程式存取」(`/integrations`) 建立及撤銷憑證；進階管理也可呼叫 `POST /api/v1/control-clients` 核發；`GET /api/v1/control-clients` 列出；`DELETE /api/v1/control-clients/<id>` 撤銷。這些管理操作沿用原本管理身份、CSRF 與入口限制。核發內容範例：
+在管理頁「程式存取」(`/integrations`) 建立及撤銷憑證；進階管理也可呼叫 `POST /api/v1/control-clients` 核發；`GET /api/v1/control-clients` 列出；`DELETE /api/v1/control-clients/<id>` 撤銷。這些管理操作使用管理身分、CSRF 與入口限制。核發內容範例：
 
 ```json
 {
@@ -53,7 +53,7 @@ Home Assistant、ESP 或 AI agent 可用同一套 HTTP API 建立、修改、刪
 
 `request_id` 使用 8–128 位英數、底線或連字號，每次新的建立操作使用新 ID。斷線後重送相同 ID 與相同內容，可拿回原建立結果；不可用新 ID 無條件重試。重送回應的 `replayed: true` 表示原始保存結果，內容可能已修改或刪除，請再 GET 讀回目前狀態。相同 ID 換內容會得到 `409 idempotency_conflict`。`409 request_incomplete` 表示前次保存中斷，資料若仍與原候選完全一致會自動完成收據；無法確認時需要管理者檢查，不能自行再次建立。
 
-修改／刪除必須帶上次讀取的 SHA-256 `revision`；衝突會得到 `409 revision_conflict`。客戶端應重新讀取並讓使用者或代理確認如何合併，不能自動抓新版本覆蓋。建立內容與指派是兩個獨立操作，請分別確認回應；不宣稱跨操作原子成功。
+修改／刪除必須帶上次讀取的 SHA-256 `revision`；衝突會得到 `409 revision_conflict`。客戶端應重新讀取並讓使用者或代理確認如何合併，不能自動抓新版本覆蓋。建立內容與指派是兩個獨立操作，各自回傳結果，不提供跨操作的原子交易。
 
 ## 鬧鐘與事件範例
 
@@ -139,13 +139,13 @@ python3 scripts/control_clock.py events assign REPLACE_EVENT_ID --target-kind gr
 
 `event-request.json` 包含 `request_id` 與上方 `event` 內容；修改包含 `revision` 與 `event`，指派包含 `revision` 與布林 `assigned`。成功輸出伺服器實際 JSON，失敗以非零結束碼及不含憑證的錯誤 JSON 回報。若 agent 需要工具介面，可將這些固定操作包成其宿主工具；目前未另外提供 MCP server。
 
-ESP 可用同一契約送 JSON 與 Bearer 標頭；需要保存未完成建立操作的 `request_id`，恢復網路後重送原內容。這一版提供伺服器與通用客戶端契約，尚未新增 ESP 本機輸入介面或實機驗收。
+ESP 可用同一契約送 JSON 與 Bearer 標頭；需要保存未完成建立操作的 `request_id`，恢復網路後重送原內容。此 API 提供伺服器與通用客戶端契約；ESP 本機輸入介面尚未實作，也未完成實機驗收。
 
 建立收據目前最多保存 10,000 筆，不會依時間自動刪除。達上限回傳 `capacity_reached`，需管理者處理；高寫入量或跨操作交易需求應改用具交易能力的儲存，不能靠清空收據規避重複建立保護。
 
 ## 驗證與狀態
 
-本機 HA 測試使用 Home Assistant 2026.9.4／Python 3.14；新增測試涵蓋憑證分離、無 redirect／cookie、固定路徑、版本衝突、缺少憑證、選項保留／撤銷與 CLI JSON 契約。可執行：
+本機 HA 測試使用 Home Assistant 2026.9.4／Python 3.14；測試涵蓋憑證分離、無 redirect／cookie、固定路徑、版本衝突、缺少憑證、選項保留／撤銷與 CLI JSON 契約。可執行：
 
 ```bash
 python -m unittest discover -s homeassistant/tests -p 'test_*.py' -v

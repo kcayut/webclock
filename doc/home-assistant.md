@@ -132,7 +132,7 @@ actions: []
 
 ## 管理、更新與移除
 
-新版感測器屬性提供 `integration_version`、`server_version` 與 `version_alignment`；舊 Server 未回報時為 `unknown`，不同版本為 `mixed`。這是執行中的版本資訊，不代表跨版本驗收通過。HACS 更新後仍須重啟 HA；卡片與執行中的整合不同版時，會提示重新載入瀏覽器。完整順序及完成判定見[更新維護流程](operations/update-operations.md#ha-的完成判定)。
+感測器屬性提供 `integration_version`、`server_version` 與 `version_alignment`；Server 未回報版本時為 `unknown`，不同版本為 `mixed`。這是執行中的版本資訊，不代表跨版本驗收通過。HACS 更新後仍須重啟 HA；卡片與執行中的整合不同版時，會提示重新載入瀏覽器。完整順序及完成判定見[更新維護流程](operations/update-operations.md#ha-的完成判定)。
 
 - **改名、移組、停用、恢復、要求同步**：在 WebClock 裝置管理頁操作。HA 最多約 15 秒後取得更新；要求同步的 ACK 代表資料已取得，不代表通知或揚聲器已實際執行。
 - **憑證撤銷**：WebClock 撤銷裝置後，HA 會要求重新授權。請在 WebClock 產生新的加入碼，再從 HA 的修復提示輸入；原裝置憑證不會恢復。
@@ -143,7 +143,7 @@ actions: []
 ## 常見問題
 
 - **卡片清單找不到 WebClock**：重新啟動 HA 後強制重新載入瀏覽器，並確認整合已成功載入。卡片資源由整合自動註冊，不需要手動新增 JavaScript URL。
-- **只有時間，沒有行事曆或鬧鐘**：檢查 WebClock 群組是否已指派內容、裝置是否啟用，以及授權租約是否有效。新建的空群組原本就只顯示時間。
+- **只有時間，沒有行事曆或鬧鐘**：檢查 WebClock 群組是否已指派內容、裝置是否啟用，以及授權租約是否有效。未指派內容的群組只顯示時間。
 - **暫時斷線**：已校準時間會繼續顯示；私人行事曆與鬧鐘僅保留到 Server 核發的租約到期，之後會清除。
 - **事件沒有播放聲音**：`webclock_alarm` 只是一個 HA 事件。必須另建自動化並指定通知或 `media_player` 動作；整合本身不直接控制揚聲器。
 
@@ -159,7 +159,7 @@ node homeassistant/tests/test_cards.js
 node --check custom_components/webclock/www/webclock-cards.js
 ```
 
-本次安裝交付與完整備份的測試結果及待驗收項目見[發行說明](ha-release.md#完整備份本機驗證2026-10-09)。較早版本曾通過 Server 269 項、HA 6 項整合／HTTPS 斷言及 JavaScript／卡片回歸；在隔離的真實 HA 安裝中，也已操作錯碼重試保留輸入、六碼加入、三卡共用單一裝置、桌面／手機顯示、重啟保留身份及選項、到點只發一次事件、後台改名、停用／恢復、移組內容隔離與同步 ACK。這些既有紀錄不代替本版 App 容器映像、正式部署、使用者 HA 主機、實際通知／揚聲器及 ESP／舊 iPad 的驗收。
+安裝、完整備份與發行驗證見[發行紀錄](ha-release.md)。各項結果僅適用於紀錄中的提交與環境；使用者 HA 主機、實際通知／揚聲器、ESP 與 iPad 的驗收須另行執行。
 
 測試環境限制：macOS 上的隔離 HA Core 程序兩次在收到停止訊號後，以 SIGSEGV／139 結束；崩潰堆疊位於 Python 3.14.6 清理物件與模組階段，原因尚未定位。重新啟動後身份與資料仍可恢復，但不能據此宣稱主機穩定性已通過。該環境也未配置 FFmpeg／TTS，未進行聲音播放驗收。
 

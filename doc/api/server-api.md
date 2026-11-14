@@ -288,7 +288,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 | `alarms[].name` | 鬧鐘名稱 |
 | `alarms[].starts_at` | 下次發生時間，單位為 Unix 毫秒 |
 | `alarms[].sound` | 網頁音色，來自排程的 `browser_sound` |
-| `alarms[].volume` | 0–100 的網頁音量，來自 `browser_volume`；新版網頁讀到未提供此欄位的舊回應時使用 100 |
+| `alarms[].volume` | 0–100 的網頁音量，來自 `browser_volume`；回應省略此欄位時，網頁使用 100 |
 | `holiday_coverage`、`holiday_known` | 假日資料涵蓋範圍與是否已知 |
 
 查詢從當分鐘起算，避免剛到時刻的鬧鐘因 API 延遲就直接跳至下一次；同一分鐘內不同秒的聯動行程會保留。這份回應不是完整離線排程快照。時鐘頁約每 15 秒更新一次；已載入的下次時間可在暫時斷線時觸發，重新開頁與取得後續週期仍需連線。超過 60 秒才恢復處理的過期鬧鐘不補響。
@@ -299,7 +299,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 
 ## 裝置 API
 
-路徑保留 `/api/v1/device/*`，設定回應的 **`schema_version` 為 2**。裝置 API 不提供舊硬體 `sound`、`volume`、`repeat`、`snooze_minutes` 播放欄位；`browser_sound` 原本描述網頁音色，不是通用硬體播放指令。ESPHome 原型明確將非靜音音色映射成同一種嗶聲，音量另乘裝置上限，詳見[硬體映射](../guides/esp-home.md#顯示聲音與按鍵)。schema 1 的舊 client 需要更新，不能將 schema 2 視為 schema 1 相容。
+路徑保留 `/api/v1/device/*`，設定回應的 **`schema_version` 為 2**。裝置 API 不提供舊硬體 `sound`、`volume`、`repeat`、`snooze_minutes` 播放欄位；`browser_sound` 用於指定網頁音色，不是通用硬體播放指令。ESPHome 原型明確將非靜音音色映射成同一種嗶聲，音量另乘裝置上限，詳見[硬體映射](../guides/esp-home.md#顯示聲音與按鍵)。schema 1 的舊 client 需要更新，不能將 schema 2 視為 schema 1 相容。
 
 | 路徑 | 方法與用途 |
 | --- | --- |
@@ -325,7 +325,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 
 ### GET 回應形狀
 
-以下 `<...>` 是說明用占位值，實際 revision 是 64 個十六進位字元；不要照抄作為裝置回報。
+以下 `<...>` 是說明用的示意值，實際 revision 是 64 個十六進位字元；不要照抄作為裝置回報。
 
 `GET /api/v1/device/config`：
 
@@ -437,7 +437,7 @@ revision 是內容的 SHA-256 字串，內容相同就不變。三個 GET 資源
 
 提供 `capabilities` 會整包取代先前能力，並由 Server 更新 `capabilities_reported_at`；省略則保留先前資料和時間。未提供的能力為未知，不等於 `false`。未曾回報的 `device_type`、`capabilities`、`capabilities_reported_at` 回 `null`。這些都是裝置自報觀察，不代表 Server 已完成硬體測試，也不會授予或撤銷存取權限。
 
-管理端 PATCH `/api/v1/devices/<id>` 只接受 `{"name":"客廳時鐘"}`：名稱去除前後空白，原始長度不超過 100 字元，空白、空字串、`null` 與其他欄位均回 400；需要上述管理 CSRF token。成功回 `{"device":{...}}`。回應的 `name` 是有效顯示名稱，優先使用 `admin_name`，否則使用 `reported_name`；尚未改名時 `admin_name` 為 `null`。同 ID 再註冊只更新自報名稱，回報與再註冊都不覆寫管理名稱。舊版只存 `name` 的記錄仍可讀取，名稱與能力資料保存在 `devices.json`，重啟後保留。現階段未提供清空管理名稱的 API。
+管理端 PATCH `/api/v1/devices/<id>` 只接受 `{"name":"客廳時鐘"}`：名稱去除前後空白，原始長度不超過 100 字元，空白、空字串、`null` 與其他欄位均回 400；需要上述管理 CSRF token。成功回 `{"device":{...}}`。回應的 `name` 是有效顯示名稱，優先使用 `admin_name`，否則使用 `reported_name`；尚未改名時 `admin_name` 為 `null`。同 ID 再註冊只更新自報名稱，回報與再註冊都不覆寫管理名稱。僅含 `name` 的記錄可讀取，名稱與能力資料保存在 `devices.json`，重啟後保留。現階段未提供清空管理名稱的 API。
 
 目前沒有 `wifi_rssi`、`rtc_ok`、`last_alarm`、同步錯誤或實際響鈴紀錄欄位；直接加入 status 會回 400。Server 只保存自報的 revision 字串，不檢查它是否等於目前版本，也不驗證 Flash 或播放結果。
 
@@ -536,7 +536,7 @@ curl -i -H 'Content-Type: application/json' \
 
 先檢查 HTTP 狀態碼，再依 Content-Type 解析；代理登入頁、未預期例外不保證有 `error` JSON。逾時、斷線及 5xx 不 ACK 未完成同步。ACK 成功但回應遺失可重送；格式合法但不屬於該裝置的指令 ID 不會清除其他裝置命令。
 
-韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時不能憑空得知正確日期，詳見 [ESPHome 裝置指南](../guides/esp-home.md#時間斷網斷電與認證)。
+韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時無法取得正確日期，詳見 [ESPHome 裝置指南](../guides/esp-home.md#時間斷網斷電與認證)。
 
 ### 後續擴充界線
 
@@ -546,11 +546,11 @@ ESPHome 目標中的「未來七天觸發清單」尚未提供 API，現有 `sch
 
 ## 舊原型與資料保存
 
-- 舊音效 API、音檔、硬體聲音服務及 Python 模擬裝置已移除，裝置指令目前只有 `sync`。目前網頁鬧鐘改由瀏覽器合成內建音色。
-- 舊 `schedules.json` 的 `sound`、`volume`、`repeat`、`snooze_minutes` 會留存檔案，編輯其他欄位也保留，但不公開、不套用。新 API 不接受這些欄位。
-- 新增的 `browser_sound` 與 `skip_holidays` 正常透過排程管理儲存，不沿用舊音檔或舊硬體音量設定。
-- 舊裝置硬體欄位、`test_sound`／`restart` 待執行命令同樣留存，但不公開也不再交給裝置。
-- `webclock_state/sounds/`、`webclock_state/fake-device/` 等既有使用者資料不會自動刪除。Server 不再讀取它們。
+- 裝置指令只支援 `sync`，網頁鬧鐘由瀏覽器合成內建音色；不提供音檔播放 API、硬體聲音服務或 Python 模擬裝置。
+- 舊 `schedules.json` 的 `sound`、`volume`、`repeat`、`snooze_minutes` 會留存檔案，編輯其他欄位也保留，但不公開、不套用。排程 API 不接受這些欄位。
+- `browser_sound` 與 `skip_holidays` 正常透過排程管理儲存，不沿用舊音檔或舊硬體音量設定。
+- 舊裝置硬體欄位、`test_sound`／`restart` 待執行命令同樣留存，但不公開，也不交給裝置。
+- `webclock_state/sounds/`、`webclock_state/fake-device/` 等既有使用者資料不會自動刪除。Server 不讀取這些目錄。
 - 舊根目錄 `manual_notes.json` 仍會首次複製到狀態目錄，保留原檔。`NOTES_FILE` 和 `WEBCLOCK_STATE_DIR` 仍可覆寫路徑。
 
 請備份整個狀態目錄、提醒檔和 `.env`。`/admin` 的 JSON 匯出仍只包含顯示設定與手動提醒，不含智慧排程或裝置資料。Linux 更新器會備份預設路徑和服務實際設定的 `WEBCLOCK_STATE_DIR`、`NOTES_FILE`，失敗時嘗試一起回復程式、套件與資料。Docker 的自訂路徑仍需自行掛載及備份。操作方式與首次升級步驟見[繁體中文使用指南](../guides/guide.md#備份資料與更新)。

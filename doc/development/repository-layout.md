@@ -4,13 +4,13 @@
 
 `doc/installation.md`、`doc/home-assistant.md` 和 `doc/ha-release.md` 保留原位置，維持已公開安裝指令、HACS manifest 與 HA App 說明使用的連結。
 
-舊版 HA App 說明中的 `scripts/prepare_ha_app.sh` 也保留為薄轉接入口，實作集中於 `homeassistant/prepare_local_app.sh`。
+`scripts/prepare_ha_app.sh` 為 HA App 的相容轉接入口，實作集中於 `homeassistant/prepare_local_app.sh`。
 
 ```text
 WebClock/
 ├── README*.md、CHANGELOG.md、VERSION
 ├── install.sh、setup.sh                  # 新安裝的固定入口
-├── update_clock.py                      # 舊版可獨立下載的 bootstrap
+├── update_clock.py                      # 可獨立下載的 bootstrap 相容入口
 ├── update_clock.sh、docker_update.sh     # 舊命令的薄轉接入口
 ├── Dockerfile、docker-compose.yml、.dockerignore
 ├── repository.yaml、hacs.json            # HA 商店／HACS 識別

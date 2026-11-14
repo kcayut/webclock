@@ -10,7 +10,7 @@
 
 ## 交付與驗收狀態
 
-| 項目 | 本次結果 | 證據及界線 |
+| 項目 | 該次驗證結果 | 證據及界線 |
 | --- | --- | --- |
 | A0–A2：核心時計、設定驗證、請求隔離、安靜畫面 | 既有實作保留，自動化回歸通過 | `tests/test_clock.js`、`tests/test_alarms.js`；設定整包拒絕、來源／世代／回應順序、錯誤與選用程式故障 |
 | A3：管理名稱、自報名稱、類型與能力 | 通過 | `tests/test_device_service.py`、`tests/test_server_api.py`、`tests/test_csrf.py`；不把未知能力標成不支援 |
@@ -26,7 +26,7 @@
 | 實際主機部署 | **未執行** | 沒有修改使用中服務或正式資料 |
 | iPad mini 1／iOS 9 Safari | **待實機驗收** | 現代瀏覽器及視窗大小模擬均不能代替實機 |
 
-Python 初次在 sandbox 內執行時，3 項 migration 測試因 localhost 啟動回報 `Operation not permitted`；在允許啟動暫存服務的環境重跑，128 項全過。新增 A4 回歸後再次完整執行，129 項全過；沒有把環境失敗改成跳過測試。
+Python 回歸在允許啟動暫存服務的環境執行，129 項通過。migration 測試需要 localhost 服務權限；受限 sandbox 會回報 `Operation not permitted`。
 
 ## 已驗證的故障與相容範圍
 
@@ -55,19 +55,19 @@ Python 初次在 sandbox 內執行時，3 項 migration 測試因 localhost 啟�
 
 正常操作無非預期頁面例外。故障案例的 HTTP 401／403／500、刻意注入的腳本例外及 Playwright 阻擋 Service Worker 的工具提示皆依情境記錄，不能宣稱整輪 console 訊息為零。跨日使用測試時計，不是連續 24 小時實測。
 
-另以未攔截 Service Worker 的瀏覽器補驗：正常載入 console 無錯誤、Service Worker ready、實際斷網後仍跨日並保持可見，以及現代 Chrome 離線重新載入均通過。這只證明本次 Chrome／localhost 環境，不能推定 iOS 9 或一般 HTTP 區網網址具備相同離線能力。
+另以未攔截 Service Worker 的瀏覽器補驗：正常載入 console 無錯誤、Service Worker ready、實際斷網後仍跨日並保持可見，以及現代 Chrome 離線重新載入均通過。這只證明該次驗證的 Chrome／localhost 環境，不能推定 iOS 9 或一般 HTTP 區網網址具備相同離線能力。
 
 截圖視讀發現無視窗 Chrome 154 的系統字型在更新 `textContent` 後偶爾缺字；不含 WebClock 的最小靜態頁亦可重現。有視窗 Chrome 的同一最小頁與原始 WebClock 跨日頁均完整顯示，故記為測試環境的繪製限制，未修改產品字型。完整跨日畫面保存於 `/tmp/webclock-a6-clock-rollover-headed.png`。
 
-ES5 解析涵蓋 `static/clock.js`、`time-format.js`、`time-inputs.js`、`offline.js`、`alarm-audio.js`、`alarms.js` 及 Server 實際渲染的 3 段 inline script，全部通過。沿用已安裝的 parser，未新增專案依賴。
+ES5 解析涵蓋 `static/clock.js`、`time-format.js`、`time-inputs.js`、`offline.js`、`alarm-audio.js`、`alarms.js` 及 Server 實際渲染的 3 段 inline script，全部通過。
 
-本次原始結果與截圖保存在執行機的 `/tmp/webclock-a6-browser-results.json`、`/tmp/webclock-a6-browser-supplement.json`、`/tmp/webclock-a6-*.png`；它們是本機驗收附件，不是 repository 內的長期測試或已發布產物。驗收使用的獨立服務、暫存資料及瀏覽器 profiles 已清理。
+該次驗證的原始結果與截圖保存在執行機的 `/tmp/webclock-a6-browser-results.json`、`/tmp/webclock-a6-browser-supplement.json`、`/tmp/webclock-a6-*.png`；它們是本機驗收附件，不是 repository 內的長期測試或已發布產物。驗收使用的獨立服務、暫存資料及瀏覽器 profiles 已清理。
 
 ## Linux CI 與真實 systemd 演練
 
 既有 [workflow](../../.github/workflows/linux-rehearsal.yml) 在 `ubuntu-24.04` 執行 Python／JavaScript／shell 回歸，再用 [rehearse_linux.py](../../tests/rehearsal/rehearse_linux.py) 驗證真實 systemd 升級、完整備份／還原與注入故障後回復。演練取 Git HEAD，未提交的修改不會自動納入。
 
-2026-10-05 20:59:59–21:01:58（Asia/Taipei），[執行 37313452583](https://github.com/kcayut/webclock/actions/runs/37313452583) **成功**，測試提交為 `60b239878cd788b5774d42b2fc3f9f28674cc9d0`。環境為標準 `ubuntu-24.04` runner、systemd 255；演練由 `1ad7868ff7b51e581421f85fefccfef4e7520ddd` 升級至本次提交。舊 `c1c3e6d` 的成功紀錄不再代替本批次證據。
+2026-10-05 20:59:59–21:01:58（Asia/Taipei），[執行 37313452583](https://github.com/kcayut/webclock/actions/runs/37313452583) **成功**，測試提交為 `60b239878cd788b5774d42b2fc3f9f28674cc9d0`。環境為標準 `ubuntu-24.04` runner、systemd 255；演練由 `1ad7868ff7b51e581421f85fefccfef4e7520ddd` 升級至測試提交。
 
 | 驗證 | 實際結果 |
 | --- | --- |
@@ -78,7 +78,7 @@ ES5 解析涵蓋 `static/clock.js`、`time-format.js`、`time-inputs.js`、`offl
 | 注入啟動失敗 | 測試副本故障後回復精確的 Git revision、venv 與資料，保留 failed-data／venv／manifest；再次重啟及 API 操作通過 |
 | 測試清理 | 最終服務 active；隨後移除演練 service，暫存合成資料隨一次性 runner 清理 |
 
-- [x] 本次程式已提交並推送，CI 的 SHA、run URL 與 success 結果已核對。
+- [x] 受測程式已提交並推送，CI 的 SHA、run URL 與 success 結果已核對。
 - [x] Python／JS 與真實 systemd 演練均通過。
 - Linux 通過仍不代表 Raspberry Pi／ARM、Docker、主機重開／斷電或 iOS 9 實機通過；沒有部署至使用中的主機。
 

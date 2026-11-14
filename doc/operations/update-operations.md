@@ -27,7 +27,7 @@
 
 預設只每日檢查，不自動安裝。既有更新服務的選擇保留，不因重新啟用而改動。
 
-- 裸機：新版 `install.sh` 可加 `--auto-update on` 或 `--auto-update off`；managed 管理員可在更新頁設定。
+- 裸機：`install.sh` 可加 `--auto-update on` 或 `--auto-update off`；managed 管理員可在更新頁設定。
 - Docker 單純執行：仍不要求宿主機 Python，不註冊 root worker。
 - Docker 網頁更新：Linux/systemd、系統 Docker、`/usr/bin/python3` 3.9+；執行 `sudo bash install.sh --docker --enable-updates`，預設使用受保護的 `/opt/webclock`。自訂 `--dir` 必須同樣受保護。明確加 `--auto-update on` 才自動安裝。
 - Docker 宿主機 CLI：需要 Python 3.9+ 以及讀寫安裝資料、操作 Docker 的權限；Docker 建立的私有檔案通常需要 sudo。Debian/Ubuntu 缺 Python 時先執行 `sudo apt-get install python3`。
@@ -42,7 +42,7 @@ sudo bash /tmp/webclock-docker-update.sh --project /實際安裝路徑 --check
 sudo bash /tmp/webclock-docker-update.sh --project /實際安裝路徑
 ```
 
-已位於受保護目錄時，加 `--enable-updates` 啟用網頁控制。舊版 Server 沒有更新 API 也能先由此宿主機入口升級，再啟用 worker。
+已位於受保護目錄時，加 `--enable-updates` 啟用網頁控制。Server 未提供更新 API 時，也能先由此宿主機入口升級，再啟用 worker。
 
 使用者家目錄中的安裝可在明確選擇後遷移：
 
@@ -84,7 +84,7 @@ sudo bash /tmp/webclock-docker-update.sh --project /opt/webclock --version VERSI
 
 ## Docker 復原
 
-以下在具有 `docker_update.sh` 的安裝目錄執行；舊版安裝沒有此檔時，改用已下載的 `sudo bash /tmp/webclock-docker-update.sh --project /實際安裝路徑`，接上相同的 `--diagnose`、`--recover` 或 `--prune-backups` 參數即可。線上入口會驗證下載的更新器，停機前保留救援副本；維護操作不會順便升級容器或註冊 worker。
+以下在具有 `docker_update.sh` 的安裝目錄執行；安裝目錄沒有此檔時，改用已下載的 `sudo bash /tmp/webclock-docker-update.sh --project /實際安裝路徑`，接上相同的 `--diagnose`、`--recover` 或 `--prune-backups` 參數即可。線上入口會驗證下載的更新器，停機前保留救援副本；維護操作不會順便升級容器或註冊 worker。
 
 更新器在替換 Compose／`.env` 前先保存每個可到達階段的設定指紋，因此中途突然停止後仍可辨識自己的變更。更新期間容器的自動重啟暫時關閉；通過健康檢查後才恢復原策略。進入人工復原時保持關閉，即使 Docker／主機重啟也不應自行啟動問題容器。不要自行執行 `compose up` 繞過復原檢查。
 
@@ -101,7 +101,7 @@ sudo bash docker_update.sh --diagnose
 sudo bash /tmp/webclock-docker-update.sh --project /實際安裝路徑 --diagnose
 ```
 
-診斷提供交易 ID、原／目標版本、備份位置、備份占用與可用空間。確認 ID 與預期一致後選擇：
+診斷提供交易 ID、原／目標版本、備份位置、備份佔用與可用空間。確認 ID 與預期一致後選擇：
 
 ```bash
 # 以交易目前設定的映像重試；保留全部現有資料：
@@ -124,7 +124,7 @@ sudo bash /var/lib/webclock-docker-recovery/VERSION/portable_docker_update.sh --
 sudo bash /var/lib/webclock-docker-recovery/VERSION/portable_docker_update.sh --offline --project /實際安裝路徑 --recover current --operation '貼上完整交易ID' --yes
 ```
 
-`--offline` 僅供診斷、復原與備份清理，不聯絡 GitHub、不拉取映像，也不啟用 worker。每次使用前重新核對副本的版本、雜湊與路徑；root 不會採用其他帳號可寫入的快取。工具副本或原映像缺失時仍需先補回，不能略過驗證。未經此新版入口建立過副本的舊安裝，不會憑空具備離線救援能力。
+`--offline` 僅供診斷、復原與備份清理，不聯絡 GitHub、不拉取映像，也不啟用 worker。每次使用前重新核對副本的版本、雜湊與路徑；root 不會採用其他帳號可寫入的快取。工具副本或原映像缺失時仍需先補回，不能略過驗證。離線救援須先由線上入口建立並保存工具副本。
 
 ## 備份容量與清理
 
@@ -143,7 +143,7 @@ sudo bash docker_update.sh --prune-backups 3 --yes # 確認刪除預覽中的舊
 3. 舊 Server 沒有回報版本時顯示 `unknown`；不同版本顯示 `mixed`，不憑版號差異破壞現有連線。相同版本僅代表版號對齊，不代表實機相容驗收通過。
 4. 瀏覽器仍載入舊卡片時會顯示重新載入提示。重載後確認時鐘、行事曆、鬧鐘與原裝置身份仍正常。
 
-App／Integration 繼續使用 HA／HACS 原生更新，不新增可控制整個 HA 的 WebClock 後門。跨版本組合目前的實機驗收仍為 `not_ready`。
+App／Integration 繼續使用 HA／HACS 原生更新，WebClock 不取得整個 HA 的管理權限。跨版本組合目前的實機驗收仍為 `not_ready`。
 
 ## 發行驗收
 
@@ -160,7 +160,7 @@ App／Integration 繼續使用 HA／HACS 原生更新，不新增可控制整個
 
 目前支援官方單一服務 Compose、本機 `/var/run/docker.sock`、Linux amd64／arm64 映像。客製 override、多服務、非預設資料掛載、遠端 Docker、rootless／user namespace remapping 會拒絕自動接管。Docker Desktop／NAS 不在已驗收範圍；不能將 CLI 視為所有平台的替代保證。
 
-在包含新版更新器的宿主機安裝目錄執行：
+在包含更新器的宿主機安裝目錄執行：
 
 ```bash
 bash docker_update.sh --check
@@ -183,7 +183,7 @@ CLI 需要可操作本機 Docker 及讀寫安裝資料的帳號。一般升級�
 sudo bash scripts/enable_docker_updates.sh
 ```
 
-背景模式要求安裝目錄、Compose、`.env` 及祖先目錄由 root 擁有且不可由其他帳號寫入，建議使用獨立受保護的 `/opt/webclock` 安裝。使用者家目錄可用新版獨立入口的 `--migrate-to /opt/webclock` 明確遷移，詳見[完整操作流程](../operations/update-operations.md)。客製安裝仍需先核對；勿直接對整個家目錄遞迴變更權限。
+背景模式要求安裝目錄、Compose、`.env` 及祖先目錄由 root 擁有且不可由其他帳號寫入，建議使用獨立受保護的 `/opt/webclock` 安裝。使用者家目錄可用獨立入口的 `--migrate-to /opt/webclock` 明確遷移，詳見[完整操作流程](../operations/update-operations.md)。客製安裝仍需先核對；勿直接對整個家目錄遞迴變更權限。
 
 啟用器把 worker 程式複製到 root 保護的 `/usr/local/lib/webclock-docker-updater/`，不以 root 執行應用程式可修改的原始碼。WebClock 只掛載專用的唯讀 socket 目錄，socket 權限為 `0600`；容器不掛載 Docker socket。更新頁會顯示 worker 版本，可用已驗證公開入口 `--refresh-worker` 更新與運行服務同版的 worker，保留上一份程式與偏好；不會自動更新宿主機 worker。
 

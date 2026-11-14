@@ -4,7 +4,7 @@
 
 已提供第一版 ESPHome YAML 與 WebClock 外部元件，選定 **ESP32-S3-DevKitC-1-N8R8 + SSD1306 128×64 I²C OLED + PS1240 無源壓電蜂鳴器 + 停止按鈕**。裝置使用現有 schema 2 API，同步固定規則鬧鐘，保存後在本機執行，不需要 Home Assistant 或 MQTT。
 
-**驗證狀態：ESPHome 2026.9.1／ESP-IDF 5.5.5 交叉編譯與主機端排程／同步解析測試通過；尚未實機燒錄、接線、聲音或長時間運作驗收。** 主機測試使用本次建置的 ArduinoJson，並啟用 AddressSanitizer／UndefinedBehaviorSanitizer。本文區分已寫入原型的行為與後續提案；Server 測試、主機端核心測試或韌體編譯通過，都不能代替硬體驗收。
+**驗證狀態：ESPHome 2026.9.1／ESP-IDF 5.5.5 交叉編譯與主機端排程／同步解析測試通過；尚未實機燒錄、接線、聲音或長時間運作驗收。** 主機測試使用韌體建置所用的 ArduinoJson，並啟用 AddressSanitizer／UndefinedBehaviorSanitizer。本文說明原型行為與功能限制；Server 測試、主機端核心測試或韌體編譯通過，都不能代替硬體驗收。
 
 ## 安裝與操作
 
@@ -112,17 +112,16 @@ PWM 百分比不是音壓百分比，不同蜂鳴器、頻率及外殼都影響�
 
 每次響鈴先保存該分鐘的去重紀錄，再開始發聲。因此保存後、發聲前突然斷電，該次可能漏響；不能承諾斷電情況下恰好一次。去重紀錄無法保存時也不發聲，避免不停重試 flash 與重複執行。它是同分鐘合併的原型策略，不是每個事件的完整播放紀錄。
 
-校時獨立於 WebClock 的登入與認證；現有 config 沒有 Server 時間。原型使用 ESPHome SNTP。需要斷電後、網路仍中斷時也能知道時間，下一版應加入備援 RTC；斷電期間要響，還必須有整機備援電源。RTC 電池本身不供應蜂鳴器；加入 RTC 也不會自動取消本版每次開機的 Server 驗證要求。[ESP-IDF System Time](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/system_time.html)
+校時獨立於 WebClock 的登入與認證；現有 config 沒有 Server 時間。原型使用 ESPHome SNTP。原型未配備備援 RTC 或整機備援電源，無法在斷電後離線校時或響鈴；每次開機仍須完成 Server 驗證。[ESP-IDF System Time](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/system_time.html)
 
-## 後續方向：完整行事曆清單與一般使用者安裝
+## 功能限制
 
-以下尚未實作，沒有可呼叫的新 endpoint：
+原型不提供以下功能：
 
-1. **伺服器產生多日觸發清單。** 沿用 Server 的規則及行事曆聯動計算，例如未來七天。新契約需含清單版本、資料範圍、產生／到期時間、穩定事件 ID、明確單位的 UTC 觸發時間與硬體音色能力；不直接改變 schema 2 語意。
-2. **持續補足及來源失敗策略。** 即使設定沒改，也補足未來時間範圍；行程改期／取消、來源更新或讀取失敗都要重新判定，不能只比對排程設定版本。超限或過期須明確呈現。
-3. **個別裝置憑證與資料歸屬。** 配合將來的部署／帳號模式，定義重新綁定、主要使用者、其他帳號資料保存及離線撤銷的限制；目前全域 token 不提供這些保證。
-4. **通用預編譯安裝。** 增加裝置端 WebClock URL／配對流程，才能發布不含私人 token 的公用韌體及 ESP Web Tools manifest；再加入經驗證的 OTA、保留資料升級及恢復出廠。
-5. **硬體擴充。** 完成首套硬體驗收後，再考慮備援 RTC、電源、不同螢幕／播放器、音色與貪睡，不將未測板型標為支援。
+- 伺服器產生的多日行事曆觸發清單，以及有效期限、滾動補充與來源失效處理；schema 2 沒有對應端點。
+- schema 3 個別裝置憑證與配對流程。原型使用共用 token，沒有個別裝置的離線撤銷保證。
+- 不含私人 token 的通用預編譯韌體、ESP Web Tools 安裝、OTA 與恢復出廠流程。
+- 備援 RTC、整機備援電源、其他螢幕或播放器，以及音色選擇與貪睡功能。
 
 ## 實機驗收清單
 

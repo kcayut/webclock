@@ -50,7 +50,7 @@ if [ ! -e .env ]; then (umask 077; cp .env.example .env); fi
 HOST=127.0.0.1 ./venv/bin/python app.py
 ```
 
-開啟 `http://127.0.0.1:5000/admin`；若 5000 已占用，在最後一行前加 `PORT=5001` 並改開 5001。要讓可信任區網裝置連線，改用 `HOST=0.0.0.0`，裝置開啟這台電腦的 IP，不能填 `localhost`。資料預設寫入專案的 `webclock_state`，請保留整個目錄。
+開啟 `http://127.0.0.1:5000/admin`；若 5000 已佔用，在最後一行前加 `PORT=5001` 並改開 5001。要讓可信任區網裝置連線，改用 `HOST=0.0.0.0`，裝置開啟這台電腦的 IP，不能填 `localhost`。資料預設寫入專案的 `webclock_state`，請保留整個目錄。
 
 按 `Ctrl+C` 停止；下次在同一目錄執行最後一行即可，不必重建環境。此方式不建立開機啟動、背景服務或更新器。若要 managed，先停止程式、備份資料，再以同一個 `./venv/bin/python` 執行[管理員設定](../operations/accounts-and-https.md#enable-managed)中的 `scripts/manage_auth.py` 命令並配置 [HTTPS 或明確確認內網 HTTP](../operations/accounts-and-https.md#https)；手動執行者不使用 `systemctl` 停止／啟動。Windows 請參考 [Docker 安裝](../installation.md#docker)；原生 Python 執行尚未驗收。
 

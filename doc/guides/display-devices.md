@@ -50,7 +50,7 @@
 4. 名稱填 `WebClock`，確認網址是時鐘頁，點「新增／加入」。
 5. 按實體 **Home 鍵**回到主畫面，再點剛建立的 `WebClock` 圖示。
 
-從這個圖示開啟才會使用接近 App 的獨立顯示方式；Safari 一般分頁仍會有網址列。WebClock 已提供 Apple 的主畫面網頁設定，但系統狀態列仍可能保留，不等於每一個像素都由網頁占滿。iOS 9 沒有新版的「打開為網頁 App」開關，也不用尋找桌面瀏覽器的 `F11`。[Apple 舊版網頁 App 說明](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html)
+從這個圖示開啟才會使用接近 App 的獨立顯示方式；Safari 一般分頁仍會有網址列。WebClock 已提供 Apple 的主畫面網頁設定，但系統狀態列仍可能保留，不等於每一個像素都由網頁佔滿。iOS 9 沒有新版的「打開為網頁 App」開關，也不用尋找桌面瀏覽器的 `F11`。[Apple 舊版網頁 App 說明](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html)
 
 ### 2. 設定螢幕恆亮
 
@@ -64,7 +64,7 @@
 
 iOS 9 可到「設定 → 一般 → 輔助使用 → 引導使用模式」開啟並設定密碼；回到時鐘，按三下 Home 鍵，再按「開始」。退出時再按三下 Home，輸入該密碼並結束。它用來限制離開目前 App，**不能代替上面的恆亮設定**；不要設定會中斷時鐘的使用時間限制。[iOS 9.1 原手冊的引導使用模式](https://manuals.plus/m/f03f9f2f2d3c7c1428d0b52a9ca0d040ef520a3cfef816bfde3cc9e15615f56d)
 
-專案仍將 **iPad mini 1／iOS 9 實機驗收列為待完成**，尤其是目前網址的 HTTPS 載入、長時間顯示與 managed 配對。一般瀏覽器測試不能代替這台實機；請依[最後的檢查步驟](#check)確認你的裝置。
+專案仍將 **iPad mini 1／iOS 9 實機驗收列為待完成**，尤其是目前網址的 HTTPS 載入、長時間顯示與 managed 配對。一般瀏覽器測試不能代替這台實機；請依[最後的檢查步驟](#check)確認裝置的顯示與操作。
 
 <a id="ipad"></a>
 ## 其他 iPad／iPhone：依版本選擇

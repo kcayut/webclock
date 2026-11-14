@@ -4,7 +4,7 @@
 
 ## 目前狀態
 
-- **[v1.3.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.3.0)，並設為最新正式版**。本版整理管理頁與提醒表單，改善顯示時間區間選取，並維持既有備份與更新流程。
+- **[v1.3.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.3.0)**。功能變更見[發行紀錄](releases/v1.3.0.md)。
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
 
@@ -33,55 +33,9 @@
 | `webclock-1.3.0.tar.gz` | `5d732c8c0fd2fee66003902269452285d7227a91acba91cfe56835c11ca3d575` |
 | `webclock-clock-1.3.0.zip` | `899b803fdb26bf12effb02e0813316fd05c6d905602426468f969c9dd3e3997c` |
 
-<a id="release-1-2-0"></a>
-## 1.2.0 發行驗證（2026-10-20）
+## 歷史發行驗證
 
-- 發行提交：`c217a40edc25fa0838d243ddc782a6078f396c16`；GitHub 與 Gitea 的 `v1.2.0` 已獨立回讀，指向同一提交。
-- [安裝與整合 CI](https://github.com/kcayut/webclock/actions/runs/39296056245) 全部通過：Server Python 538 項（4 項略過、其餘通過）、17 份 JavaScript、真實 HA 2026.9.4／Python 3.14 整合 13 項，以及 Docker／HA App 的 `linux/amd64`、`linux/arm64` 建置與啟動。
-- 同一 CI 通過 self／managed HTTPS Docker 更新、設定切換中斷復原、故障映像回退、帳號資料保持、重啟策略恢復，以及真實 systemd worker 啟用、偏好保留、私有 socket 重建與 worker refresh。候選映像在 runner 本地產生，此結果不代替公開下載升級驗證。
-- [Linux 更新與復原演練](https://github.com/kcayut/webclock/actions/runs/39296056247) 全部通過：真實 systemd 更新、備份／還原、managed HTTPS、失敗回復與舊授權失效。
-- [標籤發行流程](https://github.com/kcayut/webclock/actions/runs/39297375020) 全部通過，發布 `ghcr.io/kcayut/webclock:1.2.0` 與 `ghcr.io/kcayut/webclock-addon:1.2.0`；空白 Docker 登入設定下的匿名 manifest 檢查通過，兩者皆含 `linux/amd64`、`linux/arm64`。
-- 2026-10-20 獨立匿名回讀 GitHub `releases/latest`，確認 `v1.2.0`、非 draft、非 prerelease，且五個資產完整。下載全部資產後，四個檔案的 SHA256 均符合 `SHA256SUMS`，Server 壓縮檔內 `VERSION=1.2.0`、ZIP 完整性與兩個 shell 入口語法均通過。
-- [公開新安裝驗證](https://github.com/kcayut/webclock/actions/runs/39422650558) 的 Linux／Docker 兩項皆通過：以公開安裝器完成 bootstrap，核對版本與 self 模式，經管理 API 儲存設定，再確認服務重啟後仍保留；Linux 另確認 stable 更新來源。
-- [公開跨版本升級驗證](https://github.com/kcayut/webclock/actions/runs/39422693758) 通過：在乾淨 Linux amd64 runner 安裝公開 v1.1.0 Docker，再下載並校驗 v1.2.0 的 `portable_docker_update.sh`。更新完成後原資料雜湊不變，保存的工具可離線診斷，交易記錄為 `source_version=1.1.0`、`target_version=1.2.0`、`step=completed`；管理設定寫入及重啟保存也通過。此項涵蓋 self 模式，未涵蓋 managed 的既有 session／裝置憑證或公開資產 worker refresh。
-
-發布流程記錄的多架構映像 manifest digest：
-
-| 映像 | Digest |
-| --- | --- |
-| `ghcr.io/kcayut/webclock:1.2.0` | `sha256:ed2b848129c491c6801629125cee25fc7ff302abc14869433d97e2dfb18753a8` |
-| `ghcr.io/kcayut/webclock-addon:1.2.0` | `sha256:61de72d77db3d538839a96b8aacf8440c09473fa3e80254c2caf89c88f4594b8` |
-
-公開資產的 SHA256：
-
-| 檔案 | SHA256 |
-| --- | --- |
-| `install.sh` | `4f1d69ddcefb12eb6a8fd17248ce2e063dd694113e244ce5efbb16a3f1fd7414` |
-| `portable_docker_update.sh` | `6a35278ea51e895c8faeffc941e8e295b28b084ae07c600115b6b60de8a11cbb` |
-| `webclock-1.2.0.tar.gz` | `d568898f0952106bb447ec29ecea97a5b986b3047a767a4b0cc11ac053ae1d63` |
-| `webclock-clock-1.2.0.zip` | `400f26668f67e8c1a443b3e758e6ae9f428503d1e1ac7d3b6980bb2bc7121afe` |
-
-## 1.1.0 發行驗證（2026-10-12）
-
-- 發行提交：`020f837fdbc50a987b2da882b06424f881d3d489`；GitHub 與 Gitea 的 `v1.1.0` 使用同一提交。
-- [安裝與整合 CI](https://github.com/kcayut/webclock/actions/runs/38251398111) 全部通過：418 項 Server Python 測試、JavaScript 回歸、真實 HA 2026.9.4／Python 3.14 整合與卡片，以及普通 Docker／HA App 的 `linux/amd64`、`linux/arm64` 建置與啟動。
-- 同一 CI 在一次性 Linux runner 完成 self 與 managed HTTPS 新安裝、實際管理設定儲存、服務重啟與設定／授權資料保留；HA 容器驗證 Ingress、顯示入口隔離及重啟。
-- [Linux 更新與復原演練](https://github.com/kcayut/webclock/actions/runs/38251397992) 全部通過，包含真實 systemd 更新、備份、還原及失敗回復。
-- [標籤發行流程](https://github.com/kcayut/webclock/actions/runs/38251988151) 全部通過，發布 `ghcr.io/kcayut/webclock:1.1.0` 與 `ghcr.io/kcayut/webclock-addon:1.1.0`；以空白 Docker 登入設定確認匿名可取得兩個映像，且都有 `linux/amd64`、`linux/arm64`。
-- [正式下載安裝演練](https://github.com/kcayut/webclock/actions/runs/38252762611) 兩項皆通過：從公開 Release 下載安裝器、核對 SHA256，在乾淨 runner 完成 Linux／Docker bootstrap，核對產品版本與 self 模式，經管理 API 儲存設定並確認重啟後保留；Linux 另核對 stable 更新來源。這是公開資產的完整安裝結果，與前述來源 checkout 測試分開記錄。
-
-## 完整備份本機驗證（2026-10-09）
-
-- Python **397 項全部通過**，最終完整執行耗時 **38.830 秒**；JavaScript **15 組回歸全部通過**。
-- 實際 Chrome 完成：下載加密備份 → 模擬可信 HA Ingress 的空白目標 → 錯誤密碼保留輸入 → 正確密碼預覽 → 確認還原 → 原帳號登入 → 私人提醒保留 → 重啟後資料仍在。已檢查桌面 1280 px 與手機 390 px 畫面。
-- 上述為本機伺服器、模擬可信 Ingress 與瀏覽器驗證，**不是真實 HA OS、ARM 或遠端 CI 驗收**，不改變原有尚未發行與實機待驗收狀態。
-
-## 本機驗證（2026-10-08）
-
-- Server **375 項測試通過，exit 0**，包含安裝包、Ingress、HTTPS 更新與失敗還原；JavaScript **14 組回歸通過**。
-- 使用暫存資料啟動真正的 `8099`／`8100` 入口，模擬可信 HA 代理的 HTTPS Origin／Host，確認管理寫入成功、區網管理路徑被拒絕；重新啟動後群組與授權資料不變，日誌顯示實際主機名稱。
-- HA 2026.9.4 的 **11 項測試斷言通過**，但 macOS／Python 3.14.6 在程序清理階段仍以 **SIGSEGV／139** 結束，不能視為整個測試程序成功。Linux CI 結果仍待執行。
-- 本機沒有 Docker，未執行映像建置或 HA OS 商店安裝；上述 HTTP 入口測試不代替 Supervisor、ARM 或備份還原驗收。HTTPS 更新使用暫存 TLS 伺服器驗證，尚未在正式 Linux systemd 安裝更新。
+各版本的 CI、映像雜湊與本機驗證保存在對應發行紀錄：[v1.2.0](releases/v1.2.0.md#release-1-2-0)、[v1.1.0](releases/v1.1.0.md)。
 
 ## 發行檔案
 
@@ -89,10 +43,10 @@
 | --- | --- |
 | 產品版號與發行紀錄 | 根目錄 `VERSION`、`CHANGELOG.md`、`doc/releases/vX.Y.Z.md` |
 | 一行安裝入口 | Release 的 `install.sh`，固定同一版號；使用者入口為 `releases/latest/download/install.sh` |
-| 舊 Docker 升級／worker 維護入口 | v1.2.0 起提供 `portable_docker_update.sh`，固定同一版號並驗證 Server 壓縮檔；操作與限制見 [更新維護](operations/update-operations.md) |
+| Docker 升級／worker 維護入口 | `portable_docker_update.sh`，固定同一版號並驗證 Server 壓縮檔；操作與限制見 [更新維護](operations/update-operations.md) |
 | Server 原始碼與 Docker 部署檔 | Release 的 `webclock-X.Y.Z.tar.gz`，從已提交的公開檔案打包 |
 | 電腦離線時鐘 | Release 的 `webclock-clock-X.Y.Z.zip`，解壓後開啟最外層 `index.html` |
-| 下載完整性 | Release 的 `SHA256SUMS`，包含安裝器、獨立 Docker 更新入口與兩個壓縮檔；v1.1.0 尚無新更新入口 |
+| 下載完整性 | Release 的 `SHA256SUMS`，包含安裝器、獨立 Docker 更新入口與兩個壓縮檔 |
 | 一般 Docker 映像 | 根目錄 `Dockerfile`，發布 `ghcr.io/kcayut/webclock:X.Y.Z` |
 | App 商店來源 | 根目錄 `repository.yaml` 與 `homeassistant/addon/config.yaml` |
 | App 映像 | 從專案根目錄建置 `homeassistant/addon/Dockerfile`，發布 `ghcr.io/kcayut/webclock-addon:版本` |
@@ -105,7 +59,7 @@ HACS 使用自訂儲存庫，無須等待加入預設清單；已有 HACS 的使
 
 根目錄 **`VERSION` 是產品版號來源**。Server 的 `webclock.__version__` 與 `/api/health.version` 讀取它；Docker 預設版本、HA App `config.yaml`、整合 `manifest.json`、`const.py` 與卡片 `www/webclock-cards.js` 的 `VERSION` 必須一致。`python tools/build_release.py --check --tag vX.Y.Z` 與 CI 會拒絕不一致的版號，發行包只讀取 Git 已提交內容，不會帶入本機 `.env`、TLS 私鑰或使用者資料。
 
-採用 `X.Y.Z`：不相容變更增加 `X`，相容功能增加 `Y`，相容修正增加 `Z`；Git tag 使用 `vX.Y.Z`。首次公開使用 **1.1.0**，因 App／整合／卡片此前已標示 1.1.0，沿用可避免既有安裝版號倒退。產品版號與 `auth_schema`、裝置 schema、備份格式等相容性欄位分開管理。
+採用 `X.Y.Z`：不相容變更增加 `X`，相容功能增加 `Y`，相容修正增加 `Z`；Git tag 使用 `vX.Y.Z`。產品版號與 `auth_schema`、裝置 schema、備份格式等相容性欄位分開管理。
 
 正式安裝入口只選正式 Release。Linux 安裝將 `webclock.releaseChannel=stable` 寫入該 checkout 的 Git 設定，之後安全更新器依最新正式版 tag 更新；Docker 在 `.env` 固定 `WEBCLOCK_VERSION`，依[更新流程](installation.md#update)主動更新；HACS 依 Release 取得整合，HA App 依來源中的版本取得對應映像。
 

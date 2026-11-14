@@ -4,7 +4,7 @@
 
 ## 部署與管理者
 
-- 沒有授權檔的舊安裝保持 `self` 自用模式；讀取不自動寫檔，也不把舊裝置 ID 升格為身份。自用模式保留原本可信區網共用管理/顯示規則，CSRF 仍適用。
+- 沒有授權檔的舊安裝保持 `self` 自用模式；讀取不自動寫檔，也不把舊裝置 ID 升格為身份。自用模式使用可信區網共用管理／顯示規則，CSRF 仍適用。
 - 明確的主機操作才可初始化 `managed`，必須指定 `--enable-managed`；舊 `--enable-managed-test` 保留為相容別名。更新程式或一般讀取不會自動切換模式。
 - 明確初始化後，每個安裝的 owner 為穩定 UUID。尚未寫入授權檔的純讀取暫回 `local-owner`；首次群組變更會保存 UUID，之後初始化管理員沿用同一 owner。群組、邀請及裝置各有不同 ID，不能用名稱、IP、加入碼或自報 ID 接管。
 - 主機先停止 WebClock，以服務帳號對正確 state 目錄操作，再重新啟動。密碼使用互動式提示，不放命令列、環境變數或日誌。
@@ -27,7 +27,7 @@
 
 | 入口 | self | managed |
 | --- | --- | --- |
-| `/`、靜態資源 | 原本時鐘 | 只有公開時鐘殼；不內嵌私人設定、事件、session 或 CSRF |
+| `/`、靜態資源 | 自用時鐘 | 只有公開時鐘殼；不內嵌私人設定、事件、session 或 CSRF |
 | `GET /api/time` | 毫秒 `server_timestamp` | 相同，匿名 |
 | `GET /api/status` | 原共用 settings/events/next_event | 毫秒時間、`events: []`、`next_event: null`；即使登入也不擴權 |
 | `GET /api/health` | 不含資料的模式/schema/就緒狀態 | 相同；授權資料損壞回 503 |
