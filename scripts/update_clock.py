@@ -203,15 +203,26 @@ def http_json(url, data=None, headers=None, tls_handler=None):
         return json.load(response)
 
 
+SETTINGS_DEFAULTS = {
+    'mode': 'normal', 'brightness': 100, 'timezone_offset': 8, 'time_format': '24h',
+    'show_seconds': False, 'show_date': True, 'date_format': 'm/d', 'show_weekday': True,
+    'message_duration': 5, 'message_transition': 'fade',
+}
+
+
+def migrated_settings(settings):
+    """Return the current settings schema, preserving every stored value."""
+    if not isinstance(settings, dict):
+        raise RuntimeError('Invalid display settings')
+    return dict(SETTINGS_DEFAULTS, **settings)
+
+
 def settings_match(saved, expected):
-    # Newer releases may add default display fields not present in an older
-    # running server's snapshot. Every key captured before the update must
-    # still match, while newly introduced defaults may be merged in.
+    # Both sides are migrated to the current schema first. After migration the
+    # comparison is exact; changed or missing legacy values still fail.
     if not isinstance(saved, dict) or not isinstance(expected, dict):
         return False
-    saved = {'time_format': '24h', **saved}
-    expected = {'time_format': '24h', **expected}
-    return all(saved.get(key) == value for key, value in expected.items())
+    return migrated_settings(saved) == migrated_settings(expected)
 
 
 def check_public_health(url, deployment_mode='managed', tls_handler=None):
@@ -542,20 +553,40 @@ def restore_data(entries, backup):
             run(['cp', '-a', str(backup / entry['backup']), str(path)])
 
 
+def write_settings(path, value, uid, gid):
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix='.settings-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(value, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o600)
+        os.chown(temporary, uid, gid)
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
 def prepare_data(layout, snapshot, notes, uid, gid):
     state, notes_file = active_data_layout(layout)
     for directory in {state, notes_file.parent}:
         if not directory.exists():
             directory.mkdir(parents=True, mode=0o700)
             os.chown(directory, uid, gid)
-    for path, value in ((state / 'settings.json', snapshot), (notes_file, notes)):
-        if not path.exists():
-            with path.open('x', encoding='utf-8') as stream:
-                json.dump(value, stream, ensure_ascii=False)
-                stream.flush()
-                os.fsync(stream.fileno())
-            path.chmod(0o600)
-            os.chown(path, uid, gid)
+    settings_path = state / 'settings.json'
+    if read_json(settings_path, None) != snapshot:
+        write_settings(settings_path, snapshot, uid, gid)
+    if not notes_file.exists():
+        with notes_file.open('x', encoding='utf-8') as stream:
+            json.dump(notes, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        notes_file.chmod(0o600)
+        os.chown(notes_file, uid, gid)
 
 
 def verify_server(project, url, layout, expected_notes, configuration, tls_handler=None):
@@ -670,13 +701,14 @@ def perform_update(project, channel=None, expected_version=None, progress=None):
         # Read the final persisted settings after stop, so a last-minute edit is retained.
         snapshot = read_json(active_data_layout(current)[0] / 'settings.json', snapshot)
         notes = check_saved_data(current, target_layout, snapshot)
+        migrated = migrated_settings(snapshot)
         entries = snapshot_data(paths, backup, old_head)
         changed = True
         if git_prefix:
             run(git_prefix + ['merge', '--ff-only', target], cwd=project)
         if protected and not supports_authorization(project, stopped_auth):
             raise RuntimeError('Updated code does not support protected authorization state.')
-        prepare_data(target_layout, snapshot, notes, uid, gid)
+        prepare_data(target_layout, migrated, notes, uid, gid)
         print('Installing and checking Python packages...', flush=True)
         progress('installing')
         packages_changed = True
@@ -692,10 +724,10 @@ def perform_update(project, channel=None, expected_version=None, progress=None):
         progress('health_check')
         if protected:
             authorization_state(target_layout[0], required=True)
-            check_saved_data(target_layout, target_layout, snapshot)
-            wait_healthy(url, snapshot, deployment_mode=mode, tls_handler=tls_handler)
+            check_saved_data(target_layout, target_layout, migrated)
+            wait_healthy(url, migrated, deployment_mode=mode, tls_handler=tls_handler)
         else:
-            wait_healthy(url, snapshot, tls_handler=tls_handler)
+            wait_healthy(url, migrated, tls_handler=tls_handler)
         verify_server(project, url, target_layout, notes, configuration, tls_handler=tls_handler)
     except BaseException as error:
         error.rollback_succeeded = None

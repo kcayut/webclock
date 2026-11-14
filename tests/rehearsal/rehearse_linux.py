@@ -22,6 +22,9 @@ from urllib.request import HTTPCookieProcessor, HTTPSHandler, ProxyHandler, Requ
 
 
 SOURCE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(SOURCE))
+from update_clock import migrated_settings, settings_match
+
 BASELINE = '1ad7868ff7b51e581421f85fefccfef4e7520ddd'
 UNIT = Path('/run/systemd/system/webclock.service')
 FAKE_TOKEN = 'rehearsal-only-not-a-real-secret'
@@ -108,7 +111,7 @@ def main():
                 current, _ = request('/api/status')
                 assert isinstance(current['events'], list)
                 if expected_settings is not None:
-                    assert current['settings'] == expected_settings
+                    assert settings_match(current['settings'], expected_settings)
                 pid = int(run('systemctl', 'show', 'webclock', '--property=MainPID', '--value').stdout)
                 assert pid > 0 and (Path('/proc') / str(pid)).stat().st_uid == account.pw_uid
                 return current
@@ -214,13 +217,17 @@ def main():
         git('--git-dir=' + str(remote), 'update-ref', 'refs/heads/rehearsal', target, cwd=root)
         assert update().returncode == 0
         assert git('rev-parse', 'HEAD') == target
-        assert data_hashes() == original
+        upgraded = data_hashes()
+        assert upgraded['notes'] == original['notes'] and upgraded['env'] == original['env']
+        assert json.loads((state / 'settings.json').read_text()) == migrated_settings(settings)
+        assert ({key: value for key, value in upgraded['state'].items() if key != 'settings.json'} ==
+                {key: value for key, value in original['state'].items() if key != 'settings.json'})
         device_checks()
         request('/api/control', {'brightness': 47}, expected=403)
         request('/delete/1', expected=405)
-        assert data_hashes() == original
+        assert data_hashes() == upgraded
         management('/api/control', {'brightness': 37})
-        changed_settings = dict(settings, brightness=37)
+        changed_settings = migrated_settings(dict(settings, brightness=37))
         run('systemctl', 'restart', 'webclock')
         healthy(changed_settings)
         assert json.loads((state / 'settings.json').read_text()) == changed_settings
@@ -290,7 +297,12 @@ def main():
         healthy(settings)
         device_checks()
         management('/api/control', settings)
-        assert data_hashes() == rollback_data
+        assert json.loads((state / 'settings.json').read_text()) == migrated_settings(settings)
+        current_hashes = data_hashes()
+        assert current_hashes['notes'] == rollback_data['notes']
+        assert current_hashes['env'] == rollback_data['env']
+        assert ({key: value for key, value in current_hashes['state'].items() if key != 'settings.json'} ==
+                {key: value for key, value in rollback_data['state'].items() if key != 'settings.json'})
         passed('Startup failure restores exact prior Git revision, venv and data; failed-data/venv and manifest retained')
         passed('Recovered service survives another restart, device reads and authenticated management writes')
 

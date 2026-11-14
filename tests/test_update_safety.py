@@ -332,9 +332,10 @@ class UpdaterTest(unittest.TestCase):
     def test_success_preserves_settings_and_data(self):
         with patch.object(updater, 'wait_healthy') as health:
             updater.update(self.project)
-        health.assert_called_once_with('http://127.0.0.1:80', self.settings, tls_handler=None)
+        health.assert_called_once_with('http://127.0.0.1:80', updater.migrated_settings(self.settings), tls_handler=None)
         self.assertEqual((self.project / 'app.py').read_text(), 'new source\n')
-        self.assertEqual(json.loads((self.project / 'webclock_state/settings.json').read_text()), self.settings)
+        self.assertEqual(json.loads((self.project / 'webclock_state/settings.json').read_text()),
+                         updater.migrated_settings(self.settings))
         self.assert_data_preserved()
         self.assertEqual(list(self.project.glob('.webclock-update-*')), [])
 
@@ -417,6 +418,10 @@ class UpdaterTest(unittest.TestCase):
         layout = state, self.project / 'manual_notes.json'
         before = settings.read_bytes()
         updater.check_saved_data(layout, layout, dict(self.settings, time_format='24h'))
+        new_defaults = dict(self.settings, time_format='24h', show_seconds=False, show_date=True,
+                            date_format='m/d', show_weekday=True, message_duration=5,
+                            message_transition='fade')
+        updater.check_saved_data(layout, layout, new_defaults)
         self.assertEqual(settings.read_bytes(), before)
         for value in ('12h', 'invalid', None):
             with self.assertRaises(RuntimeError):
@@ -425,6 +430,16 @@ class UpdaterTest(unittest.TestCase):
              patch.object(updater, 'service_property', side_effect=lambda key: '123' if key == 'MainPID' else 'active'), \
              patch.object(updater.time, 'sleep'):
             updater.wait_healthy('http://localhost', self.settings)
+
+    def test_settings_match_normalizes_additive_defaults_in_either_direction(self):
+        old = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en'}
+        new = dict(old, show_seconds=False, show_date=True, date_format='m/d',
+                   show_weekday=True, message_duration=5, message_transition='fade')
+        self.assertTrue(updater.settings_match(new, old))
+        self.assertTrue(updater.settings_match(old, new))
+        self.assertTrue(updater.settings_match(dict(new, brightness=40), dict(old, brightness=40)))
+        self.assertFalse(updater.settings_match(dict(new, brightness=40), old))
+        self.assertFalse(updater.settings_match(dict(new, show_date=False), new))
 
     def test_unhealthy_service_rolls_back(self):
         with patch.object(updater, 'wait_healthy', side_effect=[RuntimeError('crash'), None]):
@@ -759,8 +774,14 @@ class UpdaterTest(unittest.TestCase):
         self.commit('multi-owner support')
         with patch.object(updater, 'check_public_health'), patch.object(updater, 'wait_healthy') as health:
             updater.update(self.project)
-        health.assert_called_once_with('http://127.0.0.1:80', settings, deployment_mode='self', tls_handler=None)
-        self.assertEqual({path.relative_to(state): path.read_bytes() for path in state.rglob('*') if path.is_file()}, previous)
+        expected = updater.migrated_settings(settings)
+        health.assert_called_once_with('http://127.0.0.1:80', expected, deployment_mode='self', tls_handler=None)
+        settings_relative = (current / 'settings.json').relative_to(state)
+        after = {path.relative_to(state): path.read_bytes() for path in state.rglob('*') if path.is_file()}
+        for relative, content in previous.items():
+            if relative != settings_relative:
+                self.assertEqual(after[relative], content)
+        self.assertEqual(json.loads(after[settings_relative]), expected)
         self.assertEqual(updater.active_data_layout((state, Path(self.configuration['NOTES_FILE']))),
                          (current, current / 'manual_notes.json'))
 
