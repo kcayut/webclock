@@ -49,8 +49,17 @@
         return result;
     }
     const api = (path, method, data) => request('/api/v1/groups' + path, method, data);
+    function compatibleValue(field, value) {
+        return field[0] === 'clock_theme' ? (value === 'light' ? 'light' : 'dark') : value;
+    }
+    function compatibleOverrides(overrides) {
+        if (!overrides || overrides.clock_theme !== 'auto') return overrides;
+        const result = copy(overrides);
+        result.clock_theme = 'dark';
+        return result;
+    }
     function dataOf(row) {
-        return {name: row.name, enabled: row.enabled, display_overrides: copy(row.display_overrides), content: copy(row.content), revision: row.revision};
+        return {name: row.name, enabled: row.enabled, display_overrides: compatibleOverrides(copy(row.display_overrides)), content: copy(row.content), revision: row.revision};
     }
     function createDraft(data) {
         return {data: copy(data), dirty: false, sequence: 0, busy: false, message: '', error: false, capacity: '5', open: new Set()};
@@ -81,6 +90,7 @@
         renderActions();
     }
     function displayValue(field, value) {
+        value = compatibleValue(field, value);
         if (value === undefined) return t('unknown');
         if (field[2] === 'boolean') return t(value ? 'enabled' : 'disabled');
         if (Array.isArray(field[2])) {
@@ -264,7 +274,7 @@
         if ($('group-invite-capacity').value !== draft.capacity) $('group-invite-capacity').value = draft.capacity;
         controls.forEach(({field, input, policy, inherit}, path) => {
             const override = at(draft.data.display_overrides, path), inherited = override === undefined;
-            const value = inherited ? at(catalog.defaults, path) : override;
+            const value = compatibleValue(field, inherited ? at(catalog.defaults, path) : override);
             policy.value = inherited ? 'inherit' : 'custom';
             input.disabled = inherited;
             if (input.value !== String(value)) input.value = String(value);

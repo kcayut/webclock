@@ -9,8 +9,7 @@
         ['language', 'group_display_language', [['zh-TW', '繁體中文'], ['en', 'English'], ['ja', '日文']]],
         ['clock_style', 'group_clock_style', [['classic', 'clock_style_classic'], ['flip', 'clock_style_flip'],
             ['segment', 'clock_style_segment']]],
-        ['clock_theme', 'group_clock_theme', [['auto', 'clock_theme_auto'], ['dark', 'clock_theme_dark'],
-            ['light', 'clock_theme_light']]],
+        ['clock_theme', 'group_clock_theme', [['dark', 'clock_theme_dark'], ['light', 'clock_theme_light']]],
         ['night.enabled', 'group_night_enabled', 'boolean'],
         ['night.start', 'group_night_start', 'time'], ['night.end', 'group_night_end', 'time'],
         ['night.brightness', 'group_night_brightness', 'number', 0, 100],
@@ -18,6 +17,13 @@
     ];
     const copy = value => JSON.parse(JSON.stringify(value));
     const at = (value, path) => path.split('.').reduce((row, key) => row[key], value);
+    const normalizedValue = (path, value) => path === 'clock_theme' ? (value === 'light' ? 'light' : 'dark') : value;
+    function normalizedOverrides(overrides) {
+        if (!overrides || overrides.clock_theme !== 'auto') return overrides;
+        const result = copy(overrides);
+        result.clock_theme = 'dark';
+        return result;
+    }
     function create({t, request, onBusy}) {
         const editors = new Map();
         const text = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
@@ -40,7 +46,7 @@
         }
         function build(device) {
             const state = {id: device.id, info: device.display_settings, base: device.display_settings.revision,
-                overrides: copy(device.display_settings.display_overrides), dirty: false, busy: false,
+                overrides: normalizedOverrides(copy(device.display_settings.display_overrides)), dirty: false, busy: false,
                 sequence: 0, message: '', error: false, controls: [], policies: new Map()};
             state.root = node('details', 'device-display-settings group-section');
             state.root.setAttribute('data-device-settings', device.id);
@@ -53,7 +59,7 @@
                 parent.append(select); state.policies.set(key, {select, inherit, custom, labelKey});
                 select.addEventListener('change', () => {
                     if (select.value === 'inherit') delete state.overrides[key];
-                    else state.overrides[key] = copy(state.info.inherited_settings[key]);
+                    else state.overrides[key] = normalizedValue(key, copy(state.info.inherited_settings[key]));
                     dirty(state); paint(state);
                 });
                 return select;
@@ -82,7 +88,7 @@
                 row.append(input, current); (key === 'night' ? night : state.form).append(row);
                 state.controls.push({field, label, input, choices, current});
                 const changed = () => {
-                    const next = inputValue(field, input);
+                    const next = normalizedValue(key, inputValue(field, input));
                     if (key === 'night') {
                         if (!state.overrides.night || state.overrides.night[path.split('.')[1]] === next) return;
                         state.overrides.night[path.split('.')[1]] = next;
@@ -123,11 +129,11 @@
             state.controls.forEach(({field, label, input, choices, current}) => {
                 const path = field[0], key = path.split('.')[0], custom = key in state.overrides;
                 label.textContent = t(field[1]); choices.forEach(({option, title}) => { option.textContent = t(title); });
-                const value = at(custom ? state.overrides : state.info.inherited_settings, path);
+                const value = normalizedValue(path, at(custom ? state.overrides : state.info.inherited_settings, path));
                 if (input.value !== String(value)) input.value = String(value);
                 input.disabled = !custom;
                 current.textContent = text('device_display_current', {
-                    value: valueText(field, at(state.info.effective_settings, path)),
+                    value: valueText(field, normalizedValue(path, at(state.info.effective_settings, path))),
                     source: t('device_display_source_' + state.info.sources[path])
                 });
             });
@@ -140,7 +146,7 @@
             try {
                 const result = await request(state.id, 'PATCH', data);
                 state.info = result; state.base = result.revision; state.error = false;
-                if (state.sequence === sequence) { state.overrides = copy(result.display_overrides); state.dirty = false; state.message = 'saved'; }
+                if (state.sequence === sequence) { state.overrides = normalizedOverrides(copy(result.display_overrides)); state.dirty = false; state.message = 'saved'; }
                 else state.message = 'group_saved_more_drafts';
             } catch (error) {
                 state.error = true; state.message = error.code === 'display_settings_changed' ? 'device_display_conflict' : 'group_save_failed';
@@ -157,7 +163,7 @@
                 const result = await request(state.id, 'GET'); state.info = result;
                 // Typing during a slow reload keeps the new draft, requiring review.
                 if (sequence === state.sequence) {
-                    state.overrides = copy(result.display_overrides); state.base = result.revision;
+                    state.overrides = normalizedOverrides(copy(result.display_overrides)); state.base = result.revision;
                     state.dirty = false; state.message = ''; state.error = false;
                 }
             } catch (_) { state.message = 'group_save_failed'; state.error = true; }
@@ -170,7 +176,7 @@
                 if (!device.display_settings) return null;
                 if (!editors.has(device.id)) editors.set(device.id, build(device));
                 const state = editors.get(device.id); state.locked = locked; state.info = device.display_settings;
-                if (!state.dirty && !state.busy) { state.overrides = copy(state.info.display_overrides); state.base = state.info.revision; }
+                if (!state.dirty && !state.busy) { state.overrides = normalizedOverrides(copy(state.info.display_overrides)); state.base = state.info.revision; }
                 paint(state); return state.root;
             }
         };

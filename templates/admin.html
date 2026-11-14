@@ -234,11 +234,7 @@
                     <span id="clock-theme-label" class="clock-style-theme-label" data-i18n="clock_theme">{{ translations[language].clock_theme }}</span>
                     <div class="clock-style-theme" role="radiogroup" aria-labelledby="clock-theme-label" aria-describedby="clock-theme-hint">
                         <label class="clock-theme-choice">
-                            <input type="radio" id="clock_theme_auto" name="clock_theme" value="auto" data-clock-theme-choice {% if settings.clock_theme == 'auto' %}checked{% endif %} onchange="setClockTheme(this.value)">
-                            <span class="clock-theme-choice-face"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg><span data-i18n="clock_theme_auto">{{ translations[language].clock_theme_auto }}</span></span>
-                        </label>
-                        <label class="clock-theme-choice">
-                            <input type="radio" id="clock_theme_dark" name="clock_theme" value="dark" data-clock-theme-choice {% if settings.clock_theme == 'dark' %}checked{% endif %} onchange="setClockTheme(this.value)">
+                            <input type="radio" id="clock_theme_dark" name="clock_theme" value="dark" data-clock-theme-choice {% if settings.clock_theme != 'light' %}checked{% endif %} onchange="setClockTheme(this.value)">
                             <span class="clock-theme-choice-face"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.6 9.7A5.8 5.8 0 0 1 6.3 2.4a5.8 5.8 0 1 0 7.3 7.3z" fill="currentColor"/></svg><span data-i18n="clock_theme_dark">{{ translations[language].clock_theme_dark }}</span></span>
                         </label>
                         <label class="clock-theme-choice">
@@ -251,7 +247,7 @@
             </div>
         </div>
         <p class="help" data-i18n="clock_style_hint">{{ translations[language].clock_style_hint }}</p>
-        <fieldset id="clock-style-options" class="clock-style-options" data-theme-mode="{{ settings.clock_theme if settings.clock_theme in ['auto', 'dark', 'light'] else 'auto' }}">
+        <fieldset id="clock-style-options" class="clock-style-options" data-theme-mode="{{ 'light' if settings.clock_theme == 'light' else 'dark' }}">
             <legend class="visually-hidden" data-i18n="display_clock_style">{{ translations[language].display_clock_style }}</legend>
             {% for style, name_key, desc_key in [
                 ('classic', 'clock_style_classic', 'clock_style_desc_classic'),
@@ -681,7 +677,7 @@
         var settingsQueue = Promise.resolve(), settingsConflict = false, settingsPending = 0, settingsMessage = '', settingsEdits = 0;
         var clockStyleSaved = {{ settings.clock_style | tojson }};
         var clockStyleDraft = clockStyleSaved;
-        var clockThemeSaved = {{ settings.clock_theme | tojson }};
+        var clockThemeSaved = {{ ('light' if settings.clock_theme == 'light' else 'dark') | tojson }};
         var clockThemeDraft = clockThemeSaved;
         var clockStyleMessage = '';
         var clockStylePreviewBase = {{ url_for('admin_preview') | tojson }};
@@ -700,6 +696,10 @@
         function t(key) {
             var pack = I18N[currentLanguage] || I18N['zh-TW'];
             return pack[key] || I18N['zh-TW'][key] || key;
+        }
+
+        function normalizedClockTheme(value) {
+            return value === 'light' ? 'light' : 'dark';
         }
 
         window.applyManagementLanguage = function (language) {
@@ -918,7 +918,7 @@
         }
 
         function setClockTheme(value) {
-            clockThemeDraft = value;
+            clockThemeDraft = normalizedClockTheme(value);
             clockStyleMessage = '';
             updateClockStylePreview();
         }
@@ -942,13 +942,13 @@
         function saveClockStyle(event) {
             if (event) event.preventDefault();
             if ((clockStyleDraft === clockStyleSaved && clockThemeDraft === clockThemeSaved) || settingsConflict) return;
-            var saving = clockStyleDraft, savingTheme = clockThemeDraft;
+            var saving = clockStyleDraft, savingTheme = normalizedClockTheme(clockThemeDraft);
             postSettings({clock_style: saving, clock_theme: savingTheme}, {
                 successKey: 'clock_style_saved', errorKey: 'clock_style_save_error',
                 conflictKey: 'clock_style_conflict',
                 onSuccess: function (result) {
                     clockStyleSaved = result.settings.clock_style;
-                    clockThemeSaved = result.settings.clock_theme;
+                    clockThemeSaved = normalizedClockTheme(result.settings.clock_theme);
                     clockStyleMessage = 'clock_style_saved';
                     updateClockStyleUi();
                 },
@@ -998,7 +998,7 @@
                     };
                     clockStyleSaved = settings.clock_style || 'classic';
                     clockStyleDraft = clockStyleSaved;
-                    clockThemeSaved = settings.clock_theme || 'auto';
+                    clockThemeSaved = normalizedClockTheme(settings.clock_theme);
                     clockThemeDraft = clockThemeSaved;
                     clockStyleMessage = '';
                     applyTimeFormat(settings.time_format);

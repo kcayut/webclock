@@ -48,7 +48,7 @@ const labels = {
 };
 $('schedule-i18n').textContent = JSON.stringify({en: labels, 'zh-TW': {...labels, group_unsaved: '未儲存'}, ja: {...labels, group_unsaved: '未保存'}});
 const defaultSettings = {brightness: 80, mode: 'normal', timezone_offset: 8, time_format: '24h', language: 'zh-TW',
-    clock_style: 'classic',
+    clock_style: 'classic', clock_theme: 'auto',
     night: {enabled: true, start: '22:00', end: '07:00', brightness: 15, black: true}};
 const content = {calendar_source_ids: [], manual_note_ids: [], schedule_ids: []};
 const makeRow = (id, name) => ({id, name, revision: id + '-r1', enabled: true, display_overrides: {}, content: plain(content), effective_settings: plain(defaultSettings)});
@@ -292,6 +292,28 @@ async function deviceSettingsChecks() {
     await trigger('device-style-test-clock_style-policy', 'change', 'inherit');
     assert.equal(styleField('clock_style').disabled, true);
     assert.equal(styleField('clock_style').value, 'classic');
+    let themePending, themeDevice = {id: 'theme-test', display_settings: settings('theme-one', {clock_theme: 'auto'})};
+    const themeEditor = window.WebClockDeviceSettings.create({t: key => 'en:' + key, onBusy() {},
+        request(id, method, data) { return new Promise((resolve) => { themePending = {id, method, data, resolve}; }); }});
+    const themeRoot = themeEditor.render(themeDevice), themeControls = descendants(themeRoot);
+    const themeForm = themeRoot.children.find(child => child.tag === 'form');
+    const themeField = name => $('device-theme-test-' + name);
+    assert.equal(themeField('clock_theme-policy').value, 'custom');
+    assert.equal(themeField('clock_theme').disabled, false);
+    assert.equal(themeField('clock_theme').value, 'dark', 'legacy auto override displays as dark');
+    assert.deepEqual(themeField('clock_theme').children.map(option => option.value), ['dark', 'light']);
+    await trigger('device-theme-test-clock_theme-policy', 'change', 'inherit');
+    assert.equal(themeField('clock_theme').disabled, true);
+    assert.equal(themeField('clock_theme').value, 'dark');
+    const themeInheritSave = themeForm.trigger('submit');
+    assert.equal('clock_theme' in themePending.data.display_overrides, false);
+    themePending.resolve(settings('theme-two')); await themeInheritSave;
+    await trigger('device-theme-test-clock_theme-policy', 'change', 'custom');
+    assert.equal(themeField('clock_theme').value, 'dark');
+    const themeSave = themeForm.trigger('submit');
+    assert.equal(themePending.data.display_overrides.clock_theme, 'dark', 'custom selection never re-creates auto');
+    themePending.resolve(settings('theme-three', {clock_theme: 'dark'})); await themeSave;
+    void themeControls;
     void styleControls;
 }
 async function deviceContentChecks() {
@@ -368,6 +390,9 @@ async function main() {
     assert.equal($('group-name').value, 'Room A');
     assert.equal(intervals[0].delay, 15000);
     assert.equal($('group-brightness').disabled, true);
+    assert.equal($('group-clock_theme').disabled, true);
+    assert.equal($('group-clock_theme').value, 'dark');
+    assert.deepEqual($('group-clock_theme').children.map(option => option.value), ['dark', 'light']);
     await trigger('group-name', 'input', 'Draft A');
     $('group-name').focus(); $('group-name').selectionStart = 1; $('group-name').selectionEnd = 4;
     intervals[0].callback(); await load([makeRow('a', 'Remote A'), rowB]);
@@ -379,6 +404,8 @@ async function main() {
     assert.equal($('group-name').value, 'Draft A');
     await trigger('group-brightness-policy', 'change', 'custom');
     await trigger('group-brightness', 'input', '0');
+    await trigger('group-clock_theme-policy', 'change', 'custom');
+    assert.equal($('group-clock_theme').value, 'dark');
     await trigger('group-night-enabled-policy', 'change', 'custom');
     await trigger('group-night-enabled', 'input', 'false');
     const note = choice('manual_note_ids:7'); note.checked = true; await note.trigger('change');
@@ -388,6 +415,7 @@ async function main() {
     const payload = JSON.parse(save.options.body);
     assert.equal(payload.revision, 'a-r1', 'The draft keeps the revision it was based on');
     assert.equal(payload.display_overrides.brightness, 0);
+    assert.equal(payload.display_overrides.clock_theme, 'dark');
     assert.equal(payload.display_overrides.night.enabled, false);
     assert.deepEqual(payload.content.manual_note_ids, [7]);
     assert.deepEqual(payload.content.calendar_source_ids, []);

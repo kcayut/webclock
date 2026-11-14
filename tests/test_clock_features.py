@@ -200,6 +200,11 @@ class ClockFeaturesTest(unittest.TestCase):
             if theme != current_theme:
                 self.assertNotEqual(response.json['revision'], previous_revision)
             current_theme = theme
+        page = self.client.get('/admin').text
+        self.assertRegex(page, r'id="clock_theme_light"[^>]*checked')
+        self.assertNotRegex(page, r'id="clock_theme_dark"[^>]*checked')
+        self.assertIn('data-theme-mode="light"', page)
+        self.assertIn('var clockThemeSaved = "light";', page)
         backup = self.client.get('/api/backup').json
         backup['settings']['clock_style'] = 'segment'
         backup['settings']['clock_theme'] = 'dark'
@@ -239,9 +244,14 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertIn('data-management-tab="styles"', page)
             self.assertIn('data-i18n="clock_style_flip"', page)
             self.assertIn('id="clock-style-preview"', page)
-            self.assertIn('id="clock_theme_auto"', page)
+            self.assertNotIn('id="clock_theme_auto"', page)
+            self.assertNotIn('value="auto"', page)
             self.assertIn('id="clock_theme_dark"', page)
             self.assertIn('id="clock_theme_light"', page)
+            self.assertRegex(page, r'id="clock_theme_dark"[^>]*checked')
+            self.assertNotRegex(page, r'id="clock_theme_light"[^>]*checked')
+            self.assertIn('data-theme-mode="dark"', page)
+            self.assertIn('var clockThemeSaved = "dark";', page)
             for style in ('classic', 'flip', 'segment'):
                 self.assertIn('id="clock_style_' + style + '"', page)
             self.assertNotIn('id="clock_style_glass"', page)
@@ -260,6 +270,9 @@ class ClockFeaturesTest(unittest.TestCase):
                           'alarm-audio.js', 'offline.js', 'setInterval(', 'fetch('):
             self.assertNotIn(forbidden, html)
         self.assertEqual(self.client.get('/api/control').json, before)
+        legacy_auto = self.client.get('/admin/preview?style=flip&theme=auto')
+        self.assertEqual(legacy_auto.status_code, 200)
+        self.assertIn('var theme = "dark"', legacy_auto.get_data(as_text=True))
         invalid = self.client.get('/admin/preview?style=neon&date_format=bad&time_format=99&lang=zz')
         self.assertEqual(invalid.status_code, 200)
         self.assertIn('style = "classic"', invalid.get_data(as_text=True))

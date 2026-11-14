@@ -198,7 +198,7 @@ async function main() {
         await client.send('Page.removeScriptToEvaluateOnNewDocument', {identifier: intervalScript.identifier}, session);
         await client.send('Network.setCacheDisabled', {cacheDisabled: false}, session);
 
-        // 2. Admin style tab: three choices, draft, save, conflict; no retired options.
+        // 2. Admin style tab: three styles, two theme choices, draft, save, conflict; no retired options.
         await setShared(settings({clock_style: 'classic'}));
         await navigate(BASE + '/admin');
         await waitFor(() => evaluate('typeof window.clockStyleDraft === "string"'));
@@ -208,11 +208,13 @@ async function main() {
         assert.equal(await evaluate('!!document.getElementById("clock_style_glass")'), false);
         assert.equal(await evaluate('!!document.getElementById("clock_style_orbit")'), false);
         assert.equal(await evaluate('!!document.getElementById("clock_style_paper")'), false);
-        assert.equal(await evaluate('document.querySelectorAll("[data-clock-theme-choice]").length'), 3);
-        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'auto');
-        assert.equal(await thumbOpacity('flip', 'dark'), '1', 'auto shows the dark flip thumbnail');
+        assert.equal(await evaluate('document.querySelectorAll("[data-clock-theme-choice]").length'), 2);
+        assert.equal(await evaluate('!!document.getElementById("clock_theme_auto")'), false);
+        assert.equal(await evaluate('document.getElementById("clock_theme_dark").checked'), true);
+        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'dark');
+        assert.equal(await thumbOpacity('flip', 'dark'), '1', 'legacy auto shows the dark flip thumbnail');
         assert.equal(await thumbOpacity('flip', 'light'), '0');
-        assert.equal(await thumbOpacity('segment', 'dark'), '1', 'auto shows the dark segment thumbnail');
+        assert.equal(await thumbOpacity('segment', 'dark'), '1', 'legacy auto shows the dark segment thumbnail');
         assert.equal(await thumbOpacity('segment', 'light'), '0');
         await evaluate('(function () { var input = document.getElementById("clock_theme_dark"); ' +
             'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); }())');
@@ -246,7 +248,7 @@ async function main() {
         assert.equal(await evaluate('clockStyleDraft'), 'segment');
         await evaluate('document.getElementById("clock-style-restore").click()');
         await SLEEP(250);
-        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'auto');
+        assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'dark');
         assert.equal(await thumbOpacity('flip', 'dark'), '1');
         assert.equal(await thumbOpacity('segment', 'dark'), '1');
         await evaluate('(function () { var input = document.getElementById("clock_style_segment"); ' +
@@ -381,7 +383,7 @@ async function main() {
                 clockTime: '2026-11-14 10:28:36 (UTC+8)',
                 inkHeight: 'Canvas actualBoundingBoxAscent + Descent; segment uses seven-segment geometry height.',
                 styles: ['flip', 'segment'],
-                themes: ['auto', 'dark', 'light'],
+                themes: ['dark', 'light'],
                 viewports: {landscape: [1024, 768], short: [1024, 650], portrait: [768, 1024]}
             },
             baseline: {}, actual: {}, preview: {}, themes: {}, comparisons: []
