@@ -1,12 +1,12 @@
 /*
- * Optional clock renderers for flip, segment and paper.  This file never reads
+ * Optional clock renderers for flip and segment.  This file never reads
  * the clock, never creates a timer and never owns display settings.  It uses
  * the single snapshot passed by WebClockCore; if it is missing or fails, #time
  * remains the visible and accessible fallback.
  */
 (function (root) {
     'use strict';
-    var STYLE_IDS = ['classic', 'flip', 'segment', 'paper'];
+    var STYLE_IDS = ['classic', 'flip', 'segment'];
     var SEGMENTS = {
         '0': 'abcdef',
         '1': 'bc',
@@ -132,18 +132,6 @@
         return node;
     }
 
-    function timeParts(doc, className) {
-        var wrap = create(doc, 'span', className || 'style-time');
-        var hour = create(doc, 'span', 'style-hour');
-        var colon = create(doc, 'span', 'style-colon');
-        colon.textContent = ':';
-        var minute = create(doc, 'span', 'style-minute');
-        append(wrap, hour);
-        append(wrap, colon);
-        append(wrap, minute);
-        return {wrap: wrap, hour: hour, minute: minute};
-    }
-
     function secondsNode(doc, className) {
         var wrap = create(doc, 'span', 'clock-seconds ' + (className || 'style-seconds'));
         var value = create(doc, 'span', 'style-seconds-value');
@@ -247,24 +235,6 @@
         };
     }
 
-    function buildPaper(doc, surface) {
-        var period = periodNode(doc);
-        var main = create(doc, 'div', 'paper-time');
-        var parts = timeParts(doc, 'paper-time-main');
-        var seconds = secondsNode(doc, 'paper-seconds');
-        append(main, period);
-        append(main, parts.wrap);
-        append(main, seconds.wrap);
-        append(surface, main);
-        state.nodes = {period: period, hour: parts.hour, minute: parts.minute, seconds: seconds.value};
-        state.update = function (data) {
-            setText(state.nodes.hour, data.hourText);
-            setText(state.nodes.minute, data.minuteText);
-            setText(state.nodes.period, data.periodText);
-            if (data.settings.show_seconds) setText(state.nodes.seconds, data.secondText);
-        };
-    }
-
     function reducedMotion() {
         try {
             return !!(root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -279,7 +249,6 @@
         state.last = null;
         if (style === 'flip') buildFlip(doc, surface);
         else if (style === 'segment') buildSegment(doc, surface);
-        else if (style === 'paper') buildPaper(doc, surface);
         else throw new Error('Unknown clock style');
     }
 

@@ -1,6 +1,6 @@
 /*
- * Optional clock presentation for classic, flip, segment and paper.
- * flip, segment and paper are the legacy Safari path: ordinary values,
+ * Optional clock presentation for classic, flip and segment.
+ * flip and segment are the legacy Safari path: ordinary values,
  * inline-block/absolute layout and prefixed flex only.
  */
 #clock-backdrop {
@@ -430,192 +430,9 @@ body.shows-seconds .clock-style-flip .flip-seconds {
     color: #FFD166;
 }
 
-/* Paper: full-bleed minimal typographic page, no card or divider. */
-.clock-style-paper {
-    color: #252B30;
-}
-
-.clock-style-paper #clock-backdrop {
-    background: #F2EEE5;
-}
-
-.clock-style-paper #clock-container {
-    width: 90vw;
-    padding-top: 7vw;
-    text-align: center;
-    white-space: normal;
-}
-
-.clock-style-paper .clock-deco-paper {
-    display: block;
-    width: 100%;
-}
-
-.clock-style-paper .paper-time {
-    display: block;
-    width: 100%;
-    text-align: center;
-    white-space: nowrap;
-}
-
-.clock-style-paper .paper-time-main {
-    display: inline-block;
-    color: #252B30;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 34.5vw;
-    line-height: 1;
-    letter-spacing: -0.03em;
-    white-space: nowrap;
-}
-
-.clock-style-paper.shows-seconds .paper-time-main {
-    font-size: 27vw;
-}
-
-.clock-style-paper .paper-seconds {
-    display: none;
-    margin-left: 1vw;
-    color: #252B30;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 8.25vw;
-    line-height: 1;
-    vertical-align: baseline;
-}
-
-.clock-style-paper.shows-seconds .paper-seconds {
-    display: inline-block;
-}
-
-.clock-style-paper .clock-period {
-    display: none;
-    margin: 0 0 0.8vw;
-    color: #5D6267;
-    font-family: -apple-system, Helvetica, Arial, sans-serif;
-    font-size: 2.55vw;
-    font-weight: 600;
-    letter-spacing: 0.18em;
-}
-
-.clock-style-paper.uses-12-hour .clock-period {
-    display: block;
-}
-
-.clock-style-paper #date-info {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    display: block;
-    color: #5D6267;
-    font-family: -apple-system, Helvetica, Arial, sans-serif;
-    font-size: 4.35vw;
-    line-height: 1.3;
-    text-align: center;
-    white-space: normal;
-}
-
-.clock-style-paper #date-part {
-    display: inline-block;
-    margin: 0 1.2vw 0 0;
-    color: #252B30;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 4.35vw;
-    line-height: 1.2;
-    word-wrap: break-word;
-}
-
-.clock-style-paper #day-part {
-    display: inline-block;
-    padding: 0;
-    border-radius: 0;
-    background: transparent;
-    color: #5D6267;
-    font-family: -apple-system, Helvetica, Arial, sans-serif;
-    font-size: 3.6vw;
-    line-height: 1.3;
-    letter-spacing: 0.08em;
-    word-wrap: break-word;
-}
-
-.clock-style-paper #day-part.holiday-highlight {
-    background: transparent;
-    color: #A63D33;
-}
-
-.clock-style-paper #list-container {
-    width: 90vw;
-    height: 15vw;
-    max-height: 160px;
-    margin: 2vw auto 0;
-    text-align: left;
-}
-
-.clock-style-paper .event-row {
-    height: 100%;
-    color: #5D6267;
-    font-family: -apple-system, Helvetica, Arial, sans-serif;
-    font-size: 4.35vw;
-    text-align: left;
-    white-space: normal;
-}
-
-.clock-style-paper .event-content-wrapper {
-    display: -webkit-flex;
-    display: flex;
-    width: 100%;
-    -webkit-align-items: center;
-    align-items: center;
-    -webkit-justify-content: space-between;
-    justify-content: space-between;
-    white-space: normal;
-}
-
-.clock-style-paper .event-time {
-    margin-right: 2vw;
-    color: #252B30;
-    font-weight: 600;
-}
-
-.clock-style-paper .event-content-wrapper > span:last-child {
-    min-width: 0;
-    max-height: 2.7em;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    line-height: 1.35;
-    text-align: right;
-    white-space: normal;
-}
-
-.clock-style-paper.no-date-info #clock-container {
-    padding-top: 4vw;
-}
-
-.clock-style-paper.night-active {
-    color: #EAE4D9;
-}
-
-.clock-style-paper.night-active #clock-backdrop {
-    background: #171A1D;
-}
-
-.clock-style-paper.night-active #date-part,
-.clock-style-paper.night-active .paper-time-main,
-.clock-style-paper.night-active .paper-seconds,
-.clock-style-paper.night-active .event-time {
-    color: #EAE4D9;
-}
-
-.clock-style-paper.night-active #date-info,
-.clock-style-paper.night-active #day-part,
-.clock-style-paper.night-active .clock-period,
-.clock-style-paper.night-active .event-row {
-    color: #BFB8AE;
-}
-
-
 /* Theme palettes.  Base colors above are the historical defaults:
- * classic/flip/segment dark and paper light.  The body carries exactly one
- * clock-theme-* class; auto is resolved before this point. */
+ * The body carries exactly one clock-theme-* class; auto is resolved to the
+ * surviving styles' dark default before this point. */
 body.clock-theme-light:not(.clock-style-enhanced) #clock-backdrop {
     background: #F4F1E8;
 }
@@ -748,32 +565,6 @@ body.clock-theme-light.clock-style-segment #day-part.holiday-highlight {
     color: #A63D33;
 }
 
-body.clock-theme-dark.clock-style-paper {
-    color: #EAE4D9;
-}
-
-body.clock-theme-dark.clock-style-paper #clock-backdrop {
-    background: #171A1D;
-}
-
-body.clock-theme-dark.clock-style-paper #date-part,
-body.clock-theme-dark.clock-style-paper .paper-time-main,
-body.clock-theme-dark.clock-style-paper .paper-seconds,
-body.clock-theme-dark.clock-style-paper .event-time {
-    color: #EAE4D9;
-}
-
-body.clock-theme-dark.clock-style-paper #date-info,
-body.clock-theme-dark.clock-style-paper #day-part,
-body.clock-theme-dark.clock-style-paper .clock-period,
-body.clock-theme-dark.clock-style-paper .event-row {
-    color: #BFB8AE;
-}
-
-body.clock-theme-dark.clock-style-paper #day-part.holiday-highlight {
-    color: #FF9E8F;
-}
-
 body.force-black #clock-backdrop {
     background: #000 !important;
     background-image: none !important;
@@ -883,48 +674,7 @@ body.force-black {
         font-size: 5.2vw;
     }
 
-    .clock-style-paper #clock-container {
-        width: 92vw;
-        padding-top: 12vw;
-    }
 
-    .clock-style-paper .paper-time-main {
-        font-size: 34vw;
-    }
-
-    .clock-style-paper.shows-seconds .paper-time-main {
-        font-size: 24vw;
-    }
-
-    .clock-style-paper .paper-seconds {
-        font-size: 7vw;
-    }
-
-    .clock-style-paper .clock-period {
-        font-size: 2.8vw;
-    }
-
-    .clock-style-paper #date-info {
-        font-size: 5.2vw;
-    }
-
-    .clock-style-paper #date-part {
-        font-size: 5.6vw;
-    }
-
-    .clock-style-paper #day-part {
-        font-size: 4.8vw;
-    }
-
-    .clock-style-paper #list-container {
-        width: 92vw;
-        height: 14vw;
-        max-height: none;
-    }
-
-    .clock-style-paper .event-row {
-        font-size: 5.2vw;
-    }
 }
 
 /* Short landscape windows: cap width-derived sizes by height. */
@@ -956,30 +706,19 @@ body.force-black {
     }
 
     .clock-style-flip #date-info,
-    .clock-style-segment #date-info,
-    .clock-style-paper #date-info {
+    .clock-style-segment #date-info {
         font-size: 3.8vh;
-    }
-
-    .clock-style-paper #date-part {
-        font-size: 3.8vh;
-    }
-
-    .clock-style-paper #day-part {
-        font-size: 3.2vh;
     }
 
     .clock-style-flip #list-container,
-    .clock-style-segment #list-container,
-    .clock-style-paper #list-container {
+    .clock-style-segment #list-container {
         height: 12vh;
         max-height: none;
         margin-top: 1vh;
     }
 
     .clock-style-flip .event-row,
-    .clock-style-segment .event-row,
-    .clock-style-paper .event-row {
+    .clock-style-segment .event-row {
         font-size: 4vh;
     }
 
@@ -996,22 +735,6 @@ body.force-black {
     .clock-style-segment .segment-seconds .segment-digit {
         width: 4.8vw;
         height: 17vh;
-    }
-
-    .clock-style-paper #clock-container {
-        padding-top: 11vh;
-    }
-
-    .clock-style-paper .paper-time-main {
-        font-size: 60vh;
-    }
-
-    .clock-style-paper.shows-seconds .paper-time-main {
-        font-size: 46vh;
-    }
-
-    .clock-style-paper .paper-seconds {
-        font-size: 14vh;
     }
 }
 

@@ -8,7 +8,7 @@
         ['time_format', 'group_time_format', [['24h', 'group_24h'], ['12h', 'group_12h']]],
         ['language', 'group_display_language', [['zh-TW', '繁體中文'], ['en', 'English'], ['ja', '日文']]],
         ['clock_style', 'group_clock_style', [['classic', 'clock_style_classic'], ['flip', 'clock_style_flip'],
-            ['segment', 'clock_style_segment'], ['paper', 'clock_style_paper']]],
+            ['segment', 'clock_style_segment']]],
         ['clock_theme', 'group_clock_theme', [['auto', 'clock_theme_auto'], ['dark', 'clock_theme_dark'],
             ['light', 'clock_theme_light']]],
         ['night.enabled', 'group_night_enabled', 'boolean'],

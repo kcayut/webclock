@@ -200,23 +200,23 @@ class DeviceManagementTest(unittest.TestCase):
         device_value = self.display_settings(device, {'clock_style': 'segment'}).json
         self.assertEqual(device_value['effective_settings']['clock_style'], 'segment')
         self.assertEqual(device_value['sources']['clock_style'], 'device')
-        service.update_group(self.owner, group_id, {'display_overrides': {'clock_style': 'paper'}})
+        service.update_group(self.owner, group_id, {'display_overrides': {'clock_style': 'classic'}})
         self.assertEqual(self.display_settings(device).json['effective_settings']['clock_style'], 'segment')
         reset = self.display_settings(device, {}).json
-        self.assertEqual(reset['effective_settings']['clock_style'], 'paper')
+        self.assertEqual(reset['effective_settings']['clock_style'], 'classic')
         self.assertEqual(reset['sources']['clock_style'], 'group')
         service.update_group(self.owner, group_id, {'display_overrides': {}})
         inherited = self.display_settings(device).json
         self.assertEqual(inherited['effective_settings']['clock_style'], 'classic')
         self.assertEqual(inherited['sources']['clock_style'], 'default')
         before = service.path.read_bytes()
-        for invalid in ('neon', 'glass', 'orbit'):
+        for invalid in ('neon', 'glass', 'orbit', 'paper'):
             self.assertEqual(self.display_settings(device, {'clock_style': invalid}).status_code, 400, invalid)
         self.assertEqual(service.path.read_bytes(), before)
         foreign = self.device('Foreign style device', owner='other-owner')
         self.assertEqual(self.display_settings(foreign).status_code, 404)
-        clock.display_settings['clock_style'] = 'paper'
-        self.assertEqual(self.display_settings(device).json['effective_settings']['clock_style'], 'paper')
+        clock.display_settings['clock_style'] = 'segment'
+        self.assertEqual(self.display_settings(device).json['effective_settings']['clock_style'], 'segment')
         self.assertEqual(self.display_settings(device).json['sources']['clock_style'], 'default')
 
     def test_clock_theme_inheritance_and_validation(self):
@@ -250,7 +250,7 @@ class DeviceManagementTest(unittest.TestCase):
         device_id = device['identity']['device_id']
         state = load_json(service.path, {})
         state['groups'][group_id]['display_overrides'] = {'clock_style': 'glass', 'brightness': 21}
-        state['devices'][device_id]['display_overrides'] = {'clock_style': 'orbit', 'brightness': 9}
+        state['devices'][device_id]['display_overrides'] = {'clock_style': 'paper', 'brightness': 9}
         save_json(service.path, state)
         before = service.path.read_bytes()
         fresh = self.service()

@@ -5,8 +5,8 @@ from webclock.translations.common import SUPPORTED_LANGUAGES
 
 
 DEFAULT_NIGHT = {'enabled': False, 'start': '22:00', 'end': '07:00', 'brightness': 15, 'black': False}
-CLOCK_STYLES = ('classic', 'flip', 'segment', 'paper')
-RETIRED_CLOCK_STYLES = ('glass', 'orbit')
+CLOCK_STYLES = ('classic', 'flip', 'segment')
+RETIRED_CLOCK_STYLES = ('glass', 'orbit', 'paper')
 CLOCK_THEMES = ('auto', 'dark', 'light')
 
 
@@ -31,11 +31,9 @@ def migrate_display_overrides(overrides):
 
 
 def effective_clock_theme(settings):
-    """Resolve auto to the style's historical default; explicit values win."""
+    """Resolve auto to the surviving styles' dark default; explicit values win."""
     theme = settings.get('clock_theme', 'auto')
-    if theme in ('dark', 'light'):
-        return theme
-    return 'light' if settings.get('clock_style') == 'paper' else 'dark'
+    return theme if theme in ('dark', 'light') else 'dark'
 
 
 SETTING_FIELDS = {'mode', 'brightness', 'timezone_offset', 'language', 'time_format', 'night',

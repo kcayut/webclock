@@ -28,7 +28,7 @@ managed は管理 session、両モードの書き込みは CSRF が必要です�
 
 グループの GET／一覧／保存応答は、グループ内容と有効表示設定を含む `revision` を返します。PATCH に取得時の版を指定でき、不一致は書き込まず 409 `group_settings_changed` です。共通設定は `GET /api/control` で `{settings, revision}` を取得し、既存の設定オブジェクトを `If-Match: "<revision>"` 付きで POST します。不一致は 409 `settings_changed`、成功は最新の `settings`／`revision` を返します。管理画面は常に版を送信し、同一画面の共通設定保存を順番に処理します。版を付けない旧 CLI／API の無条件更新は互換性のため維持します。ハッシュは現在状態の比較値で、変更履歴ではありません。
 
-表示設定には `clock_style` も含まれます。許可値は `classic`、`flip`、`segment`、`paper` です。欠落時は `classic` を使用し、未知の文字列、`null`、オブジェクト、配列、真偽値、数値は `classic` へ黙って変換せず 400 を返します。グループ／端末の `display_overrides` はこの項目を省略して継承でき、継承へ戻すときは `classic` を書き込まず項目を削除します。`clock_theme` は `auto`、`dark`、`light` を受け付けます。`auto` は各スタイルの既存の既定（classic／flip／segment はダーク、paper はライト）、明示値は全スタイルに適用されます。欠落時は `auto`、未知値は 400 です。両項目は表示設定の revision、バックアップ、復元に参加し、「端末 → グループ → 共通既定」で解決します。
+表示設定には `clock_style` も含まれます。許可値は `classic`、`flip`、`segment` です。欠落時は `classic` を使用し、未知の文字列、`null`、オブジェクト、配列、真偽値、数値は `classic` へ黙って変換せず 400 を返します。廃止した `glass`、`orbit`、`paper` は旧データとバックアップの移行入力のみで、読み取り時は `classic` に対応し、新規書き込みは 400 です。グループ／端末の `display_overrides` はこの項目を省略して継承でき、継承へ戻すときは `classic` を書き込まず項目を削除します。`clock_theme` は `auto`、`dark`、`light` を受け付けます。`auto` は残存スタイルのダーク既定、明示値は全スタイルに適用されます。欠落時は `auto`、未知値は 400 です。両項目は表示設定の revision、バックアップ、復元に参加し、「端末 → グループ → 共通既定」で解決します。
 
 `calendar_targets` は `{source_id, uid, scope, recurrence_id}` の配列で、表示専用の `title` は任意です。`scope` は `series` または `occurrence`。`recurrence_id` は系列・繰り返さない予定では空文字列、繰り返しの個別予定では元の `RECURRENCE-ID` を使い、日時変更後も追跡します。参照元全体は引き続き `calendar_source_ids` で指定します。除外指定がない場合、正規化では参照元や系列に含まれる重複選択を除きます。除外指定がある場合は必要な個別選択を維持します。参照元・系列の全選択は今後の予定も含みます。`calendar_targets` がない旧データや `[]` は互換で、PATCH は省略したリストを維持します。一覧の 366 日の範囲外でも選択済みの対象は保持します。
 

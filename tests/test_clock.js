@@ -29,9 +29,9 @@ const context = vm.createContext({
 vm.runInContext('Number.isFinite = undefined;', context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static/time-format.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), context);
-assert.equal(vm.runInContext("clockTheme({clock_style: 'paper'})", context), 'light');
+assert.equal(vm.runInContext("clockTheme({clock_style: 'classic'})", context), 'dark');
 assert.equal(vm.runInContext("clockTheme({clock_style: 'flip'})", context), 'dark');
-assert.equal(vm.runInContext("clockTheme({clock_style: 'paper', clock_theme: 'dark'})", context), 'dark');
+assert.equal(vm.runInContext("clockTheme({clock_style: 'segment'})", context), 'dark');
 assert.equal(vm.runInContext("clockTheme({clock_style: 'flip', clock_theme: 'light'})", context), 'light');
 assert.equal(vm.runInContext("clockTheme({clock_style: 'flip', clock_theme: 'auto'})", context), 'dark');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');

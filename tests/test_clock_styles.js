@@ -167,14 +167,12 @@ function styleSurface(doc) {
     }
 }
 
-// Paper: static content and only the shared clock data.
+// A retired style always returns to the visible fallback.
 {
     const doc = fakeDocument();
     const {window} = runtime(doc);
-    const api = window.WebClockStyles;
-    api.render(snapshot('paper', 10, 28, 36), doc);
-    assert.equal(styleSurface(doc).children[0].className, 'paper-time');
-    assert.equal(doc.body.className.includes('clock-style-paper'), true);
+    assert.equal(window.WebClockStyles.render(snapshot('paper', 10, 28, 36), doc), 'classic');
+    assert.equal(doc.body.className, '');
 }
 
 // Invalid or unavailable styles always return to the visible #time fallback.
@@ -197,7 +195,7 @@ function styleSurface(doc) {
     const doc = fakeDocument();
     const {window} = runtime(doc);
     const api = window.WebClockStyles;
-    const styles = ['flip', 'segment', 'paper', 'classic'];
+    const styles = ['flip', 'segment', 'classic'];
     for (let index = 0; index < 20; index++) api.render(snapshot(styles[index % styles.length], 10, 28, 36), doc);
     const surfaces = doc.getElementById('clock-container').children.filter(child => child.id === 'clock-style-surface');
     assert.equal(surfaces.length, 1);
@@ -254,4 +252,4 @@ for (const [name, code] of [
 ]) {
     assert.doesNotMatch(code, /\b(?:const|let|async)\b|=>|\?\./, name + ' must remain ES5');
 }
-console.log('Clock style checks passed: flip panels, seven-segment state, paper layout, fallback, 20 switches and ES5.');
+console.log('Clock style checks passed: flip panels, seven-segment state, fallback, 20 switches and ES5.');

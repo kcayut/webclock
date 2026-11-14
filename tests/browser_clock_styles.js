@@ -1,4 +1,4 @@
-// Real Chrome acceptance for the four clock styles.  It measures the actual
+// Real Chrome acceptance for the three clock styles.  It measures the actual
 // clock page and the preview under identical viewport/settings/message states.
 // Run with: WEBCLOCK_BASE_URL=http://127.0.0.1:8898 node tests/browser_clock_styles.js
 const assert = require('node:assert/strict');
@@ -14,9 +14,9 @@ const OUT = process.env.WEBCLOCK_SCREENSHOT_DIR ||
 const HISTORY = path.join(__dirname, '..', 'doc/development/screenshots/clock-styles-history/round2');
 const METRICS_FILE = path.join(__dirname, '..', 'doc/development/clock-styles-metrics.json');
 const SLEEP = ms => new Promise(resolve => setTimeout(resolve, ms));
-const STYLES = ['classic', 'flip', 'segment', 'paper'];
-const TIME_SELECTORS = {classic: '#time', flip: '.flip-digits', segment: '.segment-digit', paper: '.paper-time-main'};
-const GROUP_SELECTORS = {classic: '#time', flip: '.flip-main', segment: '.segment-row', paper: '.paper-time'};
+const STYLES = ['classic', 'flip', 'segment'];
+const TIME_SELECTORS = {classic: '#time', flip: '.flip-digits', segment: '.segment-digit'};
+const GROUP_SELECTORS = {classic: '#time', flip: '.flip-main', segment: '.segment-row'};
 
 class CDP {
     constructor(webSocket) {
@@ -198,27 +198,28 @@ async function main() {
         await client.send('Page.removeScriptToEvaluateOnNewDocument', {identifier: intervalScript.identifier}, session);
         await client.send('Network.setCacheDisabled', {cacheDisabled: false}, session);
 
-        // 2. Admin style tab: four choices, draft, save, conflict; no retired options.
+        // 2. Admin style tab: three choices, draft, save, conflict; no retired options.
         await setShared(settings({clock_style: 'classic'}));
         await navigate(BASE + '/admin');
         await waitFor(() => evaluate('typeof window.clockStyleDraft === "string"'));
         await evaluate('document.querySelector(\'[data-management-tab="styles"]\').click()');
         await SLEEP(500);
-        assert.equal(await evaluate('document.querySelectorAll("[data-clock-style-choice]").length'), 4);
+        assert.equal(await evaluate('document.querySelectorAll("[data-clock-style-choice]").length'), 3);
         assert.equal(await evaluate('!!document.getElementById("clock_style_glass")'), false);
         assert.equal(await evaluate('!!document.getElementById("clock_style_orbit")'), false);
+        assert.equal(await evaluate('!!document.getElementById("clock_style_paper")'), false);
         assert.equal(await evaluate('document.querySelectorAll("[data-clock-theme-choice]").length'), 3);
         assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'auto');
         assert.equal(await thumbOpacity('flip', 'dark'), '1', 'auto shows the dark flip thumbnail');
         assert.equal(await thumbOpacity('flip', 'light'), '0');
-        assert.equal(await thumbOpacity('paper', 'dark'), '0');
-        assert.equal(await thumbOpacity('paper', 'light'), '1', 'auto shows the light paper thumbnail');
+        assert.equal(await thumbOpacity('segment', 'dark'), '1', 'auto shows the dark segment thumbnail');
+        assert.equal(await thumbOpacity('segment', 'light'), '0');
         await evaluate('(function () { var input = document.getElementById("clock_theme_dark"); ' +
             'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); }())');
         await SLEEP(250);
         assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'dark');
-        assert.equal(await thumbOpacity('paper', 'dark'), '1', 'dark mode switches paper to its dark thumbnail');
-        assert.equal(await thumbOpacity('paper', 'light'), '0');
+        assert.equal(await thumbOpacity('segment', 'dark'), '1', 'dark mode keeps the dark segment thumbnail');
+        assert.equal(await thumbOpacity('segment', 'light'), '0');
         await evaluate('(function () { var input = document.getElementById("clock_style_segment"); ' +
             'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); }())');
         const draft = await evaluate('({draft: clockStyleDraft, disabled: document.getElementById("clock-style-save").disabled, ' +
@@ -238,8 +239,8 @@ async function main() {
         assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'light');
         assert.equal(await thumbOpacity('flip', 'light'), '1', 'light mode switches flip to its light thumbnail');
         assert.equal(await thumbOpacity('flip', 'dark'), '0');
-        assert.equal(await thumbOpacity('paper', 'light'), '1');
-        assert.equal(await thumbOpacity('paper', 'dark'), '0');
+        assert.equal(await thumbOpacity('segment', 'light'), '1');
+        assert.equal(await thumbOpacity('segment', 'dark'), '0');
         await evaluate('document.querySelector(\'[data-management-tab="common"]\').click(); ' +
             'document.querySelector(\'[data-management-tab="styles"]\').click()');
         assert.equal(await evaluate('clockStyleDraft'), 'segment');
@@ -247,7 +248,7 @@ async function main() {
         await SLEEP(250);
         assert.equal(await evaluate('document.getElementById("clock-style-options").getAttribute("data-theme-mode")'), 'auto');
         assert.equal(await thumbOpacity('flip', 'dark'), '1');
-        assert.equal(await thumbOpacity('paper', 'light'), '1');
+        assert.equal(await thumbOpacity('segment', 'dark'), '1');
         await evaluate('(function () { var input = document.getElementById("clock_style_segment"); ' +
             'input.checked = true; input.dispatchEvent(new Event("change", {bubbles: true})); ' +
             'var theme = document.getElementById("clock_theme_light"); theme.checked = true; ' +
@@ -257,13 +258,13 @@ async function main() {
         assert.match(await evaluate('document.getElementById("clock-style-status").textContent'),
             /樣式已儲存|Style saved|スタイルを保存/);
         await evaluate('clockStyleDraft = "classic"; settingsRevision = "stale"; ' +
-            '(function () { var input = document.getElementById("clock_style_paper"); input.checked = true; ' +
+            '(function () { var input = document.getElementById("clock_style_flip"); input.checked = true; ' +
             'input.dispatchEvent(new Event("change", {bubbles: true})); }()); ' +
             'document.getElementById("clock-style-save").click()');
         await waitFor(() => evaluate('document.getElementById("clock-style-status").textContent.length > 0'));
         const conflict = await evaluate('({draft: clockStyleDraft, status: document.getElementById("clock-style-status").textContent, ' +
             'disabled: document.getElementById("clock-style-save").disabled})');
-        assert.equal(conflict.draft, 'paper');
+        assert.equal(conflict.draft, 'flip');
         assert.match(conflict.status, /其他地方變更|changed elsewhere|別の場所/);
         assert.equal(conflict.disabled, true);
 
@@ -376,7 +377,7 @@ async function main() {
                 baseUrl: BASE,
                 clockTime: '2026-11-14 10:28:36 (UTC+8)',
                 inkHeight: 'Canvas actualBoundingBoxAscent + Descent; segment uses seven-segment geometry height.',
-                styles: ['flip', 'segment', 'paper'],
+                styles: ['flip', 'segment'],
                 themes: ['auto', 'dark', 'light'],
                 viewports: {landscape: [1024, 768], short: [1024, 650], portrait: [768, 1024]}
             },
@@ -387,7 +388,7 @@ async function main() {
         }
 
         // 4. Actual vs preview for every main matrix state.
-        for (const style of ['flip', 'segment', 'paper']) {
+        for (const style of ['flip', 'segment']) {
             metrics.actual[style] = {};
             metrics.preview[style] = {};
             for (const seconds of [false, true]) {
@@ -526,7 +527,7 @@ async function main() {
         }
 
         // 5. 12-hour/long-date and no-date actual vs preview.
-        for (const style of ['flip', 'segment', 'paper']) {
+        for (const style of ['flip', 'segment']) {
             for (const [label, extra] of [
                 ['12h-long', {time_format: '12h', date_format: 'yyyy-mm-dd', show_seconds: true}],
                 ['no-date', {time_format: '24h', date_format: 'm/d', show_date: false, show_weekday: false}]
@@ -605,41 +606,41 @@ async function main() {
             String(value % 60).padStart(2, '0');
         const activeNight = {enabled: true, start: hhmm((minutesNow + 1380) % 1440),
             end: hhmm((minutesNow + 60) % 1440), brightness: 12, black: false};
-        await setShared(settings({clock_style: 'paper', brightness: 0}));
+        await setShared(settings({clock_style: 'segment', clock_theme: 'light', brightness: 0}));
         await navigate(BASE + '/');
         await waitFor(() => evaluate('document.getElementById("clock-backdrop").style.opacity === "0"'));
         let state = await bodyState();
         assert.equal(state.clock, '0');
         assert.equal(state.bodyBackground, 'rgb(0, 0, 0)');
-        await screenshot('actual-paper-brightness-0');
-        await setShared(settings({clock_style: 'paper', brightness: 20}));
+        await screenshot('actual-segment-brightness-0');
+        await setShared(settings({clock_style: 'segment', clock_theme: 'light', brightness: 20}));
         await navigate(BASE + '/');
         await waitFor(() => evaluate('document.getElementById("clock-backdrop").style.opacity === "0.2"'));
         state = await bodyState();
         assert.equal(state.clock, '0.2');
-        assert.equal(state.backdropColor, 'rgb(242, 238, 229)');
-        await screenshot('actual-paper-brightness-20');
-        await setShared(settings({clock_style: 'paper', brightness: 100, clock_theme: 'light', night: activeNight}));
+        assert.equal(state.backdropColor, 'rgb(244, 241, 232)');
+        await screenshot('actual-segment-brightness-20');
+        await setShared(settings({clock_style: 'segment', brightness: 100, clock_theme: 'light', night: activeNight}));
         await navigate(BASE + '/');
         await waitFor(() => evaluate('document.body.classList.contains("night-active")'));
         state = await bodyState();
         assert.equal(state.backdrop, '0.12');
-        assert.equal(state.backdropColor, 'rgb(23, 26, 29)');
+        assert.equal(state.backdropColor, 'rgb(7, 11, 9)');
         assert.equal(state.themeDark, true, 'night forces the dark palette even when light was selected');
         assert.equal(state.themeLight, false);
-        await screenshot('actual-paper-night');
-        await setShared(settings({clock_style: 'paper', brightness: 100, mode: 'black'}));
+        await screenshot('actual-segment-night');
+        await setShared(settings({clock_style: 'segment', brightness: 100, mode: 'black'}));
         await navigate(BASE + '/');
         await waitFor(() => evaluate('document.body.classList.contains("force-black")'));
         state = await bodyState();
         assert.equal(state.black, true);
         assert.equal(state.backdropColor, 'rgb(0, 0, 0)');
         assert.equal(state.clockComputed, '0');
-        await screenshot('actual-paper-black');
+        await screenshot('actual-segment-black');
         await setShared(settings({clock_style: 'classic'}));
 
-        // 8. Historical round-2 before/after for the four retained styles.
-        for (const style of ['flip', 'segment', 'paper']) {
+        // 8. Historical round-2 before/after for the three retained styles.
+        for (const style of ['flip', 'segment']) {
             const oldFile = path.join(HISTORY, 'preview-' + style + '-landscape-message.png');
             const newFile = path.join(OUT, 'preview-' + style + '-landscape-message.png');
             if (!fs.existsSync(oldFile) || !fs.existsSync(newFile)) continue;
@@ -649,7 +650,7 @@ async function main() {
 
         fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2) + '\n');
         assert.deepEqual(exceptions, [], 'clock pages must not throw uncaught exceptions');
-        console.log('Browser checks passed: four styles with dark/light palettes, actual/preview parity, ' +
+        console.log('Browser checks passed: three styles with dark/light palettes, actual/preview parity, ' +
             'classic 90% scale, message/seconds/12h/long-date/no-date, responsiveness, ' +
             'brightness/night/black, delayed optional JS, and ' + OUT);
     } finally {

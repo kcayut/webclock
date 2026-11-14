@@ -159,7 +159,7 @@ class ClockFeaturesTest(unittest.TestCase):
                 self.assertIn('data-display-setting="' + key + '"', common)
 
     def test_clock_style_api_roundtrip_default_backup_and_invalid_values(self):
-        for retired in ('glass', 'orbit'):
+        for retired in ('glass', 'orbit', 'paper'):
             Path(clock.SETTINGS_FILE).write_text(json.dumps({'brightness': 41, 'clock_style': retired}))
             before = Path(clock.SETTINGS_FILE).read_bytes()
             loaded = clock.load_display_settings()
@@ -179,7 +179,7 @@ class ClockFeaturesTest(unittest.TestCase):
         self.assertEqual(clock.load_display_settings()['clock_style'], 'classic')
         self.assertEqual(clock.load_display_settings()['clock_theme'], 'auto')
         current_style = 'classic'
-        for style in ('classic', 'flip', 'segment', 'paper'):
+        for style in ('classic', 'flip', 'segment'):
             previous_revision = self.client.get('/api/control').json['revision']
             response = self.client.post('/api/control', json={'clock_style': style})
             self.assertEqual(response.status_code, 200, style)
@@ -201,17 +201,17 @@ class ClockFeaturesTest(unittest.TestCase):
                 self.assertNotEqual(response.json['revision'], previous_revision)
             current_theme = theme
         backup = self.client.get('/api/backup').json
-        backup['settings']['clock_style'] = 'paper'
+        backup['settings']['clock_style'] = 'segment'
         backup['settings']['clock_theme'] = 'dark'
         self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
-        self.assertEqual(clock.load_display_settings()['clock_style'], 'paper')
+        self.assertEqual(clock.load_display_settings()['clock_style'], 'segment')
         self.assertEqual(clock.load_display_settings()['clock_theme'], 'dark')
         backup['settings'].pop('clock_style')
         backup['settings'].pop('clock_theme')
         self.assertEqual(self.client.post('/api/backup', json=backup).status_code, 200)
         self.assertEqual(clock.load_display_settings()['clock_style'], 'classic')
         self.assertEqual(clock.load_display_settings()['clock_theme'], 'auto')
-        for retired in ('glass', 'orbit'):
+        for retired in ('glass', 'orbit', 'paper'):
             legacy = self.client.get('/api/backup').json
             legacy['settings'].update(clock_style=retired, brightness=37)
             self.assertEqual(self.client.post('/api/backup', json=legacy).status_code, 200)
@@ -219,6 +219,7 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertEqual(clock.load_display_settings()['brightness'], 37)
         before = Path(clock.SETTINGS_FILE).read_bytes()
         for invalid in ({'clock_style': 'neon'}, {'clock_style': 'glass'}, {'clock_style': 'orbit'},
+                        {'clock_style': 'paper'},
                         {'clock_style': None}, {'clock_style': 3},
                         {'clock_style': ['flip']}, {'clock_style': {'id': 'flip'}}, {'clock_style': True},
                         {'clock_theme': 'neon'}, {'clock_theme': None}, {'clock_theme': 3},
@@ -241,14 +242,15 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertIn('id="clock_theme_auto"', page)
             self.assertIn('id="clock_theme_dark"', page)
             self.assertIn('id="clock_theme_light"', page)
-            for style in ('classic', 'flip', 'segment', 'paper'):
+            for style in ('classic', 'flip', 'segment'):
                 self.assertIn('id="clock_style_' + style + '"', page)
             self.assertNotIn('id="clock_style_glass"', page)
             self.assertNotIn('id="clock_style_orbit"', page)
+            self.assertNotIn('id="clock_style_paper"', page)
 
     def test_clock_style_preview_is_fixed_pure_and_does_not_write_settings(self):
         before = self.client.get('/api/control').json
-        page = self.client.get('/admin/preview?style=paper&sample=1&show_seconds=1&lang=en&theme=dark')
+        page = self.client.get('/admin/preview?style=segment&sample=1&show_seconds=1&lang=en&theme=dark')
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
         for required in ('static/clock-styles.css', 'static/clock-styles.js',

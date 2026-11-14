@@ -463,12 +463,6 @@ details[open] > summary { margin-bottom: 10px; }
 .clock-style-options[data-theme-mode="light"] .clock-style-thumb-light {
     opacity: 1;
 }
-.clock-style-options[data-theme-mode="auto"] .clock-style-card[data-default-theme="light"] .clock-style-thumb-dark {
-    opacity: 0;
-}
-.clock-style-options[data-theme-mode="auto"] .clock-style-card[data-default-theme="light"] .clock-style-thumb-light {
-    opacity: 1;
-}
 @media (prefers-reduced-motion: reduce) {
     .clock-style-thumb svg { transition: none; }
 }

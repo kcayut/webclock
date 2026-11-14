@@ -1,23 +1,22 @@
 # 時鐘樣式與深淺色盤規格（第四輪）
 
-狀態：四款樣式與各款深色／淺色色盤已實作；桌面 Chrome 真實瀏覽器回歸與自動化完成。**iPad mini 1／iOS 9.3.5／9.3.6 實機驗收仍未執行**。本文件描述目前產品與工程契約，不代表已發布，也不代表舊 iPad 已通過。
+狀態：三款樣式與各款深色／淺色色盤已實作；桌面 Chrome 真實瀏覽器回歸與自動化完成。**iPad mini 1／iOS 9.3.5／9.3.6 實機驗收仍未執行**。本文件描述目前產品與工程契約，不代表已發布，也不代表舊 iPad 已通過。
 
-第三輪已移除第二輪的「玻璃光影 `glass`」與「光環大字 `orbit`」。本文件不再包含這兩款的選項、renderer、CSS、降級路徑或驗收項目；舊資料遷移見第 8 節。第二輪以前留下的截圖只作歷史對照，不是目前驗收證據。
+已移除第二輪的「玻璃光影 `glass`」與「光環大字 `orbit`」，以及後續移除的「紙感大字 `paper`」。本文件不再包含這些選項、renderer、CSS、降級路徑或驗收項目；舊資料遷移見第 7 節。第二輪以前留下的截圖只作歷史對照，不是目前驗收證據。
 
-第四輪新增 `clock_theme`：四款樣式各自提供深色與淺色色盤。`auto` 跟隨樣式（classic／flip／segment 深色、paper 淺色），保留既有安裝的外觀；`dark`／`light` 是明確選擇，套用到所有樣式。夜間時段仍強制使用深色色盤，避免淺色背景在低亮度房間過亮。經典大字淺色為背景 `#F4F1E8`、時間 `#1F2328`、日期 `#3F4A43`；深色維持既有黑底白字。
+第四輪新增 `clock_theme`：三款樣式各自提供深色與淺色色盤。`auto` 跟隨樣式的既有預設（三款皆深色），保留既有安裝的外觀；`dark`／`light` 是明確選擇，套用到所有樣式。夜間時段仍強制使用深色色盤，避免淺色背景在低亮度房間過亮。經典大字淺色為背景 `#F4F1E8`、時間 `#1F2328`、日期 `#3F4A43`；深色維持既有黑底白字。
 
 ## 1. 交付範圍與決策
 
-在「顯示設定」加入「時鐘樣式」分頁，順序為「常用 → 時鐘樣式 → 進階」。保留目前樣式為「經典大字」，預設不變；另有翻頁鐘、七段電子鐘、紙感大字，共四個選項。
+在「顯示設定」加入「時鐘樣式」分頁，順序為「常用 → 時鐘樣式 → 進階」。保留目前樣式為「經典大字」，預設不變；另有翻頁鐘、七段電子鐘，共三個選項。
 
 | 名稱 | 儲存 ID | 定位 | iPad mini 1 目標 |
 | --- | --- | --- | --- |
 | 經典大字 | `classic` | 現有畫面，既有安裝的預設 | 保持目前相容路徑 |
 | 翻頁鐘 | `flip` | 機械分頁、床頭／桌面 | 必須驗收通過 |
 | 七段電子鐘 | `segment` | 黑底琥珀數字、遠距閱讀 | 必須驗收通過 |
-| 紙感大字 | `paper` | 紙感印刷版面、家庭／工作空間 | 必須驗收通過 |
 
-新增兩個持久設定：`clock_style` 與 `clock_theme`。不增加自選字型、任意配色、上傳背景、外部圖片網址、效果強度、主題商店或樣式自動輪替。三款新增樣式必須在結構、數字呈現或資訊層級上有明顯差別，不能只是三組顏色。
+新增兩個持久設定：`clock_style` 與 `clock_theme`。不增加自選字型、任意配色、上傳背景、外部圖片網址、效果強度、主題商店或樣式自動輪替。兩款新增樣式必須在結構、數字呈現或資訊層級上有明顯差別，不能只是兩組顏色。
 
 樣式作用於 WebClock 時鐘頁，包括 HA 卡片內嵌的時鐘頁（如有）；不重新設計獨立 HA 感測器／行事曆／鬧鐘卡片，也不要求 ESP 韌體呈現網頁主題。公開靜態頁與離線 ZIP 必須保持正常啟動；本期不另加一套公開頁設定面板。
 
@@ -26,15 +25,15 @@
 ### 2.1 選擇區
 
 - 沿用管理頁導覽與淺／深色主題，不改側邊欄。
-- 四張可選卡片，桌面三欄、中等寬度兩欄、手機一欄；不以滑動輪播隱藏選項。
-- 卡片順序固定為經典、翻頁、電子、紙感。
+- 三張可選卡片，桌面三欄、中等寬度兩欄、手機一欄；不以滑動輪播隱藏選項。
+- 卡片順序固定為經典、翻頁、電子。
 - 每張包含固定比例 4:3 縮圖、名稱、一句用途，以及「輕量樣式」與「舊版 Safari 相容設計」標籤。
 - 使用原生 radio 搭配 label，整張卡可點選；選取有邊框、勾選與文字，不能只用顏色。radio 不得以 `display:none` 破壞鍵盤操作。
-- 卡片描述依次為「熟悉的大字時間」、「沉穩的翻頁面板」、「清楚醒目的電子數字」、「極簡紙感大字版面」。
+- 卡片描述依次為「熟悉的大字時間」、「沉穩的翻頁面板」、「清楚醒目的電子數字」。
 - 「時鐘樣式」標題右側提供「色彩模式」膠囊切換：跟隨樣式、深色、淺色。跟隨樣式使用該 style 的既有預設；深色／淺色是明確選擇，切換樣式時保留。此控制只改草稿，與樣式一起按「儲存樣式」保存。
-- 四張樣式卡縮圖會依目前色彩模式即時切換深色／淺色版本；「跟隨樣式」時 classic／flip／segment 顯示深色、paper 顯示淺色。切換只改草稿與縮圖，不寫 Server，也不另外載入四個 iframe。
+- 三張樣式卡縮圖會依目前色彩模式即時切換深色／淺色版本；「跟隨樣式」時三款都顯示深色。切換只改草稿與縮圖，不寫 Server，也不另外載入三個 iframe。
 - 色彩模式切換使用原生 radio 與可見的 segmented control；鍵盤方向鍵、Tab 與焦點樣式不可被 `display:none` 或純顏色選取破壞。
-- 縮圖為靜態圖，不同時啟動四個時鐘、iframe 或動畫。
+- 縮圖為靜態圖，不同時啟動三個時鐘、iframe 或動畫。
 - 開發及尚未實測時用「舊版 Safari 相容設計」，完成實機驗收才可標「已驗證 iPad mini 1」。
 
 ### 2.2 預覽與儲存
@@ -88,7 +87,7 @@
 
 - `clock_style` 是樣式，不等於既有 `mode`；不得把 `mode=black` 解讀為深色主題。
 - 夜間時段、亮度與強制黑畫面優先於裝飾。黑畫面時背景、日期與訊息都不可漏光。
-- 夜間時段優先使用深色色盤，即使使用者選了淺色；退出夜間後恢復使用者的 `clock_theme` 選擇。紙感款夜間使用深色紙面，其餘樣式保持深底。不得依管理頁深／淺色設定控制時鐘色盤。
+- 夜間時段優先使用深色色盤，即使使用者選了淺色；退出夜間後恢復使用者的 `clock_theme` 選擇。三款樣式夜間都使用深色底。不得依管理頁深／淺色設定控制時鐘色盤。
 - 鬧鐘紅邊、啟用音訊入口及兩次點擊關閉的事件處理沿用原實作；樣式不得攔截觸控。
 - 不改變現有黑畫面與鬧鐘提示的優先行為；需驗證既有行為並原樣保持，不能讓新裝飾自行覆蓋決策。
 - 尊重系統減少動態效果；夜間、頁面隱藏或強制黑畫面時停止非必要動畫。
@@ -144,57 +143,32 @@
 
 `1`、`7`、`0`、`8` 必須容易辨別；亮度調低後仍有足夠輪廓。用 `11:11`、`20:08` 與 `23:59:59` 檢查對齊和最大寬度。
 
-## 6. 樣式三：紙感大字 `paper`
+## 6. 舊 Safari 的相容契約
 
-### 視覺
+### 6.1 目標與證據
 
-- 淺色：背景 `#F2EEE5`，主文字 `#252B30`，次文字 `#5D6267`。
-- 深色：背景 `#171A1D`，主文字 `#EAE4D9`，次文字 `#BFB8AE`，假日強調 `#FF9E8F`。
-- 不使用紙張照片或噪點濾鏡；紙感由米白底、留白與大字排版表現，不用卡片、框線或陰影。
-- 主時間置中，日期／星期在時間上方，秒數在主時間右側；不使用左右雙欄。
-- 橫向主時間 34.5vw、秒數 27vw；直向主時間 34vw、秒數 24vw。
-- 短 landscape（高度 ≤600px）主時間 60vh、秒數 46vh；日期字級同步以 `vh` 上限收回避免重疊。
-- 日期保持使用者選定格式，不擅自改為大日數或月份英文縮寫。
-- 秒數在分鐘右側以主字約 30% 呈現；12 小時制標籤放主時間上方的小標籤位置。
-- 日期／星期都關閉時移除上方列與預留空間，時間回到中央布局。
-- 深色色盤為背景 `#171A1D`、主文字 `#EAE4D9`；夜間即使選淺色也使用深色，不要在低亮度時仍留下大面積米白背景。
+兩款新增樣式的顯示端以 iPad mini 1、iOS 9.3.5／9.3.6 Safari 為實機驗收目標；裝置現有系統版本須實際記錄。桌面 WebKit、Chrome 裝置模擬及縮成 1024×768 不算相容驗收。
 
-### 動作與相容
+Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 文件已列 CSS 變數，因此不要籠統寫成「全部 iOS 9 都沒有 CSS 變數」；本規格仍要求兩款相容樣式具有普通 CSS 值，是為了簡化回退並涵蓋特性不完整的環境。
 
-- 完全靜態布局，不轉場日期、不翻紙、不使用 backdrop blur。
-- 舊 Safari 使用 inline-block 或既有帶前綴 Flex 回退；不要以 Grid 或 flex gap 作唯一排版方式。
-- 色彩均需有普通 CSS 值；不依賴 CSS 變數才能得到背景與字色。
-
-### 驗收特例
-
-英文 Wednesday、`yyyy-mm-dd`、只開星期、日期與星期全關，以及直向／短橫向有長訊息時都不得溢出或與時間重疊。
-
-## 7. 舊 Safari 的相容契約
-
-### 7.1 目標與證據
-
-三款新增樣式的顯示端以 iPad mini 1、iOS 9.3.5／9.3.6 Safari 為實機驗收目標；裝置現有系統版本須實際記錄。桌面 WebKit、Chrome 裝置模擬及縮成 1024×768 不算相容驗收。
-
-Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 文件已列 CSS 變數，因此不要籠統寫成「全部 iOS 9 都沒有 CSS 變數」；本規格仍要求三款相容樣式具有普通 CSS 值，是為了簡化回退並涵蓋特性不完整的環境。
-
-### 7.2 必要技術限制
+### 6.2 必要技術限制
 
 - 所有會送到舊 Safari 且直接解析的 JavaScript 保持 ES5；包括 inline script、共享檔與預覽入口。不能把 `let`、箭頭函式、class、optional chaining 藏在功能判斷內，舊瀏覽器仍會先解析失敗。
 - 不引入新框架、動畫套件、polyfill 集合或字型下載依賴。優先沿用既有工具及 DOM 操作方式。
-- 不以 CSS Grid、gap、clamp/min/max、dvh、CSS custom properties、backdrop filter、mask、clip-path、conic-gradient 作三款相容樣式的唯一呈現路徑。
+- 不以 CSS Grid、gap、clamp/min/max、dvh、CSS custom properties、backdrop filter、mask、clip-path、conic-gradient 作兩款相容樣式的唯一呈現路徑。
 - 使用普通色值、px／百分比／vw／vh、媒體查詢、inline-block、絕對定位，或現有已測的帶前綴 Flex。需要 transform 時同時提供必要前綴。
 - 不假定 Promise、fetch、ResizeObserver、IntersectionObserver、FontFace、CSS.supports 或 matchMedia 一定存在；使用前檢查，核心時計不能依賴它們。
 - CSS 基礎規則必須寫在 `@supports` 外。即使瀏覽器不理解整個 feature query，也要能顯示基礎畫面。
 - 以實際內容區寬高處理旋轉與工具列；resize 去抖 100–150ms，不在每次 tick 排版量測。
 - 不使用 Service Worker 作為舊 iPad 的啟動前提，也不宣稱此工作提供 iOS 9 斷網冷啟動或背景／鎖屏鬧鐘。
 
-### 7.3 能力判斷
+### 6.3 能力判斷
 
-- 三款相容樣式沒有現代效果降級分支，也沒有 `effectiveStyle` 或簡化版 ID；不支援 optional 效果時仍使用同一套靜態 DOM 與 CSS。
-- Server 儲存的是四個合法 ID 之一；本機不會把樣式改寫成另一個名稱。
+- 兩款相容樣式沒有現代效果降級分支，也沒有 `effectiveStyle` 或簡化版 ID；不支援 optional 效果時仍使用同一套靜態 DOM 與 CSS。
+- Server 儲存的是三個合法 ID 之一；本機不會把樣式改寫成另一個名稱。
 - 偵測結果不作為裝置已驗收的證明；使用者有特殊低階現代設備時可直接選三款輕量樣式。
 
-## 8. 設定與資料契約
+## 7. 設定與資料契約
 
 ```json
 {
@@ -203,20 +177,20 @@ Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 
 }
 ```
 
-- `clock_style` 白名單只有 `classic`、`flip`、`segment`、`paper`；新設定寫入未知字串、`glass`、`orbit`、null、物件、陣列或非字串回 400，不默默存成 classic。
+- `clock_style` 白名單只有 `classic`、`flip`、`segment`；新設定寫入未知字串、`glass`、`orbit`、`paper`、null、物件、陣列或非字串回 400，不默默存成 classic。
 - `clock_theme` 白名單為 `auto`、`dark`、`light`；缺欄位使用 `auto`，未知型別或值回 400。`auto` 由顯示端依 style 解析；群組／裝置 override 可省略表示繼承，明確值則覆寫。
 - 舊資料缺欄位時使用 `classic`。既有安裝升級後畫面保持目前樣式。
-- 已移除的 `glass`／`orbit` 是明確 legacy 值，不是 additive compatibility：global／owner 設定讀取、legacy `/api/backup` 匯入、portable backup validation、updater `migrated_settings` 與群組／裝置 stored overrides 會映射為 `classic`；其他設定值（包含 `clock_theme`）保留，讀取遷移不重寫檔案。
-- 群組及裝置 override 缺少欄位表示「繼承」，不得補 `classic`；原本明確選 `glass`／`orbit` 的 override 遷移為明確 `classic`，維持來源為 group／device。
-- 新 API 寫入 `glass`／`orbit` 一律拒絕；不重新接受已移除值。
+- 已移除的 `glass`／`orbit`／`paper` 是明確 legacy 值，不是 additive compatibility：global／owner 設定讀取、legacy `/api/backup` 匯入、portable backup validation、updater `migrated_settings` 與群組／裝置 stored overrides 會映射為 `classic`；其他設定值（包含 `clock_theme`）保留，讀取遷移不重寫檔案。
+- 群組及裝置 override 缺少欄位表示「繼承」，不得補 `classic`；原本明確選 `glass`／`orbit`／`paper` 的 override 遷移為明確 `classic`，維持來源為 group／device。
+- 新 API 寫入 `glass`／`orbit`／`paper` 一律拒絕；不重新接受已移除值。
 - 優先順序為「單台裝置 → 群組 → 目前 owner 的全體預設」。恢復繼承應刪除 override 欄位，不是寫回 classic。
-- 群組／裝置設定提供同一組四款選單與「繼承」選項；標示伺服器生效值與來源。後台不需再複製四張大型預覽卡。
+- 群組／裝置設定提供同一組三款選單與「繼承」選項；標示伺服器生效值與來源。後台不需再複製三張大型預覽卡。
 - 權限、revision、ETag、裝置租約與 scope 不變；`clock_style`／`clock_theme` 必須參與原本顯示設定 revision 的計算。
 - API 儲存、重新啟動、備份、還原、跨 owner 隔離與更新檢查均須保留此欄位。
 - 冷啟動讀到損壞資料時遵循既有整包設定驗證／復原政策，不因新樣式私自放寬。瀏覽器最後防線可回退 classic，但不可把整包壞資料當成功儲存。
 - 舊客戶端收到新欄位的相容性必須測試；不要為純視覺功能任意增加裝置 schema 版本。若現有嚴格白名單造成舊頁拒收，沿用現有快取更新／重新載入機制並在發行說明寫明，不私自改租約或授權契約。
 
-## 9. 繪製結構與故障保護
+## 8. 繪製結構與故障保護
 
 `renderClock()` 直接寫入 `#time` 的 `textContent`，`WebClockCore` 共用一個每秒計時器；`templates/index.html` 另有設定驗證與套用。實作必須考慮這些既有行為，不能直接把翻頁 DOM 塞進 `#time` 後又被每秒清掉。
 
@@ -226,22 +200,22 @@ Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 
 2. `#time` 保持可用的完整文字，作為基本顯示與無障礙來源。
 3. 需要數字段或面板的款式，在獨立的裝飾容器 `#clock-style-surface` 呈現；使用同一份時間資料，不重新取時間。
 4. 只有樣式容器成功建立後才切換到增強呈現；裝飾節點 `aria-hidden=true`。可視主時間只有一份，不能疊字。
-5. 日期、星期、訊息 DOM 與連線／鬧鐘處理儘量重用；不要複製整張頁面成四個模板。
+5. 日期、星期、訊息 DOM 與連線／鬧鐘處理儘量重用；不要複製整張頁面成三個模板。
 6. 初次載入、腳本 404、執行例外或樣式 ID 不可辨識時，要恢復基本時間可見。不能只讓計時器繼續跑，卻把 fallback 文字永久藏起來。
 7. 樣式切換不能重建 WebClockCore、清除音訊啟用狀態、重新配對裝置或重新取得私人內容。
 8. style renderer 是小型明確分派；不建立插件管理系統、任意 HTML 主題或泛用動畫引擎。
 
 載入順序必須讓核心時計先啟動，再載入 optional 樣式資源；optional 資源失敗不影響 `#time` 與每秒走時。
 
-## 10. 實作位置
+## 9. 實作位置
 
 | 位置 | 工作 |
 | --- | --- |
-| `templates/admin.html` | 樣式分頁、四張 radio 卡片、單一預覽、草稿及儲存狀態 |
+| `templates/admin.html` | 樣式分頁、三張 radio 卡片、單一預覽、草稿及儲存狀態 |
 | `static/management.css` | 樣式卡、預覽容器與管理頁布局 |
 | 管理設定保存程式 | 欄位、草稿、revision、序列化保存與衝突 |
 | `static/clock.js` | 單一時間資料、`clockTheme()` 與安全樣式繪製入口，保持核心 fallback |
-| `static/clock-styles.js`、`static/clock-styles.css` | 三款 renderer、四款布局、夜間／亮度／短 landscape |
+| `static/clock-styles.js`、`static/clock-styles.css` | 兩款 renderer、三款布局、夜間／亮度／短 landscape |
 | `static/clock.css` | classic 既有樣式與共用日期／訊息結構 |
 | `templates/index.html` | `defaultDisplaySettings`、normalize、applySettings、backdrop、資源載入順序 |
 | `templates/clock_preview.html` | 純預覽頁，與正式頁共用 renderer／CSS；初始 theme body class |
@@ -250,24 +224,24 @@ Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 
 | `webclock/services/display_settings.py` | `clock_style`／`clock_theme` 欄位白名單、enum 驗證、`effective_clock_theme` 與 retired style 遷移 helper |
 | `webclock/services/device_access_service.py` | stored group／device override 讀取遷移，保留繼承 |
 | `webclock/services/portable_backup.py` | portable backup validation 的 retired style 遷移 |
-| `static/device-settings.js` | 四款樣式、三種色彩模式、繼承／明確值與來源顯示 |
+| `static/device-settings.js` | 三款樣式、三種色彩模式、繼承／明確值與來源顯示 |
 | `scripts/update_clock.py` | defaults、snapshot 白名單、migration 與精確健康檢查 |
 | `webclock/translations/` | 繁中／英文／日文名稱、說明、錯誤與無障礙文字 |
 | `sw.js`、`tools/build_release.py` | 新資源快取版本與離線 ZIP 包含清單；不得漏打包 |
 | `tests/` | 顯示、設定驗證、繼承、migration、備份及真實瀏覽器回歸 |
 | `doc/guides/`、`doc/api/` | 完成後描述現有功能與相容性；歷史截圖另標示 |
 
-## 11. 測試與完成條件
+## 10. 測試與完成條件
 
-### 11.1 自動化
+### 10.1 自動化
 
-- 四個合法 ID 與三種 `clock_theme` 的 API 往返；缺值預設；非法型別與值拒絕；`glass`／`orbit` 新寫入拒絕。
+- 三個合法 ID 與三種 `clock_theme` 的 API 往返；缺值預設；非法型別與值拒絕；`glass`／`orbit`／`paper` 新寫入拒絕。
 - 舊設定補 classic、已選其他樣式保持、retired style 映射 classic、重複 migration 不寫檔、失敗回退保留資料與授權。
 - 全體→群組→裝置繼承、刪除 override 恢復繼承、移組重新計算、owner 隔離與 revision 衝突。
 - 既有版備份與新欄位備份匯入，啟動後值一致；legacy `glass`／`orbit` 備份映射 classic 且保留其他值。
 - 12／24 小時、秒數開關、四種日期格式、日期／星期獨立開關及三語。資料邏輯可全組合測試，截圖採代表性組合。
-- 翻頁跨小時不跳位、七段字形 0–9 正確、紙感上方列隱藏。
-- 四款 × 深色／淺色實際頁與 preview 的 body class、背景、文字／面板／段色一致；深淺切換時幾何不變。夜間即使選淺色也強制深色。
+- 翻頁跨小時不跳位、七段字形 0–9 正確。
+- 三款 × 深色／淺色實際頁與 preview 的 body class、背景、文字／面板／段色一致；深淺切換時幾何不變。夜間即使選淺色也強制深色。
 - 時區切換、跨午夜、系統校時跳躍、頁面休眠後恢復；所有外觀使用同一個時間來源。
 - 未選樣式、CSS／JS 載入失敗、localStorage 拒絕或 renderer 拋錯時基本時計仍可見且繼續走時。
 - 切換 20 次不累加 timer、listener 或 DOM；維持一個核心時計計時器。
@@ -275,20 +249,20 @@ Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 
 - 以現有 ES5 檢查涵蓋所有時鐘相關新 JS 與 inline script；檢查新資源存在於 release／離線 ZIP。
 - 黑畫面、夜間與鬧鐘紅邊、觸控關閉、租約失效清除私人內容的回歸必須保留。
 
-### 11.2 瀏覽器與尺寸
+### 10.2 瀏覽器與尺寸
 
 | 環境 | 驗收內容 |
 | --- | --- |
-| iPad mini 1 實機，記錄 iOS 版本 | flip／segment／paper，全套基本功能，Safari 分頁與主畫面入口 |
-| 現行 Safari／Chrome／Firefox | 四款、減少動態、鍵盤與螢幕閱讀器 |
+| iPad mini 1 實機，記錄 iOS 版本 | flip／segment，全套基本功能，Safari 分頁與主畫面入口 |
+| 現行 Safari／Chrome／Firefox | 三款、減少動態、鍵盤與螢幕閱讀器 |
 | 1024×768、768×1024 | 舊 iPad 核心布局，包含工具列與旋轉 |
 | 1024×650 | 瀏覽器工具列壓縮高度時的正式頁尺度 |
 | 390×844、844×390 | 手機與窄高／矮寬畫面 |
 | 1920×1080 | 大螢幕字級、留白及訊息長文 |
 
-每款至少保存橫向有訊息、橫向無訊息、直向有訊息、秒數開啟、長日期／英文星期、夜間代表截圖；classic 做既有基準對照。每個主要矩陣另存 actual vs preview 同條件並排，以及 actual classic vs actual style 同條件比較。四款另存深色／淺色 actual 對照與該主題的 actual vs preview。
+每款至少保存橫向有訊息、橫向無訊息、直向有訊息、秒數開啟、長日期／英文星期、夜間代表截圖；classic 做既有基準對照。每個主要矩陣另存 actual vs preview 同條件並排，以及 actual classic vs actual style 同條件比較。三款另存深色／淺色 actual 對照與該主題的 actual vs preview。
 
-### 11.3 舊 iPad 實機步驟
+### 10.3 舊 iPad 實機步驟
 
 1. 確認現有部署網址及 TLS 可載入，再記錄 iPad 型號、iOS、Safari／主畫面入口、方向與 viewport。
 2. 三款分別檢查秒數開關、12／24 小時、四種日期格式、日期與星期獨立隱藏。
@@ -299,21 +273,21 @@ Apple 的初代 iPad mini 規格為 1024×768。WebKit 的 Safari 9.1／iOS 9.3 
 7. 每款至少連續運行 30 分鐘，再以最重的相容款運行至少 8 小時。記錄重載、異常、操作反應及可取得的資源觀察，不用主觀「流暢」代替結果。
 8. 音訊需實際手勢啟用後測試；樣式相容不等於背景／鎖屏響鈴保證。
 
-沒有實機時可完成程式與桌面回歸，但交付狀態必須寫「相容設計完成，iPad mini 1 實機待驗收」，不能宣布三款已相容。
+沒有實機時可完成程式與桌面回歸，但交付狀態必須寫「相容設計完成，iPad mini 1 實機待驗收」，不能宣布兩款新樣式已相容。
 
-## 12. 執行順序與交接規則
+## 11. 執行順序與交接規則
 
 1. **設定與基礎顯示：**`clock_style`／`clock_theme`、migration、繼承與驗證；classic 深色前後畫面一致。
 2. **樣式分頁：**radio 卡片、單一預覽、草稿及保存；先使用 classic 驗證整條資料流。
-3. **三款相容樣式：**paper、flip、segment；每款完成即驗證秒數、日期、訊息、方向及深淺色盤。
+3. **兩款相容樣式：**flip、segment；每款完成即驗證秒數、日期、訊息、方向及深淺色盤。
 4. **色彩模式：**`clock_theme` 設定、admin 控制、preview 與 actual 的 body class、夜間強制深色與所有回歸。
 5. **整合驗收：**完整自動化、打包、更新演練、實際瀏覽器與 iPad 測試，最後補文件及發行紀錄。
 
 若由多個 agent 執行，使用獨立 worktree；指定一人負責共用設定契約、clock.js、index 模板、sw.js 與整合。其他工作依已確認的 renderer 介面交付，避免多人同時改同一批全域設定與 DOM。開工前確認 main 已包含設定 migration 修正，不從只含 v1.4.0 的狀態重新引入 additive compatibility。
 
-交付內容須含：修改清單、四款截圖、資料保存與繼承測試、actual vs preview 證據、iPad 實機結果或待驗收註記。此規格本身不授權額外發布版本；實作與發布依當次任務指示進行。
+交付內容須含：修改清單、三款截圖、資料保存與繼承測試、actual vs preview 證據、iPad 實機結果或待驗收註記。此規格本身不授權額外發布版本；實作與發布依當次任務指示進行。
 
-## 13. 參考資料
+## 12. 參考資料
 
 - Apple，初代 iPad mini 規格：https://support.apple.com/en-ie/111978
 - WebKit，Safari 9.1／iOS 9.3 功能：https://webkit.org/blog/6008/new-web-features-in-safari/

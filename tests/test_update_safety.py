@@ -441,13 +441,12 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(updater.migrated_settings(migrated), migrated)
         for theme in ('auto', 'dark', 'light'):
             self.assertEqual(updater.migrated_settings(dict(old, clock_theme=theme))['clock_theme'], theme)
-        self.assertEqual(updater.migrated_settings(dict(old, clock_style='paper'))['clock_style'], 'paper')
-        for retired in ('glass', 'orbit'):
+        for retired in ('glass', 'orbit', 'paper'):
             mapped = updater.migrated_settings(dict(old, clock_style=retired))
             self.assertEqual(mapped['clock_style'], 'classic')
             self.assertEqual(mapped['brightness'], 35)
         self.assertTrue(updater.settings_match(dict(old, clock_style='paper'),
-                                               dict(old, clock_style='paper')))
+                                               dict(old, clock_style='classic')))
         self.assertTrue(updater.settings_match(dict(old, clock_style='glass'),
                                                dict(old, clock_style='classic')))
         self.assertFalse(updater.settings_match(dict(old, clock_style='paper'),

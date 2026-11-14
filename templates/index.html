@@ -600,7 +600,7 @@
                 base.message_transition = candidate.message_transition;
             }
             if (owns(candidate, 'clock_style')) {
-                if (['classic', 'flip', 'segment', 'paper'].indexOf(candidate.clock_style) < 0) return null;
+                if (['classic', 'flip', 'segment'].indexOf(candidate.clock_style) < 0) return null;
                 base.clock_style = candidate.clock_style;
             }
             if (owns(candidate, 'clock_theme')) {

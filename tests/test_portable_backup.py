@@ -37,7 +37,7 @@ class PortableBackupTest(unittest.TestCase):
         save_json(self.source_notes, [{'id': 7, 'text': 'Primary owner reminder'}])
         save_json(self.source / 'owners' / self.member / 'manual_notes.json',
                   [{'id': 3, 'text': 'Private member reminder'}])
-        save_json(self.source / 'settings.json', {'brightness': 0, 'language': 'en', 'clock_style': 'paper'})
+        save_json(self.source / 'settings.json', {'brightness': 0, 'language': 'en', 'clock_style': 'segment'})
         save_json(self.source / 'owners' / self.member / 'settings.json', {'brightness': 71})
         self.calendar = {'sources': [{'id': 'work', 'name': 'Work', 'provider': 'ics',
             'url': 'https://example.invalid/private-subscription-token', 'display_enabled': True}],
@@ -60,17 +60,17 @@ class PortableBackupTest(unittest.TestCase):
 
     def test_legacy_retired_clock_styles_are_migrated_on_restore(self):
         payload = copy.deepcopy(self.payload)
-        payload['files']['settings.json']['clock_style'] = 'glass'
+        payload['files']['settings.json']['clock_style'] = 'paper'
         access = payload['files']['device-access.json']
         access['groups'][self.group]['display_overrides'] = {'clock_style': 'orbit', 'brightness': 33}
-        access['devices'][self.identity['device_id']]['display_overrides'] = {'clock_style': 'glass', 'brightness': 44}
+        access['devices'][self.identity['device_id']]['display_overrides'] = {'clock_style': 'paper', 'brightness': 44}
         target = self.root / 'legacy-retired-style'
         target.mkdir()
         notes = self.root / 'legacy-retired-notes.json'
         result = backup.restore(payload, target, notes)
         self.assertTrue(result['preserve_devices'])
         stored = load_json(target / 'settings.json', {})
-        self.assertEqual(stored['clock_style'], 'glass')
+        self.assertEqual(stored['clock_style'], 'paper')
         self.assertEqual(migrate_clock_style(stored)['clock_style'], 'classic')
         self.assertEqual(migrate_clock_style(stored)['brightness'], 0)
         auth = AuthService(target / 'auth.json')
@@ -133,7 +133,7 @@ class PortableBackupTest(unittest.TestCase):
                           result['groups'], result['devices']), (2, 1, 2, 1, 1))
         self.assertEqual(load_json(self.notes, []), load_json(self.source_notes, []))
         self.assertEqual(load_json(self.target / 'calendar.json', {}), self.calendar)
-        self.assertEqual(load_json(self.target / 'settings.json', {})['clock_style'], 'paper')
+        self.assertEqual(load_json(self.target / 'settings.json', {})['clock_style'], 'segment')
         self.assertEqual(load_json(self.target / 'options.json', {}),
                          {'language': 'zh-TW', 'display_port': 5000})
         self.assertEqual(load_json(self.target / 'owners' / self.member / 'manual_notes.json', []),

@@ -26,7 +26,7 @@ managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devic
 
 群組 GET／列表／保存回應附 `revision`，涵蓋群組內容與目前有效顯示設定。PATCH 可加 `revision`；版本不同回 409 `group_settings_changed`，不寫入。全體設定使用 `GET /api/control` 取得 `{settings, revision}`，POST 既有設定物件並帶 `If-Match: "<revision>"`；不符回 409 `settings_changed`，成功回最新 `settings`／`revision`。管理介面固定帶版本，同頁全體設定保存依序送出；未帶版本的舊維護 CLI／API 保留無條件更新相容行為。這些不透明雜湊是目前狀態的比較值，不是變更歷史。
 
-顯示設定另含 `clock_style`，白名單為 `classic`、`flip`、`segment`、`paper`。缺欄位時使用 `classic`；寫入未知字串、`null`、物件、陣列、布林或數字回 400，不默默改存 `classic`。群組與裝置的 `display_overrides` 可省略此欄位表示繼承；還原繼承是刪除覆寫，不是寫回 `classic`。另有 `clock_theme`，白名單為 `auto`、`dark`、`light`；`auto` 依樣式使用既有預設（classic／flip／segment 深色、paper 淺色），明確值套用到所有樣式。未知值回 400，缺欄位時使用 `auto`。兩欄都參與既有顯示設定 revision、備份與還原，並依「裝置 → 群組 → 全體預設」計算。
+顯示設定另含 `clock_style`，白名單為 `classic`、`flip`、`segment`。缺欄位時使用 `classic`；寫入未知字串、`null`、物件、陣列、布林或數字回 400，不默默改存 `classic`。已移除的 `glass`、`orbit`、`paper` 只作為舊資料與備份的遷移來源，讀取時映射 `classic`，新寫入回 400。群組與裝置的 `display_overrides` 可省略此欄位表示繼承；還原繼承是刪除覆寫，不是寫回 `classic`。另有 `clock_theme`，白名單為 `auto`、`dark`、`light`；`auto` 依樣式使用既有預設（三款皆深色），明確值套用到所有樣式。未知值回 400，缺欄位時使用 `auto`。兩欄都參與既有顯示設定 revision、備份與還原，並依「裝置 → 群組 → 全體預設」計算。
 
 `calendar_targets` 是 `{source_id, uid, scope, recurrence_id}` 物件的陣列，可選 `title` 作顯示標籤；`scope` 為 `series` 或 `occurrence`。系列及非週期行程的 `recurrence_id` 為空字串；週期單次使用原始 `RECURRENCE-ID` 追蹤改期。整個來源仍以 `calendar_source_ids` 選取，沒有排除例外時，正規化會移除被來源或系列涵蓋的重複選取；有排除例外時保留必要的個別覆寫；來源／系列全選包括未來行程。舊資料缺少 `calendar_targets` 或值為 `[]` 均相容；PATCH 未傳的清單保持原值。已選目標不因超出目錄的 366 天範圍而清除。
 

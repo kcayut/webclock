@@ -209,8 +209,8 @@ SETTINGS_DEFAULTS = {
     'message_duration': 5, 'message_transition': 'fade', 'clock_style': 'classic',
     'clock_theme': 'auto',
 }
-CLOCK_STYLES = ('classic', 'flip', 'segment', 'paper')
-RETIRED_CLOCK_STYLES = ('glass', 'orbit')
+CLOCK_STYLES = ('classic', 'flip', 'segment')
+RETIRED_CLOCK_STYLES = ('glass', 'orbit', 'paper')
 CLOCK_THEMES = ('auto', 'dark', 'light')
 
 

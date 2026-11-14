@@ -6,8 +6,7 @@
 function clockTheme(settings) {
     settings = settings || {};
     var theme = settings.clock_theme;
-    if (theme === 'dark' || theme === 'light') return theme;
-    return settings.clock_style === 'paper' ? 'light' : 'dark';
+    return theme === 'light' ? 'light' : 'dark';
 }
 
 function clockTimeData(utcMs, timezoneOffset, weekDays, timeFormat, language, settings) {
