@@ -79,7 +79,7 @@
 | 樣式 | 深色 | 淺色 |
 | --- | --- | --- |
 | classic | 黑底 `#000000`、白字 | 米白底 `#F4F1E8`、深字 `#1F2328` |
-| flip | 背景 `#101214`、面板 `#24282D`、數字 `#F5F2EA` | 背景 `#F4F1E8`、白色面板、數字 `#1F2328`、秒數 `#9A5B13` |
+| flip | 背景 `#101214`、面板 `#24282D`、數字 `#F5F2EA` | 背景 `#E6DFD1`、白色面板、邊框 `#B7AC9A`、數字／秒數 `#101418`、日期 `#2F3A33` |
 | segment | 背景 `#070B09`、亮段 `#FFD166`、暗段 `#263028` | 背景 `#F4F1E8`、亮段 `#1F2328`（黑）、暗段 `#D8D2C4`、訊息時間 `#1F2328` |
 
 深淺只改色盤，不改時間 DOM、字級、幾何、日期／訊息布局或 90% classic 門檻。
@@ -101,6 +101,7 @@
 
 - 三款 × 深色／淺色：實際 `/` 與 `/admin/preview` 的 body class、背景色、時間色、flip 面板色、segment 亮段色完全一致，時間 font-size／框高差 ≤1px。
 - 深色與淺色的 backdrop、時間色、面板／段色確實不同；不是只換 class。
+- 淺色翻頁鐘使用較深的米灰背景、較強面板邊框／底部厚度、黑色冒號與黑色秒數；實際頁與 preview 的 computed 色彩一致。
 - 管理頁色彩模式切換會更新 `data-theme-mode` 與三張縮圖：`auto` 時 flip／segment 都深色；`light`／`dark` 時三張同步切換，並以 opacity 過場。
 - 夜間即使 `clock_theme=light`，實際頁 body 為 `clock-theme-dark`，segment 背景 `rgb(7, 11, 9)`。
 - 截圖：`theme-pair-<style>.png`（actual 深色左、淺色右）與 `theme-actual-vs-preview-<style>-<theme>.png`（actual 左、preview 右），共 15 張。

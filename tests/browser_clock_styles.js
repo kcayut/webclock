@@ -336,11 +336,14 @@ async function main() {
                 'var backdrop = document.getElementById("clock-backdrop"); ' +
                 'var time = document.querySelector(' + JSON.stringify(TIME_SELECTORS[style]) + '); ' +
                 'var panel = document.querySelector(".flip-panel"); ' +
+                'var dot = document.querySelector(".flip-dot"); ' +
                 'var segment = document.querySelector(".segment.on"); ' +
                 'return {body: document.body.className, ' +
                 'backdrop: getComputedStyle(backdrop).backgroundColor, ' +
                 'color: getComputedStyle(time).color, ' +
                 'panel: panel ? getComputedStyle(panel).backgroundColor : null, ' +
+                'panelBorder: panel ? getComputedStyle(panel).borderTopColor : null, ' +
+                'dot: dot ? getComputedStyle(dot).backgroundColor : null, ' +
                 'segment: segment ? getComputedStyle(segment).backgroundColor : null}; }())');
         }
 
@@ -481,6 +484,12 @@ async function main() {
                     assert.equal(actualState.segment, 'rgb(31, 35, 40)',
                         'light seven-segment digits use the black palette');
                 }
+                if (style === 'flip' && theme === 'light') {
+                    assert.equal(actualState.dot, 'rgb(16, 20, 24)',
+                        'light flip colon uses the dark ink');
+                    assert.equal(actualState.panelBorder, 'rgb(183, 172, 154)',
+                        'light flip panels keep a visible edge');
+                }
                 await navigate(BASE + '/admin/preview?style=' + style + '&theme=' + theme +
                     '&sample=1&show_seconds=0');
                 await waitForStyle(style);
@@ -497,6 +506,10 @@ async function main() {
                     style + ' ' + theme + ': preview and actual time color differ');
                 assert.equal(previewState.panel, actualState.panel,
                     style + ' ' + theme + ': preview and actual panel color differ');
+                assert.equal(previewState.panelBorder, actualState.panelBorder,
+                    style + ' ' + theme + ': preview and actual panel border differ');
+                assert.equal(previewState.dot, actualState.dot,
+                    style + ' ' + theme + ': preview and actual flip colon differ');
                 assert.equal(previewState.segment, actualState.segment,
                     style + ' ' + theme + ': preview and actual segment color differ');
                 assert.ok(Math.abs(actual.time.height - preview.time.height) <= 1,

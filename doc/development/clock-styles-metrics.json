@@ -2716,6 +2716,8 @@
           "backdrop": "rgb(0, 0, 0)",
           "color": "rgb(255, 255, 255)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": null
         },
         "previewState": {
@@ -2723,6 +2725,8 @@
           "backdrop": "rgb(0, 0, 0)",
           "color": "rgb(255, 255, 255)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": null
         }
       },
@@ -2818,6 +2822,8 @@
           "backdrop": "rgb(244, 241, 232)",
           "color": "rgb(31, 35, 40)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": null
         },
         "previewState": {
@@ -2825,6 +2831,8 @@
           "backdrop": "rgb(244, 241, 232)",
           "color": "rgb(31, 35, 40)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": null
         }
       }
@@ -2922,6 +2930,8 @@
           "backdrop": "rgb(16, 18, 20)",
           "color": "rgb(245, 242, 234)",
           "panel": "rgb(36, 40, 45)",
+          "panelBorder": "rgb(48, 53, 59)",
+          "dot": "rgb(142, 148, 158)",
           "segment": null
         },
         "previewState": {
@@ -2929,6 +2939,8 @@
           "backdrop": "rgb(16, 18, 20)",
           "color": "rgb(245, 242, 234)",
           "panel": "rgb(36, 40, 45)",
+          "panelBorder": "rgb(48, 53, 59)",
+          "dot": "rgb(142, 148, 158)",
           "segment": null
         }
       },
@@ -2955,7 +2967,7 @@
             "y": 472.8,
             "width": 983,
             "height": 68.2,
-            "inkHeight": 46,
+            "inkHeight": 46.6,
             "fontSize": "50.176px"
           },
           "list": {
@@ -2998,7 +3010,7 @@
             "y": 472.8,
             "width": 983,
             "height": 68.2,
-            "inkHeight": 46,
+            "inkHeight": 46.6,
             "fontSize": "50.176px"
           },
           "list": {
@@ -3021,16 +3033,20 @@
         },
         "actualState": {
           "body": "clock-style-flip clock-style-enhanced clock-theme-light has-events",
-          "backdrop": "rgb(244, 241, 232)",
-          "color": "rgb(31, 35, 40)",
+          "backdrop": "rgb(230, 223, 209)",
+          "color": "rgb(16, 20, 24)",
           "panel": "rgb(255, 255, 255)",
+          "panelBorder": "rgb(183, 172, 154)",
+          "dot": "rgb(16, 20, 24)",
           "segment": null
         },
         "previewState": {
           "body": "clock-preview clock-theme-light has-events clock-style-flip clock-style-enhanced",
-          "backdrop": "rgb(244, 241, 232)",
-          "color": "rgb(31, 35, 40)",
+          "backdrop": "rgb(230, 223, 209)",
+          "color": "rgb(16, 20, 24)",
           "panel": "rgb(255, 255, 255)",
+          "panelBorder": "rgb(183, 172, 154)",
+          "dot": "rgb(16, 20, 24)",
           "segment": null
         }
       }
@@ -3128,6 +3144,8 @@
           "backdrop": "rgb(7, 11, 9)",
           "color": "rgb(215, 223, 217)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": "rgb(255, 209, 102)"
         },
         "previewState": {
@@ -3135,6 +3153,8 @@
           "backdrop": "rgb(7, 11, 9)",
           "color": "rgb(215, 223, 217)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": "rgb(255, 209, 102)"
         }
       },
@@ -3230,6 +3250,8 @@
           "backdrop": "rgb(244, 241, 232)",
           "color": "rgb(47, 58, 51)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": "rgb(31, 35, 40)"
         },
         "previewState": {
@@ -3237,6 +3259,8 @@
           "backdrop": "rgb(244, 241, 232)",
           "color": "rgb(47, 58, 51)",
           "panel": null,
+          "panelBorder": null,
+          "dot": null,
           "segment": "rgb(31, 35, 40)"
         }
       }

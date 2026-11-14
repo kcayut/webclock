@@ -472,42 +472,43 @@ body.clock-theme-light:not(.clock-style-enhanced) #connection-toggle {
 }
 
 body.clock-theme-light.clock-style-flip {
-    color: #1F2328;
+    color: #101418;
 }
 
 body.clock-theme-light.clock-style-flip #clock-backdrop {
-    background: #F4F1E8;
+    background: #E6DFD1;
 }
 
 body.clock-theme-light.clock-style-flip .flip-panel {
     background: #FFFFFF;
-    border-color: #E2DCD2;
-    box-shadow: 0 3px 0 #D8D0C3, 0 14px 30px rgba(31, 35, 40, 0.14);
+    border-color: #B7AC9A;
+    box-shadow: 0 4px 0 #C6BBA9, 0 16px 32px rgba(31, 35, 40, 0.18);
 }
 
 body.clock-theme-light.clock-style-flip .flip-panel:after {
-    background: #EAE3D8;
+    background: #C9BFAF;
 }
 
 body.clock-theme-light.clock-style-flip .flip-digits {
-    color: #1F2328;
+    color: #101418;
 }
 
 body.clock-theme-light.clock-style-flip .flip-dot {
-    background: #7A828C;
+    background: #101418;
 }
 
 body.clock-theme-light.clock-style-flip .flip-seconds {
     background: #FFFFFF;
-    border-color: #E2DCD2;
-    box-shadow: 0 2px 0 #D8D0C3;
-    color: #9A5B13;
+    border-color: #B7AC9A;
+    box-shadow: 0 3px 0 #C6BBA9;
+    color: #101418;
 }
 
 body.clock-theme-light.clock-style-flip .clock-period,
 body.clock-theme-light.clock-style-flip #date-info,
 body.clock-theme-light.clock-style-flip #day-part {
-    color: #4B5563;
+    color: #2F3A33;
+    font-weight: 600;
 }
 
 body.clock-theme-light.clock-style-flip #day-part.holiday-highlight {
@@ -515,15 +516,16 @@ body.clock-theme-light.clock-style-flip #day-part.holiday-highlight {
 }
 
 body.clock-theme-light.clock-style-flip #list-container {
-    background: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid #D5CBBB;
 }
 
 body.clock-theme-light.clock-style-flip .event-row {
-    color: #4B5563;
+    color: #2F3A33;
 }
 
 body.clock-theme-light.clock-style-flip .event-time {
-    color: #9A5B13;
+    color: #101418;
 }
 
 body.clock-theme-light.clock-style-segment {
