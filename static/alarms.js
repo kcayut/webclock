@@ -8,6 +8,7 @@
     var source = '', queue = [], active = [], handled = {}, dismissed = [];
     var enabled = 0, confirmed = false;
     var baseTime = null, baseElapsedTime = 0, requestNumber = 0, lastTouch = -1000, lastTone = -1600;
+    var RING_LIMIT = 60 * 60 * 1000;
 
     function text(node, value) {
         if (node.textContent !== value) node.textContent = value;
@@ -56,6 +57,27 @@
         confirmed = false;
         document.body.classList.remove('alarm-ringing');
         if (window.AlarmAudio) window.AlarmAudio.stop();
+        render();
+    }
+    function expireRings(instant) {
+        if (!active.length) return;
+        var expired = [], remaining = [];
+        for (var i = 0; i < active.length; i++) {
+            if (instant - active[i].starts_at >= RING_LIMIT) {
+                expired.push(active[i]);
+                handled[active[i].occurrence_id] = instant;
+            } else {
+                remaining.push(active[i]);
+            }
+        }
+        if (!expired.length) return;
+        active = remaining;
+        if (!active.length) {
+            stopRing(false);
+            return;
+        }
+        if (window.AlarmAudio) window.AlarmAudio.stop();
+        lastTone = -1600;
         render();
     }
     function accept(data) {
@@ -141,6 +163,7 @@
         if (source !== sourceScope()) { poll(); return; }
         if (privateData && !session.hasLease('alarms')) return;
         var instant = now();
+        expireRings(instant);
         for (var i = 0; i < queue.length; i++) {
             var item = queue[i];
             // Never replay an alarm missed while the page was suspended for a minute or longer.

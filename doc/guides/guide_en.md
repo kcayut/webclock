@@ -123,7 +123,7 @@ After selecting sources, you can target one event and choose an occurrence or th
 1. Add an alarm in `/schedules`, choose its ring trigger and time, then choose once, every day, weekly, workdays, holidays, or specific dates under Repeat. Only weekly shows weekday controls, and only specific dates shows the date list. Use Selected groups and Selected devices to target groups or devices; when selected, the alarm is shown only on those targets, otherwise group-content assignment applies. Choose bell, beep, digital, chime, melody, pulse, sonar, or silent mode. Each alarm has its own 0–100% volume, defaulting to 100%; preview uses the same volume, and 0% keeps visual alerts only.
 2. Daily, weekday, and explicit-date rules may skip Taiwan holidays; make-up workdays remain workdays. Holiday-only and skip-holiday rules cannot be combined.
 3. On the iPad clock page, tap the bell to enable audio and confirm the short sound. Enable it again after every reload or reopen.
-4. When an alarm fires, tap twice to dismiss only this occurrence on the current page. The schedule and other devices remain active.
+4. When an alarm fires, tap twice to dismiss only this occurrence on the current page. The schedule and other devices remain active. If left unattended, a ring stops automatically after one hour.
 
 Keep Safari in the foreground with the screen on, and check volume and mute settings. iOS may interrupt web audio and timers after screen lock, app switching, or tab switching, so background and locked-screen alarms are not guaranteed. Silent alarms still show the red-border alert.
 

@@ -129,6 +129,17 @@ assert.ok(simultaneous.ringing(), 'disabling one simultaneous alarm preserves th
 assert.equal(simultaneous.node('alarm-name').textContent, 'alarm_ringing · A');
 simultaneous.dispatch('click'); simultaneous.dispatch('click');
 assert.ok(!simultaneous.ringing());
+
+const longRing = browser();
+longRing.reply([alarm(longRing)]);
+longRing.node('alarm-bell').onclick();
+longRing.advance(1000); longRing.tick();
+assert.ok(longRing.ringing());
+longRing.advance(3599000); longRing.tick();
+assert.ok(longRing.ringing(), 'an unattended alarm keeps ringing before one hour');
+longRing.advance(1000); longRing.tick();
+assert.ok(!longRing.ringing(), 'an unattended alarm stops automatically after one hour');
+assert.equal(longRing.node('alarm-message').style.display, 'none');
 const silent = browser({'webclock.alarmFlash': 'off'});
 silent.reply([alarm(silent, 'Quiet', 'silent')]); silent.advance(1000); silent.tick();
 assert.ok(silent.ringing()); assert.deepEqual(silent.sound.played, []);
