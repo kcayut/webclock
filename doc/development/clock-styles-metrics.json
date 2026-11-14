@@ -4267,14 +4267,14 @@
           "backdrop": "rgb(244, 241, 232)",
           "color": "rgb(47, 58, 51)",
           "panel": null,
-          "segment": "rgb(194, 65, 12)"
+          "segment": "rgb(31, 35, 40)"
         },
         "previewState": {
           "body": "clock-preview clock-theme-light has-events clock-style-segment clock-style-enhanced",
           "backdrop": "rgb(244, 241, 232)",
           "color": "rgb(47, 58, 51)",
           "panel": null,
-          "segment": "rgb(194, 65, 12)"
+          "segment": "rgb(31, 35, 40)"
         }
       }
     },

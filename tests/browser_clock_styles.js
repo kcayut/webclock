@@ -476,6 +476,10 @@ async function main() {
                     style + ' actual has the ' + theme + ' theme class');
                 assert.ok(actualState.body.indexOf('clock-theme-' + (theme === 'dark' ? 'light' : 'dark')) < 0,
                     style + ' actual must not carry both theme classes');
+                if (style === 'segment' && theme === 'light') {
+                    assert.equal(actualState.segment, 'rgb(31, 35, 40)',
+                        'light seven-segment digits use the black palette');
+                }
                 await navigate(BASE + '/admin/preview?style=' + style + '&theme=' + theme +
                     '&sample=1&show_seconds=0');
                 await waitForStyle(style);

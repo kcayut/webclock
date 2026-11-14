@@ -722,17 +722,20 @@ body.clock-theme-light.clock-style-segment .segment {
 }
 
 body.clock-theme-light.clock-style-segment .segment.on {
-    background: #C2410C;
-    box-shadow: 0 0 4px rgba(194, 65, 12, 0.16);
+    background: #1F2328;
+    box-shadow: 0 0 4px rgba(31, 35, 40, 0.16);
 }
 
 body.clock-theme-light.clock-style-segment .segment-dot {
-    background: #C2410C;
+    background: #1F2328;
 }
 
-body.clock-theme-light.clock-style-segment .clock-period,
+body.clock-theme-light.clock-style-segment .clock-period {
+    color: #1F2328;
+}
+
 body.clock-theme-light.clock-style-segment .event-time {
-    color: #B45309;
+    color: #1F2328;
 }
 
 body.clock-theme-light.clock-style-segment #date-info,
