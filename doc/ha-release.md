@@ -4,9 +4,36 @@
 
 ## 目前狀態
 
-- **[v1.4.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.4.0)**。功能變更見[發行紀錄](releases/v1.4.0.md)。
+- **[v1.5.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.5.0)**。功能變更見[發行紀錄](releases/v1.5.0.md)。
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
+
+<a id="release-1-5-0"></a>
+## 1.5.0 發行驗證（2026-11-15）
+
+- 發行提交：`ead7d74196eaa6f532151269cda03d91f3c3d503`；GitHub 與 Gitea 的 `v1.5.0` 已獨立回讀，指向同一提交。
+- [發行 CI](https://github.com/kcayut/webclock/actions/runs/43638715303) 全部通過：Server／HA 整合與卡片、Linux 新安裝、兩種架構的 Docker 更新與 HA App 啟動，以及正式發布。
+- 公開 Release 為 `v1.5.0`、非 draft、非 prerelease，五個資產完整；匿名下載、SHA256、壓縮檔版號與 ZIP 完整性檢查通過。
+- 匿名讀取兩個 GHCR manifest 成功，皆包含 `linux/amd64` 與 `linux/arm64`。
+- [公開安裝與升級驗證](https://github.com/kcayut/webclock/actions/runs/43639808114) 通過：Linux systemd 新安裝、Docker `1.4.0 → 1.5.0` 升級，含版本、self 模式、資料保存、設定寫入與重啟檢查。
+- [Linux 升級／還原演練](https://github.com/kcayut/webclock/actions/runs/43638709388) 通過：設定遷移保留既有值並補齊時鐘樣式預設欄位，冷備份還原、啟動失敗回退與授權撤銷保存均通過。
+- iPad mini 1／iOS 9.3.5／9.3.6 的時鐘樣式實機驗收仍未執行，本版不宣稱已完成該項驗收。
+
+公開多架構映像 manifest digest：
+
+| 映像 | Digest |
+| --- | --- |
+| `ghcr.io/kcayut/webclock:1.5.0` | `sha256:3dfffa8706d8cb51650af88f0dbd281e78c25520f14bd3f46ed4b685de041d49` |
+| `ghcr.io/kcayut/webclock-addon:1.5.0` | `sha256:b7a5cc0ebcc19b98b8d6c14590721e4959768e901578cf720b06aea0b2be45c6` |
+
+公開資產的 SHA256：
+
+| 檔案 | SHA256 |
+| --- | --- |
+| `install.sh` | `6580a8bbb5532e36293c89da31b8d002e86e4555dfeca36acd31f4c13ef3ecab` |
+| `portable_docker_update.sh` | `eccf3795620b347cc1fda42c44a753312687ab79d3106e6eedfdf4a57419ec8b` |
+| `webclock-1.5.0.tar.gz` | `9bfe8719cde33898ffd67bf525f2ac9f7c27b3bbc1f209817b11a8e12e72bda2` |
+| `webclock-clock-1.5.0.zip` | `a723271040f117568cbd7967ac0e0ef51f8335faf0945cbd02a24dc6599ee968` |
 
 <a id="release-1-4-0"></a>
 ## 1.4.0 發行驗證（2026-11-14）
