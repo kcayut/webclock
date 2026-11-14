@@ -56,6 +56,8 @@ class ReleaseTest(unittest.TestCase):
             'homeassistant/prepare_local_app.sh': '#!/bin/bash\n',
             'doc/README.md': '# Documentation\n',
             'doc/operations/update-operations.md': '# Upgrade and recovery\n',
+            'doc/development/clock-styles-metrics.json': '{}\n',
+            'doc/development/screenshots/clock-styles/example.png': 'image\n',
         })
 
     def git(self, *args):
@@ -122,6 +124,7 @@ class ReleaseTest(unittest.TestCase):
                                  server.extractfile(prefix + 'scripts/update/' + name).read())
             self.assertIn(prefix + 'homeassistant/prepare_local_app.sh', names)
             self.assertIn(prefix + 'doc/operations/update-operations.md', names)
+            self.assertFalse(any(name.startswith(prefix + 'doc/development/') for name in names), names)
             self.assertFalse(any(name.startswith(prefix + folder) for name in names
                                  for folder in ('tools/', 'tests/', 'homeassistant/tests/')), names)
         with zipfile.ZipFile(output / 'webclock-clock-1.1.0.zip') as clock:

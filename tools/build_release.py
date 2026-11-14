@@ -35,6 +35,7 @@ CLOCK_FILES = frozenset((
 PRIVATE_NAMES = frozenset(('manual_notes.json', 'auth.json', 'auth-required',
                            'device-access.json', 'webclock_state', 'tls', 'venv',
                            '__pycache__', '.git'))
+DEVELOPMENT_DIRS = ('doc/development/',)
 
 
 def check_versions(read_text, tag=None):
@@ -76,7 +77,8 @@ def build_release(output, version=None, root=ROOT):
     with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         for member in source:
             name = member.name
-            if not is_public(name) or not (name in SERVER_FILES or name.startswith(SERVER_DIRS)):
+            if (not is_public(name) or name.startswith(DEVELOPMENT_DIRS)
+                    or not (name in SERVER_FILES or name.startswith(SERVER_DIRS))):
                 continue
             if member.isdir():
                 continue
