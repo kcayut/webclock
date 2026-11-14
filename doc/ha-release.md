@@ -4,38 +4,45 @@
 
 ## 目前狀態
 
-- **[v1.3.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.3.0)**。功能變更見[發行紀錄](releases/v1.3.0.md)。
+- **[v1.4.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.4.0)**。功能變更見[發行紀錄](releases/v1.4.0.md)。
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
 
-<a id="release-1-3-0"></a>
-## 1.3.0 發行驗證（2026-11-13）
+<a id="release-1-4-0"></a>
+## 1.4.0 發行驗證（2026-11-14）
 
-- 發行提交：`2fdd595d2e5a55478c53a32534c114e6f6987717`；GitHub 與 Gitea 的 `v1.3.0` 已獨立回讀，指向同一提交。
-- [安裝與發行流程](https://github.com/kcayut/webclock/actions/runs/43396248421) 全部通過：Server 回歸、真實 HA 整合與卡片、Linux systemd、Docker 更新演練、`linux/amd64`／`linux/arm64` Server 與 App 映像，以及正式發布。
-- 公開 Release 的五個資產完整，版本為 `1.3.0`、非 draft、非 prerelease，並設為最新正式版。
+- 發行提交：`6d4fb82c15230bec1396a7d83b74a86f7208d0bb`；GitHub 與 Gitea 的 `v1.4.0` 已獨立回讀，指向同一提交。
+- [發行 CI](https://github.com/kcayut/webclock/actions/runs/43542315973) 全部通過：Server／HA 整合與卡片、Linux 新安裝、兩種架構的 Docker 更新與 HA App 啟動，以及正式發布。
+- 公開 Release 為 `v1.4.0`、非 draft、非 prerelease，五個資產完整；匿名下載、SHA256、壓縮檔版號與 ZIP 完整性檢查通過。
 - 匿名讀取兩個 GHCR manifest 成功，皆包含 `linux/amd64` 與 `linux/arm64`。
-- [公開安裝與跨版本升級](https://github.com/kcayut/webclock/actions/runs/43397975057) 全部通過：以公開安裝器完成 systemd 新安裝，並以 v1.3.0 入口將 Docker v1.2.0 升級；版本、self 模式、資料保存與重啟後狀態均通過。
+- [公開安裝與升級驗證](https://github.com/kcayut/webclock/actions/runs/43565285128) 通過：Linux systemd 新安裝、Docker `1.3.0 → 1.4.0` 升級，含版本、self 模式、資料保存、設定寫入與重啟檢查。
+- [獨立 Linux 升級演練](https://github.com/kcayut/webclock/actions/runs/43542311924) 在此發行提交未通過：儲存設定補入顯示預設值後，演練仍比對未補齊的欄位。此結果與上述新安裝及 Docker 驗證分開記錄。
 
-發布流程記錄的多架構映像 manifest digest：
+公開多架構映像 manifest digest：
 
 | 映像 | Digest |
 | --- | --- |
-| `ghcr.io/kcayut/webclock:1.3.0` | `sha256:c05f1d9dbb03b00c353b824a9e880d1a81beb6d5a09d0f046705f01c4380c203` |
-| `ghcr.io/kcayut/webclock-addon:1.3.0` | `sha256:52cc52ed9e419a1db0e8897a4d0fdf0af6be207a9f2eba9dd105e7a45942dad6` |
+| `ghcr.io/kcayut/webclock:1.4.0` | `sha256:f0f1a0bc88bda2daf6768ea855112f479caac57f58f1379e49b40cb629758e68` |
+| `ghcr.io/kcayut/webclock-addon:1.4.0` | `sha256:869e6f76183c2599365ea26596be008cd84deb698b28b73c9a4ac2528e6c09dd` |
 
 公開資產的 SHA256：
 
 | 檔案 | SHA256 |
 | --- | --- |
-| `install.sh` | `1b3a8caf886a75be0b9d7bd199314a6947a5cebdf175da0de5d43ea61c220e8d` |
-| `portable_docker_update.sh` | `78d07635d27d9f5264dc3d69873a0647fb6f7ab7148bd3522ba7b95fca6bb9c7` |
-| `webclock-1.3.0.tar.gz` | `5d732c8c0fd2fee66003902269452285d7227a91acba91cfe56835c11ca3d575` |
-| `webclock-clock-1.3.0.zip` | `899b803fdb26bf12effb02e0813316fd05c6d905602426468f969c9dd3e3997c` |
+| `install.sh` | `57468b429878e60568283739485fef864a9acce574c236e8acdcce13bf603e2e` |
+| `portable_docker_update.sh` | `f06affcbff3d8e60c070fd9eaf93a86251ec1cf3e5cf8382941a2e93be835ab2` |
+| `webclock-1.4.0.tar.gz` | `8eb7a1e8646004f52a5ed3899c7bf97c38bed7210f5b4fdebf5cce6d25144c3d` |
+| `webclock-clock-1.4.0.zip` | `ae88cab04e5ff896be11aef499cdf271762398540e7375188f03c866f2641899` |
+
+## main 的設定遷移驗證
+
+`8b595685e77c9ca91fcbedd10107598d1ddd9891` 已合併 main，**未包含在 v1.4.0 發行資產中**。更新器在啟動前將設定遷移為完整 schema，保留既有值、補齊預設欄位，再以遷移後資料精確比對；已符合 schema 的檔案不重寫。
+
+此提交的本機 Python 回歸 553 項通過，[安裝 CI](https://github.com/kcayut/webclock/actions/runs/43563143471) 與 [Linux 升級／還原演練](https://github.com/kcayut/webclock/actions/runs/43563153048) 均通過。Linux 演練涵蓋設定遷移、其餘資料逐位元組保存、冷備份還原、啟動失敗回退與授權撤銷保存；不代表實機斷電或 HA OS 驗收。
 
 ## 歷史發行驗證
 
-各版本的 CI、映像雜湊與本機驗證保存在對應發行紀錄：[v1.2.0](releases/v1.2.0.md#release-1-2-0)、[v1.1.0](releases/v1.1.0.md)。
+各版本的 CI、映像雜湊與本機驗證保存在對應發行紀錄：[v1.3.0](releases/v1.3.0.md#release-1-3-0)、[v1.2.0](releases/v1.2.0.md#release-1-2-0)、[v1.1.0](releases/v1.1.0.md)。
 
 ## 發行檔案
 
