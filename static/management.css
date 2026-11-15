@@ -51,6 +51,15 @@ svg { flex: 0 0 auto; }
 .skip-link { position: fixed; left: 12px; top: -80px; z-index: 20; padding: 10px 16px; background: var(--surface); }
 .skip-link:focus { top: 12px; }
 .management-sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: var(--sidebar-width); padding: 22px 12px; background: var(--surface); color: var(--ink); border-right: 1px solid var(--line); overflow-y: auto; z-index: 10; display: flex; flex-direction: column; }
+.management-sidebar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.management-menu { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.management-menu-toggle { display: none; }
+.management-install-link { width: 100%; min-height: 44px; margin: 0 0 14px; padding: 9px 12px; justify-content: flex-start; border-color: var(--line); background: var(--canvas); color: var(--ink); font-size: 14px; text-align: left; }
+.management-install-link svg { width: 20px; height: 20px; }
+.management-install-steps { margin: 12px 0; padding-left: 22px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+.management-install-steps li + li { margin-top: 6px; }
+.management-install-dialog { width: min(560px, calc(100% - 32px)); }
+.management-install-dialog[open][data-fallback="open"] { position: fixed; top: 50%; left: 50%; z-index: 60; max-height: calc(100% - 32px); overflow: auto; transform: translate(-50%, -50%); box-shadow: 0 0 0 100vmax rgba(23, 37, 43, .5), 0 14px 36px rgba(23, 37, 43, .18); }
 .management-brand { display: flex; align-items: center; gap: 12px; color: var(--ink); padding: 0 14px 22px; text-decoration: none; font-size: 23px; line-height: 1.3; font-weight: 600; letter-spacing: 0; }
 .management-brand img { width: 34px; height: 34px; flex: 0 0 auto; }
 .management-navigation { display: flex; flex-direction: column; gap: 4px; }
@@ -250,9 +259,16 @@ details[open] > summary { margin-bottom: 10px; }
     .support-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-    .management-sidebar { position: static; width: 100%; padding: 14px; border-right: 0; border-bottom: 1px solid var(--line); }
-    .management-brand { padding: 0 0 10px; font-size: 20px; gap: 10px; }
+    .management-sidebar { position: sticky; top: 0; z-index: 25; width: 100%; max-height: 100vh; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .management-sidebar-head { align-items: center; }
+    .management-brand { padding: 0; font-size: 20px; gap: 10px; }
     .management-brand img { width: 28px; height: 28px; }
+    .management-menu-toggle { display: inline-flex; min-height: 40px; padding: 7px 12px; font-size: 14px; }
+    html:not(.webclock-js) .management-menu-toggle { display: none; }
+    .management-menu-toggle svg { width: 18px; height: 18px; }
+    .management-menu { display: none; padding-top: 10px; }
+    html:not(.webclock-js) .management-menu { display: flex; }
+    .management-sidebar[data-menu-open="true"] .management-menu { display: flex; }
     .management-navigation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
     .management-navigation a { min-height: 44px; font-size: 14px; line-height: 1.4; padding: 8px; gap: 7px; justify-content: flex-start; text-align: left; }
     .management-navigation a span { min-width: 0; }
@@ -264,6 +280,7 @@ details[open] > summary { margin-bottom: 10px; }
     .management-nav-children a { min-height: 40px; font-size: 14px; padding: 7px 8px; gap: 7px; }
     .management-nav-children a svg { width: 16px; height: 16px; }
     .management-sidebar-tools { margin: 14px 0 0; padding-top: 0; display: grid; grid-template-columns: auto minmax(130px, 1fr); align-items: center; gap: 8px 12px; }
+    .management-install-link { grid-column: 1 / -1; margin: 0 0 2px; }
     .management-sidebar-tools label, .management-tool-label { margin: 0; font-size: 14px; }
     .management-sidebar-tools select { min-height: 38px; padding: 6px 9px; font-size: 14px; }
     #management-theme-hint { grid-column: 1 / -1; margin: 0 0 4px; }
@@ -271,7 +288,7 @@ details[open] > summary { margin-bottom: 10px; }
     .management-sidebar-footer { display: none; }
     .management-topbar { height: 54px; margin-left: 0; padding: 0 16px; }
     .clock-link { min-height: 36px; padding: 7px 12px; font-size: 14px; }
-    .management-content { margin-left: 0; padding: 22px 16px 36px; }
+    .management-content { margin-left: 0; padding: 22px 16px calc(36px + env(safe-area-inset-bottom)); }
     .page-heading { gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
     .page-title, .page-heading h1 { font-size: 26px; letter-spacing: 0; }
     .page-description { font-size: 15px; }

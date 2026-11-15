@@ -31,6 +31,7 @@ CLOCK_FILES = frozenset((
     'index.html', 'sw.js', 'static/clock.css', 'static/clock-styles.css',
     'static/clock-styles.js', 'static/clock.js', 'static/offline.js',
     'static/time-format.js', 'static/time-inputs.js', 'static/time-inputs.css',
+    'static/manifest.json',
 ))
 PRIVATE_NAMES = frozenset(('manual_notes.json', 'auth.json', 'auth-required',
                            'device-access.json', 'webclock_state', 'tls', 'venv',

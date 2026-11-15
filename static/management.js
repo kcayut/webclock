@@ -67,7 +67,9 @@
     for (var c = 0; c < dialogClosers.length; c++) {
         dialogClosers[c].addEventListener('click', function () {
             var dialog = this.closest ? this.closest('dialog') : null;
-            if (dialog) dialog.close();
+            if (!dialog) return;
+            if (dialog.close) dialog.close();
+            else dialog.removeAttribute('open');
         });
     }
     var dialogs = document.querySelectorAll('dialog.management-dialog');
@@ -176,4 +178,80 @@
         window.requestAnimationFrame(function () { showPanel(true); });
     });
     showPanel(true);
+    var menuToggle = document.getElementById('management-menu-toggle');
+    var sidebar = document.querySelector ? document.querySelector('.management-sidebar') : null;
+    if (menuToggle && sidebar) {
+        function setMenu(open) {
+            sidebar.setAttribute('data-menu-open', open ? 'true' : 'false');
+            menuToggle.setAttribute('aria-expanded', String(open));
+        }
+        setMenu(false);
+        menuToggle.addEventListener('click', function () {
+            setMenu(sidebar.getAttribute('data-menu-open') !== 'true');
+        });
+        var menuLinks = sidebar.querySelectorAll('a');
+        for (var ml = 0; ml < menuLinks.length; ml++) {
+            menuLinks[ml].addEventListener('click', function () { setMenu(false); });
+        }
+        if (document.addEventListener) {
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && sidebar.getAttribute('data-menu-open') === 'true') {
+                    setMenu(false);
+                    menuToggle.focus();
+                }
+            });
+        }
+    }
+    var installOpen = document.getElementById('management-install-open');
+    var installDialog = document.getElementById('management-install-dialog');
+    var installAction = document.getElementById('management-install-action');
+    var installStatus = document.getElementById('management-install-status');
+    var deferredInstall = null;
+    function installText(key) {
+        try {
+            var packs = JSON.parse(document.getElementById('management-i18n').textContent);
+            var pack = packs[document.documentElement.lang] || packs['zh-TW'] || {};
+            return pack[key] || key;
+        } catch (error) { return key; }
+    }
+    if (installOpen && installDialog) {
+        var standalone = false;
+        try {
+            standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                || (window.navigator && window.navigator.standalone === true);
+        } catch (error) {}
+        if (!standalone) installOpen.hidden = false;
+        installOpen.addEventListener('click', function () {
+            if (installDialog.showModal) installDialog.showModal();
+            else {
+                installDialog.setAttribute('data-fallback', 'open');
+                installDialog.setAttribute('open', 'open');
+            }
+        });
+        window.addEventListener('beforeinstallprompt', function (event) {
+            event.preventDefault();
+            deferredInstall = event;
+            if (installAction) installAction.hidden = false;
+        });
+        window.addEventListener('appinstalled', function () {
+            installOpen.hidden = true;
+            if (installAction) installAction.hidden = true;
+            if (installStatus) installStatus.textContent = installText('management_install_done');
+        });
+        if (installAction) {
+            installAction.addEventListener('click', function () {
+                if (!deferredInstall) {
+                    if (installStatus) installStatus.textContent = installText('management_install_unavailable');
+                    return;
+                }
+                deferredInstall.prompt();
+                if (deferredInstall.userChoice) {
+                    deferredInstall.userChoice.then(function () { deferredInstall = null; installAction.hidden = true; });
+                } else {
+                    deferredInstall = null;
+                    installAction.hidden = true;
+                }
+            });
+        }
+    }
 }());

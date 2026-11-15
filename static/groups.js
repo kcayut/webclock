@@ -32,6 +32,69 @@
         result.setAttribute('data-group-i18n', key);
         return result;
     }
+    function clockJoinUrl(code) {
+        const base = String(window.webclockBase || (window.location && window.location.origin) || '').replace(/\/$/, '');
+        return (base || '') + '/#join=' + encodeURIComponent(code);
+    }
+    function setCodeStatus(key) {
+        const status = $('group-code-status');
+        if (status) status.textContent = t(key);
+    }
+    function drawQr(text) {
+        const container = $('group-code-qr');
+        if (!container) return;
+        container.replaceChildren();
+        if (!window.qrcode || !text) return;
+        try {
+            const qr = window.qrcode(0, 'M');
+            qr.addData(text);
+            qr.make();
+            const count = qr.getModuleCount(), quiet = 4, size = count + quiet * 2;
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+            svg.setAttribute('role', 'img');
+            svg.setAttribute('aria-label', t('group_code_qr_label'));
+            svg.setAttribute('shape-rendering', 'crispEdges');
+            const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            background.setAttribute('width', String(size));
+            background.setAttribute('height', String(size));
+            background.setAttribute('fill', '#fff');
+            svg.append(background);
+            let path = '';
+            for (let row = 0; row < count; row += 1) {
+                for (let column = 0; column < count; column += 1) {
+                    if (qr.isDark(row, column)) path += 'M' + (column + quiet) + ' ' + (row + quiet) + 'h1v1h-1z';
+                }
+            }
+            const modules = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            modules.setAttribute('d', path);
+            modules.setAttribute('fill', '#000');
+            svg.append(modules);
+            container.append(svg);
+        } catch (error) {
+            container.replaceChildren();
+            setCodeStatus('group_code_qr_failed');
+        }
+    }
+    async function copyCodeLink() {
+        const input = $('group-code-url');
+        const url = input && input.value;
+        if (!url) return;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                input.readOnly = false;
+                input.focus(); input.select();
+                const copied = document.execCommand('copy');
+                input.readOnly = true;
+                if (!copied) throw new Error('copy unavailable');
+            }
+            setCodeStatus('group_code_copied');
+        } catch (error) {
+            setCodeStatus('group_code_copy_failed');
+        }
+    }
     async function request(url, method = 'GET', data) {
         const options = {method, cache: 'no-store', credentials: 'same-origin', headers: {}};
         if (data !== undefined) {
@@ -291,8 +354,20 @@
         }) : t('group_invite_none');
         $('group-access-status').textContent = panelErrors.has(selected) ? t('group_access_stale') : '';
         const show = visibleCode && visibleCode.groupId === selected && info && info.status === 'active' && info.id === visibleCode.inviteId;
+        const code = show ? visibleCode.code : '';
+        const url = code ? clockJoinUrl(code) : '';
         $('group-code-box').hidden = !show;
-        $('group-code').textContent = show ? visibleCode.code : '';
+        $('group-code').textContent = code;
+        $('group-code-url').value = url;
+        if (url && $('group-code-qr').getAttribute('data-code') !== code) {
+            $('group-code-qr').setAttribute('data-code', code);
+            drawQr(url);
+        }
+        if (!url) {
+            $('group-code-qr').replaceChildren();
+            $('group-code-qr').setAttribute('data-code', '');
+            setCodeStatus('');
+        }
         if (!show) visibleCode = null;
         const list = $('group-members'); list.replaceChildren();
         const memberRows = members.get(selected) || [];
@@ -431,6 +506,7 @@
     $('group-refresh').addEventListener('click', refresh);
     $('group-invite-create').addEventListener('click', () => invite('POST'));
     $('group-invite-close').addEventListener('click', () => invite('DELETE'));
+    $('group-code-copy').addEventListener('click', copyCodeLink);
     $('group-invite-capacity').addEventListener('input', () => { if (current()) current().capacity = $('group-invite-capacity').value; });
     $('group-delete').addEventListener('click', async () => {
         const id = selected, draft = current();
@@ -455,6 +531,7 @@
     });
     function applyLanguage() {
         document.querySelectorAll('[data-group-i18n]').forEach(element => { element.textContent = t(element.getAttribute('data-group-i18n')); });
+        $('group-code-qr').setAttribute('data-code', '');
         renderSelector(); renderValues(); renderAccess();
     }
     function memberRemoved(id) {

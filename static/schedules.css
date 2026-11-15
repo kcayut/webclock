@@ -187,7 +187,24 @@ button.schedule-toggle { position: relative; flex: 0 0 54px; width: 54px; min-he
 .group-invite-actions input { width: 80px; }
 .group-code-box { background: var(--tint); border: 1px solid var(--line); padding: 20px; border-radius: 8px; margin-top: 12px; }
 #group-code { display: block; color: var(--tint-ink); font-size: 38px; letter-spacing: .16em; font-family: ui-monospace, monospace; }
+.group-code-content { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.group-code-qr { flex: 0 0 180px; width: 180px; max-width: 100%; padding: 8px; border-radius: 8px; background: #fff; }
+.group-code-qr:empty { display: none; }
+.group-code-qr svg { display: block; width: 100%; height: auto; }
+.group-code-details { flex: 1 1 240px; min-width: 0; }
+.group-code-url { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.group-code-url input { flex: 1; min-width: 0; font-size: 14px; }
+.group-code-url button { flex: 0 0 auto; white-space: nowrap; }
 .group-code-box .help { margin-bottom: 0; }
+@media (max-width: 760px) {
+    .group-code-box { padding: 16px; }
+    #group-code { font-size: 32px; }
+    .group-code-content { flex-direction: column; align-items: stretch; }
+    .group-code-qr { align-self: center; }
+    .group-code-url { flex-wrap: wrap; }
+    .group-code-url input { flex-basis: 100%; }
+    .group-code-url button { width: 100%; }
+}
 .group-members { padding: 0; list-style: none; }
 .group-member { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .group-member .help { margin: 0; }

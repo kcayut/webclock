@@ -9,6 +9,7 @@
     var leave = document.getElementById('device-group-leave'), title = document.getElementById('device-join-title');
     var cancel = document.getElementById('device-join-cancel'), attempt = null, epoch = 0, opened = false, busy = false;
     var labels = window.WebClockEnrollmentTranslations || {}, statusKey = 'join_intro';
+    var pendingPrefill = '';
     var connection = document.getElementById('connection-panel');
     if (!session || !openButton || !panel || !form) return;
     function text(key) {
@@ -16,8 +17,21 @@
         var pack = labels[language] || labels['zh-TW'] || {};
         return pack[key] || key;
     }
+    function readJoinCode() {
+        var match = /(?:^#|[#&])join=([A-Za-z0-9]{6})(?:&|$)/.exec(String(window.location.hash || ''));
+        var code = match ? match[1].toUpperCase() : '';
+        return /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/.test(code) ? code : '';
+    }
+    function clearJoinHash() {
+        try {
+            if (window.history && window.history.replaceState && /(?:^#|[#&])join=/.test(String(window.location.hash || ''))) {
+                window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+        } catch (error) {}
+    }
     function render() {
         var state = session.getState(), joined = !!state.identity;
+        if (joined) clearJoinHash();
         var nodes = document.querySelectorAll('[data-enrollment-i18n]');
         for (var i = 0; i < nodes.length; i++) nodes[i].textContent = text(nodes[i].getAttribute('data-enrollment-i18n'));
         openButton.style.display = opened || joined ? 'none' : '';
@@ -49,7 +63,15 @@
             if (!opened || current !== epoch) return;
             busy = false;
             if (error) { show(errorKey(error)); return; }
-            attempt = result.attempt_id; show('join_enter_code');
+            attempt = result.attempt_id;
+            if (pendingPrefill) {
+                input.value = pendingPrefill;
+                pendingPrefill = '';
+                show('join_code_prefilled');
+                clearJoinHash();
+            } else {
+                show('join_enter_code');
+            }
             try { input.focus(); } catch (failure) {}
         });
     }
@@ -63,7 +85,7 @@
     };
     cancel.onclick = function () {
         opened = false; epoch += 1; session.cancelJoin(); attempt = null; busy = false;
-        input.value = ''; panel.style.display = 'none';
+        input.value = ''; clearJoinHash(); panel.style.display = 'none';
         render();
         try { openButton.focus(); } catch (failure) {}
     };
@@ -108,10 +130,21 @@
                 if (error.code === 'join_attempt_conflict' || error.code === 'cookie_unconfirmed' || error.status === 401 || error.status === 403) attempt = null;
                 show(errorKey(error)); return;
             }
-            attempt = null; show('join_connected');
+            attempt = null; clearJoinHash(); show('join_connected');
         });
         return false;
     };
+    var initialCode = readJoinCode();
+    if (initialCode) {
+        if (session.getState().identity) {
+            clearJoinHash();
+        } else {
+            pendingPrefill = initialCode;
+            opened = true;
+            if (connection && connection.classList) connection.classList.add('open');
+            openButton.onclick();
+        }
+    }
     session.subscribe(function (event) {
         if (event.type === 'source' || event.type === 'authorization-check' || (event.type === 'revoked' && !busy) || (event.type === 'identity' && event.state.phase === 'unknown')) {
             epoch += 1; attempt = null; busy = false; input.value = ''; show('join_conflict');
