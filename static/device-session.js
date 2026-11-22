@@ -37,6 +37,7 @@
     }
     function clear(reason, forget) {
         generation += 1;
+        checking = false; identityWaiters = [];
         handled = {}; resources = {}; commands = []; revisions = {}; applied = {display: 0, alarms: 0};
         reporting = false;
         if (forget) { identity = null; group = null; pending = null; }
@@ -52,7 +53,7 @@
         if (value !== origin && !/^https?:\/\/[A-Za-z0-9.\-:\[\]]+$/.test(value)) value = '';
         if (value === source) return;
         source = value; mode = sameOrigin() && (bootMode === 'self' || bootMode === 'managed') ? bootMode : 'unknown';
-        identity = null; pending = null; phase = 'unknown'; checked = false; checking = false; identityWaiters = []; joining += 1; enrolling = false;
+        identity = null; pending = null; phase = 'unknown'; checked = false; joining += 1; enrolling = false;
         try { bound = window.localStorage.getItem(storageKey()) === '1'; } catch (error) { bound = true; }
         clear('source', true);
     }
@@ -124,7 +125,7 @@
     function unauthorized(error) {
         if (error && (error.status === 401 || error.status === 403)) {
             if (error.code === 'csrf_failed') { phase = 'unknown'; checked = false; clear('authorization-check', true); checkIdentity(); return true; }
-            markBound(); phase = 'revoked'; checked = true; checking = false; clear('revoked', true);
+            markBound(); phase = 'revoked'; checked = true; clear('revoked', true);
             return true;
         }
         return false;
@@ -288,7 +289,7 @@
     }
     function prepare(callback) {
         var attemptGeneration = ++joining, completed = callback;
-        enrolling = true; checking = false; checked = false; identityWaiters = []; clear('prepare', true);
+        enrolling = true; checked = false; clear('prepare', true);
         callback = function (error, data) { enrolling = false; completed(error, data); };
         post('/api/v2/device/join/prepare', {}, 'prepare', function (error, data) {
             if (attemptGeneration !== joining) return;
@@ -324,7 +325,7 @@
     function leave(callback) {
         if (!sameOrigin() || !identity) { callback({code: 'device_authentication_required'}); return; }
         var attemptGeneration = ++joining;
-        enrolling = true; checking = false; identityWaiters = []; phase = 'leaving';
+        enrolling = true; phase = 'leaving';
         clear('leaving', false);
         post('/api/v2/device/leave', {}, 'leave', function (error, data) {
             if (attemptGeneration !== joining) return;
@@ -348,7 +349,7 @@
     window.addEventListener('pageshow', resume);
     window.addEventListener('storage', function (event) {
         if (event.key === 'webclock.deviceChanged.' + source || event.key === storageKey()) {
-            phase = 'unknown'; checked = false; checking = false; identityWaiters = []; joining += 1; enrolling = false; clear('identity', true); checkIdentity();
+            phase = 'unknown'; checked = false; joining += 1; enrolling = false; clear('identity', true); checkIdentity();
         }
     });
     setInterval(expire, 1000);

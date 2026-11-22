@@ -271,9 +271,21 @@ assert.equal(malformed.session.hasLease('display'), false, 'resume expires stale
 const wrongScope = browser(); wrongScope.activate();
 wrongScope.session.fetchDisplay(() => true); wrongScope.respond('/display', wrongScope.snapshot(), 200, {ETag: '"a"'});
 wrongScope.session.fetchDisplay(() => true);
+wrongScope.dispatch('pageshow');
+const staleIdentity = wrongScope.pending('/identity');
 wrongScope.respond('/display', null, 304, {'X-WebClock-Identity-Revision': 'other-scope'});
 assert.equal(wrongScope.session.hasLease('display'), false, 'changed 304 scope clears private content immediately');
 assert.equal(wrongScope.session.getState().identity, null);
+const newIdentity = wrongScope.pending('/identity');
+assert.notEqual(newIdentity, staleIdentity, 'a new generation must start its own identity check');
+wrongScope.reply(staleIdentity, {status: 'active', identity: wrongScope.identity});
+assert.equal(wrongScope.session.getState().identity, null);
+const reassigned = {...wrongScope.identity, identity_revision: 'other-scope'};
+let appliedRevision;
+wrongScope.session.fetchDisplay(data => { appliedRevision = data.identity.identity_revision; });
+wrongScope.reply(newIdentity, {status: 'active', identity: reassigned});
+wrongScope.respond('/display', wrongScope.snapshot({}, reassigned));
+assert.equal(appliedRevision, 'other-scope');
 console.log('Public calibration, valid 304 heartbeat/sync ACK, CSRF recovery, invalid payload and resume expiry checks passed.');
 
 const canceled = browser(); canceled.panel(); canceled.node('device-join-open').onclick();
