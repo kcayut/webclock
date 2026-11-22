@@ -188,6 +188,16 @@ function styleSurface(doc) {
     const noCssRuntime = runtime(noCss);
     assert.equal(noCssRuntime.window.WebClockStyles.render(snapshot('flip', 10, 28, 36), noCss), 'classic');
     assert.equal(noCss.body.className, '');
+
+    // WebKit/iOS 9 may expose cssRules === null while a same-origin stylesheet is still loading.
+    const pendingCss = fakeDocument(false);
+    pendingCss.styleSheets = [{href: 'http://clock.test/static/clock-styles.css', cssRules: null}];
+    const pendingRuntime = runtime(pendingCss);
+    assert.equal(pendingRuntime.window.WebClockStyles.render(snapshot('flip', 10, 28, 36), pendingCss), 'classic');
+    assert.equal(pendingCss.body.className, '');
+    pendingCss.styleSheets[0].cssRules = [{}];
+    assert.equal(pendingRuntime.window.WebClockStyles.render(snapshot('flip', 10, 28, 36), pendingCss), 'flip');
+    assert.equal(pendingCss.body.className.includes('clock-style-flip'), true);
 }
 
 // Twenty style changes keep one timer-free surface and no accumulated body classes.

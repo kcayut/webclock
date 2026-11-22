@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compatibility entry for existing bare-metal installations.
+# Compatibility and main entry point for bare-metal Linux/systemd updates.
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$PROJECT_DIR/scripts/update/update_clock.sh" "$@"
+exec python3 "$PROJECT_DIR/update_clock.py" "$@"

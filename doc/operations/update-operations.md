@@ -2,7 +2,7 @@
 
 本文件適用於 **v1.2.0 起**的更新入口與選項；v1.1.0 安裝需先使用下方的獨立 Docker 入口。各環境的 CI、公開下載及實機證據見[發行驗證](../ha-release.md)。
 
-原始碼中的手動與可攜式更新腳本已集中到 [`scripts/update/`](../../scripts/update/README.md)。根目錄一般更新指令保留轉接；以下公開下載資產名稱及離線救援路徑不變。
+日常更新使用安裝根目錄的 `update_clock.sh` 或 `docker_update.sh`。可單獨下載或帶到其他主機的工具見[可攜式更新腳本](../../scripts/update/README.md)。
 
 ## 日常更新
 
@@ -10,7 +10,7 @@
 
 | 環境 | 操作 |
 | --- | --- |
-| Linux | `sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`；已啟用更新服務的 managed 管理員也可使用 `/updates` |
+| Linux | `sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh`；已啟用更新服務的安裝也可使用 `/updates` |
 | Docker v1.2.0 起 | `sudo bash docker_update.sh --check`，確認後執行 `sudo bash docker_update.sh`；僅支援官方單一 Compose、本機系統 Docker |
 | HA 商店 App | App 頁建立備份後按「更新」，再更新 HACS 整合並重啟 HA |
 | HA 本機 App | 備份後用新版原始碼產生至新暫存目錄，核對後替換 `/addons/webclock` 程式檔，再重建／啟動；保留 `/data` |
@@ -68,7 +68,15 @@ sudo python3 /usr/local/lib/webclock-docker-updater/update_settings.py --kind do
 sudo python3 /usr/local/lib/webclock-docker-updater/update_settings.py --kind docker
 ```
 
-關閉自動安裝仍保留每日檢查。失敗後的暫停旗標不會被切換設定或重開服務清除；完成復原後，下一次成功的手動升級才會解除暫停。self 匿名網頁仍不能取得主機更新權限。
+在自用模式，啟用主機更新服務後可在 `/updates` 檢查 GitHub Release。若要從網頁安裝，在主機執行以下指令產生隨機金鑰與 SHA-256 設定。將第一行存入密碼管理器，第二行寫入安裝目錄的 `.env`（已有同名設定時替換）。請勿將金鑰寫入 Git 或分享給顯示裝置。
+
+```sh
+python3 -c 'import hashlib, secrets; key = secrets.token_urlsafe(32); print(key); print("WEBCLOCK_SELF_UPDATE_KEY_SHA256=" + hashlib.sha256(key.encode()).hexdigest())'
+```
+
+Linux 重新啟動 `webclock`，Docker 以原 Compose 設定重建 WebClock 容器。使用 HTTPS 或受信任的私人連線開啟更新頁，有新版本時輸入金鑰並按「立即升級」。更新管道及自動安裝仍由主機管理員設定；受管模式則沿用管理員登入。更換金鑰後重新載入主機設定，即可撤銷舊金鑰。
+
+關閉自動安裝仍保留每日檢查。失敗後的暫停旗標不會被切換設定或重開服務清除；完成復原後，下一次成功的手動升級才會解除暫停。
 
 ## Docker 更新器本身的更新
 
@@ -187,13 +195,13 @@ sudo bash scripts/enable_docker_updates.sh
 
 啟用器把 worker 程式複製到 root 保護的 `/usr/local/lib/webclock-docker-updater/`，不以 root 執行應用程式可修改的原始碼。WebClock 只掛載專用的唯讀 socket 目錄，socket 權限為 `0600`；容器不掛載 Docker socket。更新頁會顯示 worker 版本，可用已驗證公開入口 `--refresh-worker` 更新與運行服務同版的 worker，保留上一份程式與偏好；不會自動更新宿主機 worker。
 
-新註冊的**自動安裝預設關閉**，既有偏好保留；managed 管理員可於 `/updates` 啟用，self 的匿名頁面無法觸發主機更新。首次補 socket 掛載可能重建容器並短暫中斷服務。Docker 全新安裝不會自動註冊 root worker。
+新註冊的**自動安裝預設關閉**，既有偏好保留；managed 管理員可於 `/updates` 啟用，自用模式可使用主機金鑰手動安裝。首次補 socket 掛載可能重建容器並短暫中斷服務。Docker 全新安裝不會自動註冊 root worker。
 
 原生 HTTPS 使用容器的 TLS 設定，保留憑證與主機名稱驗證。若使用私人 CA，將 CA 放入宿主機 `tls/` 並設定容器路徑，例如 `WEBCLOCK_UPDATE_CA=/app/tls/ca.pem`；`WEBCLOCK_UPDATE_HOST` 填憑證名稱。健康檢查連到本機映射連接埠，不跟隨 redirect，也不略過驗證。
 
 ### Linux 更新與發行管道
 
-`webclock-updater.service` 每日檢查版本，自動安裝預設關閉。managed 管理員可在 `/updates` 設定；self 使用[宿主機設定指令](#self-模式與宿主機設定)。升級流程包含備份、套件更新、重啟及健康檢查；失敗時嘗試回復原版本並暫停自動安裝。成功後背景服務會重新載入新版程式。
+`webclock-updater.service` 每日檢查版本，自動安裝預設關閉。managed 管理員可在 `/updates` 設定；自用模式可在網頁檢查及安裝，並以[宿主機設定指令](#self-模式與宿主機設定)設定自動安裝。升級流程包含備份、套件更新、重啟及健康檢查；失敗時嘗試回復原版本並暫停自動安裝。成功後背景服務會重新載入新版程式。
 
 - `stable`：正式 Release，忽略預先發行版。
 - `beta`：正式版與測試版；切回 stable 不降版，等待更高版號的正式版。
@@ -202,7 +210,7 @@ sudo bash scripts/enable_docker_updates.sh
 sudo bash update_clock.sh --channel stable && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh
 ```
 
-測試管道將 `stable` 換成 `beta`。正式安裝以 Git 的 `webclock.releaseChannel` 記錄來源；開發 checkout 保留原 upstream。
+測試管道將 `stable` 換成 `beta`。1.5.1 起，預設來源為 GitHub Release，已有的 `webclock.releaseChannel` 會繼續生效。若這份安裝已追蹤 Gitea 分支，可以執行 `sudo bash update_clock.sh --upstream` 進行一次 Gitea 更新。可先用 `git branch -vv` 與 `git remote -v` 核對追蹤分支和主機。網頁更新仍使用 GitHub Release。
 
 原生 HTTPS 的健康檢查在 `.env` 設定 `WEBCLOCK_UPDATE_HOST=clock.example`（憑證名稱）；私人 CA 另設 `WEBCLOCK_UPDATE_CA=/絕對路徑/ca.pem`。檢查連至本機服務，仍驗證憑證且不跟隨重新導向。
 

@@ -53,11 +53,15 @@ class DistributionLayoutTest(unittest.TestCase):
             with tarfile.open(assets / f'webclock-{version}.tar.gz') as archive:
                 archive.extractall(work / 'extracted', filter='data')
             installed = work / 'extracted' / f'webclock-{version}'
-            for name in ('install.sh', 'setup.sh', 'update_clock.sh', 'scripts/update/update_clock.sh',
-                         'docker_update.sh', 'portable_docker_update.sh',
-                         'scripts/update/docker_update.sh', 'scripts/update/portable_docker_update.sh'):
+            for name in ('install.sh', 'setup.sh', 'update_clock.sh', 'docker_update.sh',
+                         'portable_docker_update.sh', 'scripts/update/portable_docker_update.sh',
+                         'portable_update_clock.sh', 'scripts/update/portable_update_clock.sh'):
                 with self.subTest(entrypoint=name):
                     self.assertIn('usage:', run('bash', str(installed / name), '--help').lower())
+            for name in ('scripts/update/update_clock.sh', 'scripts/update/docker_update.sh'):
+                self.assertFalse((installed / name).exists(), name)
+            for name in ('portable_update_clock.sh', 'portable_docker_update.sh'):
+                self.assertEqual((installed / name).read_bytes(), (installed / 'scripts/update' / name).read_bytes())
             for name in ('update_clock.py', 'scripts/install_check.py', 'scripts/backup_clock.py',
                          'scripts/manage_auth.py', 'scripts/update_settings.py'):
                 with self.subTest(entrypoint=name):

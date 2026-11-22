@@ -1,5 +1,6 @@
-"""Only signed-in administrators may ask the host to update."""
+"""Authorization of managed and self-mode update commands."""
 from pathlib import Path
+import hashlib
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -74,11 +75,53 @@ class UpdatesApiTest(unittest.TestCase):
             response = self.call(self.anonymous)
             self.assertFalse(response.json['writable'])
             self.assertNotIn('project_path', response.json)
-            self.assertEqual(response.json['reason'], 'managed_required')
+            self.assertEqual(response.json['reason'], 'self_update_unavailable')
             self.helper.reset_mock()
-            response = self.call(self.anonymous, '/api/updates/check', 'POST', {})
+            response = self.call(self.anonymous, '/api/updates/install', 'POST', dict(expected_version='1.2.0'))
             self.assertEqual(response.status_code, 403)
             self.helper.assert_not_called()
+
+    def test_self_browser_can_check_and_install_with_host_key(self):
+        key = 'test-only-host-generated-random-key'
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        with patch.object(AuthService, 'mode', return_value='self'), patch.dict(
+                'os.environ', WEBCLOCK_SELF_UPDATE_KEY_SHA256=digest):
+            self.helper.return_value['status']['project_path'] = '/private'
+            state = self.call(self.anonymous).json
+            self.assertTrue(state['writable'] and state['self_updates'])
+            self.assertNotIn('project_path', state)
+            self.assertNotIn(digest, str(state))
+            self.call(self.anonymous, '/api/updates/check', 'POST', {})
+            self.helper.assert_called_with('check')
+            self.call(self.anonymous, '/api/updates/check', 'POST', {})
+            self.helper.assert_called_with('status')
+            self.helper.reset_mock()
+            install = '/api/updates/install'
+            data = dict(expected_version='1.2.0')
+            for headers in ({}, {'X-WebClock-Update-Key': 'wrong'},
+                            {'Origin': 'https://other.invalid', 'X-WebClock-Update-Key': key}):
+                self.assertEqual(self.call(self.anonymous, install, 'POST', data, headers).status_code, 403)
+            headers = {'X-WebClock-Update-Key': key}
+            self.assertEqual(self.anonymous.post(install, json=data, headers=headers).status_code, 403)
+            self.assertEqual(self.call(self.anonymous, '/api/updates/settings', 'POST',
+                                       dict(channel='beta', auto_update=True), headers).status_code, 403)
+            self.helper.assert_not_called()
+            self.assertEqual(self.call(self.anonymous, install, 'POST', data, headers).status_code, 200)
+            self.helper.assert_called_with('install', **data)
+
+    def test_self_key_never_overrides_platform_provider(self):
+        headers = {'X-WebClock-Update-Key': 'test-key'}
+        install = '/api/updates/install'
+        with patch.object(AuthService, 'mode', return_value='self'), patch.dict(
+                'os.environ', WEBCLOCK_SELF_UPDATE_KEY_SHA256=hashlib.sha256(b'test-key').hexdigest()):
+            with patch.object(updates, 'platform_managed', return_value=True):
+                response = self.call(self.anonymous, install, 'POST', dict(expected_version='1.2.0'), headers)
+                self.assertEqual((response.status_code, response.json['code']), (409, 'unsupported'))
+                self.helper.assert_not_called()
+            with patch.dict('os.environ', WEBCLOCK_DOCKER='1'):
+                response = self.call(self.anonymous, install, 'POST', dict(expected_version='1.2.0'), headers)
+                self.assertEqual((response.status_code, response.json['code']), (409, 'provider_mismatch'))
+                self.helper.assert_called_once_with('status')
 
     def test_ha_never_uses_bare_metal_helper(self):
         # HA App requests also require ingress; exercise the shared platform check directly.

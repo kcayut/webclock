@@ -20,12 +20,7 @@ if [ ! -d "$PROJECT_DIR/.git" ] || [ -L "$PROJECT_DIR/.git" ]; then
     echo "Archive or non-Git installation: automatic release updates stay disabled."
     exit 0
 fi
-CHANNEL="$(git -c safe.directory="$PROJECT_DIR" -C "$PROJECT_DIR" config --get webclock.releaseChannel || true)"
-if [ -z "$CHANNEL" ]; then
-    echo "Developer checkout without a release channel: automatic release updates stay disabled."
-    echo "To follow official releases instead, run: sudo bash update_clock.sh --channel stable"
-    exit 0
-fi
+CHANNEL="$(git -c safe.directory="$PROJECT_DIR" -C "$PROJECT_DIR" config --default stable --get webclock.releaseChannel)"
 case "$CHANNEL" in stable|beta) ;; *) fail "Unknown release channel: $CHANNEL" ;; esac
 for file in updater_service.py update_clock.py release_versions.py; do
     [ -f "$PROJECT_DIR/scripts/$file" ] && [ ! -L "$PROJECT_DIR/scripts/$file" ] || fail "Missing updater: scripts/$file"

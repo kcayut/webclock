@@ -1,5 +1,5 @@
 // Bump this version whenever the offline shell changes.
-const VERSION = 'v16';
+const VERSION = 'v17';
 const BASE = new URL('./', self.location.href);
 const PREFIX = 'webclock-' + BASE.pathname + '-';
 const CACHE = PREFIX + VERSION;
@@ -33,7 +33,7 @@ self.addEventListener('fetch', event => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
         try {
-            const response = await fetch(event.request, {signal: controller.signal});
+            const response = await fetch(event.request, {signal: controller.signal, cache: 'no-cache'});
             if (!response.ok) throw new Error('Shell unavailable');
             // Cache failure must not prevent an online page from opening.
             event.waitUntil(cache.put(key, response.clone()).catch(() => {}));

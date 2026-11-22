@@ -37,7 +37,7 @@
         if (!snapshot) return 'loading';
         if (snapshot.installation_type === 'ha_app') return 'ha_managed_hint';
         if (!snapshot.supported) return snapshot.reason === 'not_configured' ? 'not_configured' : 'unsupported';
-        if (!snapshot.writable) return 'managed_required';
+        if (!snapshot.writable && !snapshot.self_updates) return 'self_update_unavailable';
         if (snapshot.state === 'checking') return 'checking';
         if (snapshot.state === 'updating') return labels.en['phase_' + snapshot.phase] ? 'phase_' + snapshot.phase : 'updating';
         if (snapshot.result === 'manual_recovery') return 'manual_recovery';
@@ -52,9 +52,14 @@
     function render() {
         var key = message();
         localized(status, key);
-        status.classList.toggle('error', ['failed', 'manual_recovery', 'rolled_back', 'request_failed', 'sign_in'].indexOf(key) !== -1);
-        var enabled = !!(snapshot && snapshot.supported && snapshot.writable && !pending && !busy() && !disconnected);
-        check.disabled = !enabled; channel.disabled = !enabled; automatic.disabled = !enabled;
+        status.classList.toggle('error', ['failed', 'manual_recovery', 'rolled_back', 'request_failed', 'update_key_invalid', 'reload_page', 'sign_in'].indexOf(key) !== -1);
+        var ready = !!(!stopped && snapshot && snapshot.supported && !pending && !busy() && !disconnected);
+        var enabled = ready && snapshot.writable;
+        var selfUpdates = !!(snapshot && snapshot.self_updates);
+        document.getElementById('update-key-field').hidden = !selfUpdates || !snapshot.writable;
+        document.getElementById('update-key-setup').hidden = !selfUpdates || !snapshot.supported || snapshot.writable;
+        check.disabled = !(ready && (selfUpdates || snapshot.writable));
+        channel.disabled = automatic.disabled = !enabled || selfUpdates;
         install.disabled = !enabled || !snapshot.update_available;
         var isDocker = snapshot && snapshot.installation_type === 'docker';
         var isHa = snapshot && snapshot.installation_type === 'ha_app';
@@ -65,7 +70,7 @@
         document.getElementById('update-worker-version').textContent = snapshot && snapshot.worker_version || '—';
         document.getElementById('update-worker-hint').hidden = !isDocker ||
             (snapshot.worker_version && snapshot.worker_version === snapshot.current_version);
-        document.getElementById('update-host-settings').hidden = !snapshot || isHa || snapshot.writable || !snapshot.supported;
+        document.getElementById('update-host-settings').hidden = !snapshot || isHa || !selfUpdates || !snapshot.supported;
         document.getElementById('update-host-settings-cmd').textContent =
             'sudo python3 ' + (isDocker ? '/usr/local/lib/webclock-docker-updater/update_settings.py --kind docker' : 'scripts/update_settings.py') + ' --auto-update off';
         var enablePanel = document.getElementById('update-enable');
@@ -117,10 +122,24 @@
         if (!stopped) timer = window.setTimeout(refresh, busy() || disconnected ? 3000 : 30000);
     }
     function request(path, data) {
+        var headers = {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content};
+        if (path === '/install' && snapshot && snapshot.self_updates) {
+            var field = document.getElementById('update-key');
+            headers['X-WebClock-Update-Key'] = field.value.trim();
+            field.value = '';
+        }
         return fetch(base + path, {method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin',
-            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrf-token').content},
+            headers: headers,
             body: data === undefined ? undefined : JSON.stringify(data)}).then(function (response) {
-            if (response.redirected || response.status === 401 || response.status === 403) throw new Error('sign_in');
+            if (response.redirected || response.status === 401) throw new Error('sign_in');
+            if (response.status === 403) {
+                return response.json().then(function (result) {
+                    if (result && result.code === 'update_key_invalid') throw new Error('update_key_invalid');
+                    if (result && result.code === 'csrf_failed') throw new Error('reload_page');
+                    if (result && result.code === 'self_update_unavailable') throw new Error('request_failed');
+                    throw new Error('sign_in');
+                }, function () { throw new Error('sign_in'); });
+            }
             if (!response.ok) throw new Error('request_failed');
             return response.json();
         });
@@ -156,8 +175,8 @@
         return request(path, data).then(function (result) {
             snapshot = result; disconnected = false; disconnectedSince = 0;
         }).catch(function (error) {
-            if (error.message === 'sign_in') { notice = 'sign_in'; stopped = true; }
-            else if (error.message === 'request_failed') notice = 'request_failed';
+            if (error.message === 'sign_in' || error.message === 'reload_page') { notice = error.message; stopped = true; }
+            else if (error.message === 'request_failed' || error.message === 'update_key_invalid') notice = error.message;
             else {
                 if (!disconnected) disconnectedSince = Date.now(); disconnected = true;
                 // The server may have accepted the install before restarting. Only poll; never resubmit it.
@@ -178,6 +197,9 @@
     check.addEventListener('click', function () { change('/check', {}); });
     projectPath.addEventListener('input', render);
     install.addEventListener('click', function () {
+        if (snapshot && snapshot.self_updates && !document.getElementById('update-key').value.trim()) {
+            notice = 'update_key_invalid'; render(); document.getElementById('update-key').focus(); return;
+        }
         if (snapshot && snapshot.update_available) change('/install', {expected_version: snapshot.latest_version});
     });
     function saveSettings() {
@@ -195,9 +217,9 @@
         });
         document.title = text('title') + ' · WebClock'; render();
     };
-    window.addEventListener('pagehide', function () { stopped = true; window.clearTimeout(timer); });
+    window.addEventListener('pagehide', function () { document.getElementById('update-key').value = ''; stopped = true; window.clearTimeout(timer); });
     window.addEventListener('pageshow', function () {
-        if (stopped && notice !== 'sign_in') {
+        if (stopped && notice !== 'sign_in' && notice !== 'reload_page') {
             stopped = false;
             schedule();
             refresh();
@@ -205,7 +227,7 @@
     });
     if (typeof document.addEventListener === 'function') {
         document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'visible' && stopped && notice !== 'sign_in') {
+            if (document.visibilityState === 'visible' && stopped && notice !== 'sign_in' && notice !== 'reload_page') {
                 stopped = false;
                 schedule();
                 refresh();

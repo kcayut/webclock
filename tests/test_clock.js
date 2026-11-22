@@ -760,5 +760,120 @@ for (const page of [html, template]) {
 assert.doesNotMatch(template, /id="alarm-status"/, 'alarm synchronization failures stay off the main clock');
 assert.match(template, /<form id="local-event-form"[^>]*onsubmit="addLocalEvent\(\); return false;">[\s\S]*?<button type="submit" data-clock-i18n="add">[\s\S]*?<\/button>[\s\S]*?<\/form>/,
     'the real Add action uses native form validation for the time input proxies');
+// A displayed clock receives a new same-origin shell revision while polling.
+{
+    const elements = {};
+    const timers = [];
+    const requests = [];
+    const reloads = [];
+    const sessionStore = {};
+    let isOnline = true;
+    function makeIos9Node(id) {
+        const classes = new Set();
+        const attributes = {};
+        if (id === 'body') {
+            attributes['data-deployment-mode'] = 'self';
+            attributes['data-display-revision'] = 'rev-old';
+        }
+        return {
+            style: {}, children: [],
+            classList: {
+                add: name => classes.add(name),
+                remove: name => classes.delete(name),
+                toggle(name, force) {
+                    if (arguments.length === 1) force = !classes.has(name);
+                    if (force) classes.add(name); else classes.delete(name);
+                    return classes.has(name);
+                },
+                contains: name => classes.has(name),
+            },
+            appendChild(child) { this.children.push(child); },
+            removeChild(child) { this.children.splice(this.children.indexOf(child), 1); },
+            querySelectorAll(selector) { return this.children.filter(child => selector === '.event-row' && child.className === 'event-row'); },
+            querySelector: () => null,
+            setAttribute(name, value) { attributes[name] = value; },
+            getAttribute(name) { return attributes[name] || ''; },
+        };
+    }
+    const iosNode = id => elements[id] || (elements[id] = makeIos9Node(id));
+    const iosWindow = {
+        location: {protocol: 'http:', host: 'clock.example', origin: 'http://clock.example', reload() { reloads.push('reload'); }},
+        addEventListener() {},
+        sessionStorage: {getItem: k => sessionStore[k] || null, setItem: (k, v) => { sessionStore[k] = v; }},
+        localStorage: {getItem: () => null, setItem() {}},
+    };
+    const iosCtx = vm.createContext({
+        Date: DeviceDate, Intl: undefined, Promise: undefined, fetch: undefined,
+        navigator: {get onLine() { return isOnline; }},
+        document: {
+            body: iosNode('body'), documentElement: {},
+            getElementById: id => iosNode(id),
+            createElement: makeIos9Node,
+            addEventListener() {},
+            querySelectorAll: () => [],
+            querySelector: () => null,
+        },
+        window: iosWindow,
+        setInterval: (callback, delay) => timers.push({callback, delay}),
+        clearInterval() {}, setTimeout() {}, clearTimeout() {},
+        XMLHttpRequest: function () {
+            this.responseHeaders = {};
+            this.getResponseHeader = k => this.responseHeaders[k] || null;
+            this.open = (method, url) => { this.url = url; };
+            this.send = () => { requests.push(this); };
+        },
+    });
+    vm.runInContext(fs.readFileSync(path.join(root, 'static/time-format.js'), 'utf8'), iosCtx);
+    vm.runInContext(fs.readFileSync(path.join(root, 'static/clock.js'), 'utf8'), iosCtx);
+    vm.runInContext(coreScript, iosCtx);
+    vm.runInContext(serverScript, iosCtx);
+    const tick = timers.find(t => t.delay === 1000);
+    iosCtx.enterServerMode({
+        server_timestamp: now, events: [{text: 'Morning'}],
+        settings: {mode: 'normal', brightness: 100, timezone_offset: 8, language: 'zh-TW', time_format: '24h', clock_style: 'flip', clock_theme: 'light'},
+    }, false);
+    for (let i = 0; i < 6; i++) tick.callback();
+    assert.equal(iosNode('body').classList.contains('clock-theme-light'), true);
+    assert.equal(iosNode('body').classList.contains('clock-theme-dark'), false);
+    assert.equal(iosNode('body').classList.contains('force-black'), false);
+    assert.equal(iosNode('body').classList.contains('has-events'), true);
+
+    iosCtx.enterServerMode({
+        server_timestamp: now, events: [],
+        settings: {mode: 'black', brightness: 100, timezone_offset: 8, language: 'zh-TW', time_format: '12h', show_seconds: true, clock_style: 'segment', clock_theme: 'dark'},
+    }, false);
+    for (let i = 0; i < 6; i++) tick.callback();
+    assert.equal(iosNode('body').classList.contains('clock-theme-light'), false);
+    assert.equal(iosNode('body').classList.contains('clock-theme-dark'), true);
+    assert.equal(iosNode('body').classList.contains('force-black'), true);
+    assert.equal(iosNode('body').classList.contains('uses-12-hour'), true);
+    assert.equal(iosNode('body').classList.contains('shows-seconds'), true);
+    assert.equal(iosNode('body').classList.contains('has-events'), false);
+
+    // Offline / panel-open / cross-origin never reload; same-origin new revision reloads once without redirect.
+    isOnline = false;
+    iosCtx.maybeReloadForDisplayRevision('rev-new');
+    assert.equal(reloads.length, 0);
+    isOnline = true;
+    iosCtx.toggleConnectionPanel();
+    assert.equal(iosNode('connection-panel').classList.contains('open'), true);
+    iosCtx.maybeReloadForDisplayRevision('rev-new');
+    assert.equal(reloads.length, 0);
+    iosCtx.toggleConnectionPanel();
+    assert.equal(iosNode('connection-panel').classList.contains('open'), false);
+    iosWindow.location.protocol = 'file:';
+    iosCtx.maybeReloadForDisplayRevision('rev-new');
+    assert.equal(reloads.length, 0);
+    iosWindow.location.protocol = 'http:';
+    const poll = requests.pop();
+    poll.status = 200;
+    poll.responseHeaders['X-WebClock-Display-Revision'] = 'rev-new';
+    poll.responseText = JSON.stringify({events: [], settings: {clock_style: 'segment', clock_theme: 'dark'}});
+    poll.readyState = 4;
+    poll.onreadystatechange();
+    assert.equal(reloads.length, 1);
+    iosCtx.maybeReloadForDisplayRevision('rev-new');
+    assert.equal(reloads.length, 1, 'sessionStorage/in-flight guard avoids repeat reload loop');
+}
 console.log('Legacy startup checks passed: no modern APIs/storage/network response, optional UI failure, brightness and reminders without countdown.');
 console.log('Server time checks passed: no external time API, repeated calibration, offline ticking, invalid timestamps and connection-warning recovery.');

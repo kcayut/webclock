@@ -247,6 +247,7 @@
             </div>
         </div>
         <p class="help" data-i18n="clock_style_hint">{{ translations[language].clock_style_hint }}</p>
+        <p class="help clock-style-note" data-i18n="clock_style_upgrade_reload_hint">{{ translations[language].clock_style_upgrade_reload_hint }}</p>
         <fieldset id="clock-style-options" class="clock-style-options" data-theme-mode="{{ 'light' if settings.clock_theme == 'light' else 'dark' }}">
             <legend class="visually-hidden" data-i18n="display_clock_style">{{ translations[language].display_clock_style }}</legend>
             {% for style, name_key, desc_key in [

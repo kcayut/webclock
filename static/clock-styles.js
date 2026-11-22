@@ -75,9 +75,10 @@
         if (!sheets) return true;
         for (var i = 0; i < sheets.length; i++) {
             var href = sheets[i].href || '';
-            if (href.indexOf('clock-styles.css') < 0) continue;
+            if (href.indexOf('clock-styles.css') < 0 || sheets[i].disabled) continue;
             try {
-                if (!sheets[i].cssRules || sheets[i].cssRules.length > 0) {
+                var rules = sheets[i].cssRules;
+                if (rules && rules.length > 0) {
                     state.stylesheetReady = true;
                     return true;
                 }

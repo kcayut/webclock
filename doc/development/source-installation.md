@@ -30,7 +30,7 @@ bash setup.sh --docker --build
 
 兩者預設為 self；加上 `--managed` 可啟用帳號管理，提供 [TLS 參數](../operations/accounts-and-https.md#https)，或在未配置憑證時經二次確認選擇內網 HTTP。`bash setup.sh --docker` 不加 `--build` 會取得預建映像，**不會把本機原始碼修改放進容器**。套件安裝與映像建置仍需網路，下載原始碼不等於離線安裝包。
 
-原始碼 Linux 安裝保留原本 Git upstream，不會自動改成正式 Release 管道；ZIP 沒有 Git 歷史，不應假定可套用 Git 更新／回退流程。長期部署且希望跟隨正式版時，使用[正式版安裝器](../installation.md)。
+從 1.5.1 起，Linux 安裝的手動更新預設檢查 GitHub Release。若這份 checkout 已追蹤自己的 Gitea 分支，可在安裝目錄執行 `sudo bash update_clock.sh --upstream`，單次沿用該分支並執行更新器的備份與驗證。ZIP 沒有 Git 歷史，不支援 Git 更新或回退。長期部署且希望跟隨正式版時，使用[正式版安裝器](../installation.md)。
 
 <a id="manual-python"></a>
 ## 其他設定與手動 Python 執行

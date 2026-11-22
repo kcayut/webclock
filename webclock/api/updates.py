@@ -1,8 +1,11 @@
-"""Administrator controls for the independent Linux update service."""
+"""Web controls for the host release updater."""
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 import socket
+import time
 
 from flask import Blueprint, g, jsonify, render_template, request, url_for
 
@@ -60,7 +63,11 @@ def register_updates(app, auth, context):
     api = Blueprint('updates', __name__)
 
     def admin():
-        return auth().mode() == 'managed' and auth().is_admin(getattr(g, 'owner_id', None))
+        return g.deployment_mode == 'managed' and auth().is_admin(getattr(g, 'owner_id', None))
+
+    def self_key_hash():
+        value = os.getenv('WEBCLOCK_SELF_UPDATE_KEY_SHA256', '')
+        return value if len(value) == 64 and all(c in '0123456789abcdef' for c in value) else ''
 
     def unsupported():
         return platform_managed()
@@ -72,13 +79,21 @@ def register_updates(app, auth, context):
     def authorize():
         if not same_origin():
             return failure('cross_origin_forbidden')
-        if auth().mode() == 'managed' and not admin():
-            return failure('admin_required')
-        if request.method != 'GET':
+        if g.deployment_mode == 'managed':
             if not admin():
-                return failure('managed_required')
+                return failure('admin_required')
+        elif g.deployment_mode != 'self':
+            return failure('admin_required')
+        if request.method == 'POST':
             if unsupported():
                 return failure('unsupported', 409)
+            if g.deployment_mode == 'self' and request.endpoint != 'updates.check':
+                expected = self_key_hash()
+                if request.endpoint != 'updates.install' or not expected:
+                    return failure('self_update_unavailable')
+                supplied = request.headers.get('X-WebClock-Update-Key', '')
+                if not supplied or not hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), expected):
+                    return failure('update_key_invalid')
 
     def status_view(state):
         state = dict(state)
@@ -89,11 +104,12 @@ def register_updates(app, auth, context):
             # Report the running image, never the host checkout or a staged .env value.
             state['current_version'] = __version__
         state.update(info)
-        state['writable'] = admin() and state.get('supported', False)
+        state['self_updates'] = g.deployment_mode == 'self'
+        state['writable'] = bool(state.get('supported') and (admin() or (state['self_updates'] and self_key_hash())))
         if not admin() or not state.get('supported'):
             state.pop('project_path', None)
-        if not admin() and state.get('supported'):
-            state['reason'] = 'managed_required'
+        if not state['writable'] and state.get('supported'):
+            state['reason'] = 'self_update_unavailable'
         return state
 
     def unavailable(reason):
@@ -146,8 +162,17 @@ def register_updates(app, auth, context):
             return failure(result.get('error', 'updater_failed'), 409)
         return jsonify(status_view(result['status']))
 
+    # Self-mode browsers share one GitHub check per minute, including failed checks.
+    next_self_check = 0.0
+
     @api.route('/api/updates/check', methods=['POST'])
     def check():
+        nonlocal next_self_check
+        if g.deployment_mode == 'self' and request.get_json(silent=True) == {}:
+            now = time.monotonic()
+            if now < next_self_check:
+                return status()
+            next_self_check = now + 60
         return command('check', set())
 
     @api.route('/api/updates/settings', methods=['POST'])

@@ -10,6 +10,7 @@ import time
 import hashlib
 import re
 from uuid import uuid4
+from functools import lru_cache
 from math import ceil
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock
@@ -84,6 +85,42 @@ MAX_CALENDAR_SOURCES = 20
 MAX_CALENDAR_QUERY_DAYS = 366
 MAX_CALENDAR_EVENTS = 10000
 MAX_CALENDAR_QUERY_CACHE = 3
+DISPLAY_ASSET_FILES = (
+    'clock.css',
+    'time-inputs.css',
+    'clock.js',
+    'clock-styles.css',
+    'clock-styles.js',
+    'device-session.js',
+    'time-format.js',
+    'time-inputs.js',
+    'offline.js',
+    'device-enrollment.js',
+    'alarm-audio.js',
+    'alarms.js',
+)
+
+
+@lru_cache(maxsize=1)
+def display_asset_revision():
+    paths = [ROOT / 'templates' / 'index.html'] + [ROOT / 'static' / name for name in DISPLAY_ASSET_FILES]
+    hasher = hashlib.sha256()
+    for path in paths:
+        hasher.update(path.name.encode('utf-8'))
+        hasher.update(b'\0')
+        try:
+            hasher.update(path.read_bytes())
+        except OSError:
+            pass
+        hasher.update(b'\0')
+    return hasher.hexdigest()[:12]
+
+
+def static_url(filename):
+    return url_for('static', filename=filename, v=display_asset_revision())
+
+
+app.jinja_env.globals['static_url'] = static_url
 
 
 @app.after_request
@@ -99,6 +136,10 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
     if request.endpoint in ('status', 'public_time', 'health'):
         response.headers['Cache-Control'] = 'no-store'
+    elif request.endpoint == 'index':
+        response.headers['Cache-Control'] = 'no-cache'
+    if request.endpoint in ('index', 'status'):
+        response.headers['X-WebClock-Display-Revision'] = display_asset_revision()
     return response
 
 
@@ -792,6 +833,7 @@ def index():
     # A management preference must never change the clock's initial language.
     context['language'] = active_settings().get('language', DEFAULT_SETTINGS['language'])
     context['deployment_mode'] = 'managed' if context['display_only'] else getattr(g, 'deployment_mode', 'recovery')
+    context['display_revision'] = display_asset_revision()
     context['device_enrollment_translations'] = DEVICE_ENROLLMENT_TRANSLATIONS
     if getattr(g, 'deployment_mode', 'self') != 'self':
         # Cacheable clock HTML never embeds private account display settings.
@@ -1523,7 +1565,8 @@ register_api(app, lambda: content_directory(), holiday_service, template_context
              calendar_sources=lambda: get_calendar_sources(), device_access=group_service, owner_id=group_owner,
              scope_started=lambda: auth_service().state().get('scope_changed_at', 0))
 app.register_blueprint(groups_api(group_service, group_owner, group_ui_catalog, lambda: device_service().list()))
-app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms))
+app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms,
+                                          display_revision_provider=display_asset_revision))
 
 from webclock.api.mode import register_mode
 app.extensions['webclock_mode_access'] = lambda: group_service(read_only=True)

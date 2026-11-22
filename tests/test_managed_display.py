@@ -428,6 +428,29 @@ class ManagedDisplayTest(unittest.TestCase):
             self.assertNotIn('ETag', response.headers)
             self.assertNotIn('old source', response.text)
 
+    def test_managed_display_exposes_display_revision_and_style_updates_without_scope_jump(self):
+        group = self.group('Styled room', display_overrides={'clock_style': 'flip', 'clock_theme': 'light'})
+        client, _ = self.device(group)
+        first = self.get(client)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.headers['Cache-Control'], 'private, no-cache')
+        self.assertEqual(first.headers['X-WebClock-Display-Revision'], clock.display_asset_revision())
+        self.assertEqual(first.json['settings']['clock_style'], 'flip')
+        self.assertEqual(first.json['settings']['clock_theme'], 'light')
+
+        unchanged = self.get(client, headers={'If-None-Match': first.headers['ETag']})
+        self.assertEqual(unchanged.status_code, 304)
+        self.assertEqual(unchanged.headers['Cache-Control'], 'private, no-cache')
+        self.assertEqual(unchanged.headers['X-WebClock-Display-Revision'], clock.display_asset_revision())
+
+        self.service().update_group(self.owner, group['id'], {
+            'display_overrides': {'clock_style': 'segment', 'clock_theme': 'dark'},
+        })
+        updated = self.get(client, headers={'If-None-Match': first.headers['ETag']})
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json['settings']['clock_style'], 'segment')
+        self.assertEqual(updated.json['settings']['clock_theme'], 'dark')
+
 
 if __name__ == '__main__':
     unittest.main()

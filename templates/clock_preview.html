@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ translations[language].clock_style_preview_title }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='clock.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='clock-styles.css') }}">
+    <link rel="stylesheet" href="{{ static_url('clock.css') }}">
+    <link rel="stylesheet" href="{{ static_url('clock-styles.css') }}">
     <style>
         html, body { width: 100%; height: 100%; }
         body.clock-preview { padding: 0; }
@@ -34,9 +34,9 @@
     </div>
     <p id="preview-status" role="status">{{ preview_loading }}</p>
 
-    <script src="{{ url_for('static', filename='clock-styles.js') }}"></script>
-    <script src="{{ url_for('static', filename='clock.js') }}"></script>
-    <script src="{{ url_for('static', filename='time-format.js') }}"></script>
+    <script src="{{ static_url('clock-styles.js') }}"></script>
+    <script src="{{ static_url('clock.js') }}"></script>
+    <script src="{{ static_url('time-format.js') }}"></script>
     <script>
         (function () {
             var style = {{ preview_style | tojson }};

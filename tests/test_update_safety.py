@@ -333,7 +333,7 @@ class UpdaterTest(unittest.TestCase):
 
     def test_success_preserves_settings_and_data(self):
         with patch.object(updater, 'wait_healthy') as health:
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         health.assert_called_once_with('http://127.0.0.1:80', updater.migrated_settings(self.settings), tls_handler=None)
         self.assertEqual((self.project / 'app.py').read_text(), 'new source\n')
         self.assertEqual(json.loads((self.project / 'webclock_state/settings.json').read_text()),
@@ -345,7 +345,7 @@ class UpdaterTest(unittest.TestCase):
         self.fail_pip = True
         with patch.object(updater, 'wait_healthy'):
             with self.assertRaises(subprocess.CalledProcessError):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
         self.assertEqual((self.project / 'venv/package').read_text(), 'old package')
         self.assertEqual(self.state, 'active')
@@ -362,7 +362,7 @@ class UpdaterTest(unittest.TestCase):
 
         with patch.object(updater, 'wait_healthy'):
             with self.assertRaises(subprocess.CalledProcessError):
-                updater.update(self.project, progress=failing_progress)
+                updater.update(self.project, progress=failing_progress, upstream=True)
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
         self.assertEqual((self.project / 'venv/package').read_text(), 'old package')
         self.assertEqual(self.state, 'active')
@@ -389,7 +389,7 @@ class UpdaterTest(unittest.TestCase):
              patch.object(updater, 'wait_healthy') as health, \
              patch.object(updater, 'verify_server', side_effect=failed_server):
             with self.assertRaisesRegex(RuntimeError, 'failed HTTPS server'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual(health.call_count, 2)
         self.assertTrue(all(call.kwargs['tls_handler'] is handler for call in health.call_args_list))
         self.assertTrue(any(call.args[0].endswith('/api/control') for call in request.call_args_list))
@@ -400,7 +400,7 @@ class UpdaterTest(unittest.TestCase):
         self.configuration.update(WEBCLOCK_TLS_CERT='cert.pem', WEBCLOCK_TLS_KEY='key.pem',
                                   WEBCLOCK_UPDATE_CA='missing-ca.pem')
         with self.assertRaises(FileNotFoundError):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
         self.assertEqual(list(self.project.glob('.webclock-update-*')), [])
 
@@ -479,7 +479,7 @@ class UpdaterTest(unittest.TestCase):
     def test_unhealthy_service_rolls_back(self):
         with patch.object(updater, 'wait_healthy', side_effect=[RuntimeError('crash'), None]):
             with self.assertRaisesRegex(RuntimeError, 'crash'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual((self.project / 'app.py').read_text(), 'old source\n')
         self.assertEqual((self.project / 'venv/package').read_text(), 'old package')
         self.assertEqual(self.state, 'active')
@@ -487,7 +487,7 @@ class UpdaterTest(unittest.TestCase):
     def test_dirty_install_stops_before_service_changes(self):
         (self.project / 'app.py').write_text('user edits')
         with self.assertRaisesRegex(RuntimeError, 'Uncommitted'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
         self.assertEqual((self.project / 'app.py').read_text(), 'user edits')
 
@@ -497,7 +497,7 @@ class UpdaterTest(unittest.TestCase):
         self.real_run(['git', 'add', '-f', '.env'], cwd=self.remote)
         self.commit('unsafe data')
         with self.assertRaisesRegex(RuntimeError, 'tracks installation data'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
         self.assert_data_preserved()
 
@@ -505,7 +505,7 @@ class UpdaterTest(unittest.TestCase):
         (self.project / 'webclock_state').mkdir()
         (self.project / 'webclock_state/settings.json').write_text('{broken')
         with self.assertRaises(ValueError):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
 
     def test_non_git_install_preserves_files(self):
@@ -515,6 +515,21 @@ class UpdaterTest(unittest.TestCase):
             updater.update(self.project)
         self.assertEqual((self.project / 'app.py').read_text(), 'old source\n')
         self.assert_data_preserved()
+
+    def test_upstream_update_rejects_version_downgrade_and_diverged_history(self):
+        (self.remote / 'VERSION').write_text('2.0.0\n')
+        self.commit('release 2.0.0')
+        self.real_run(['git', 'fetch'], cwd=self.project)
+        self.real_run(['git', 'merge', '--ff-only', 'origin/main'], cwd=self.project)
+        (self.remote / 'VERSION').write_text('1.9.0\n')
+        self.commit('accidental downgrade')
+        with self.assertRaisesRegex(RuntimeError, 'Downgrades are unsupported'):
+            updater.update(self.project, upstream=True)
+        self.real_run(['git', 'reset', '--hard', 'HEAD~1'], cwd=self.remote)
+        self.real_run(['git', 'commit', '--amend', '-m', 'rewritten upstream', '--no-edit'], cwd=self.remote)
+        with self.assertRaisesRegex(RuntimeError, 'descend'):
+            updater.update(self.project, upstream=True)
+        self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
 
     def modular_target(self):
         (self.remote / 'webclock').mkdir(exist_ok=True)
@@ -544,7 +559,7 @@ class UpdaterTest(unittest.TestCase):
 
         with patch.object(updater, 'wait_healthy'), patch.object(updater, 'verify_server', side_effect=fail_after_start):
             with self.assertRaisesRegex(RuntimeError, 'new API failed'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         for path, content in originals.items():
             self.assertEqual(path.read_bytes(), content, str(path))
         self.assertEqual(notes.stat().st_mode, mode)
@@ -564,7 +579,7 @@ class UpdaterTest(unittest.TestCase):
         original = (self.project / 'manual_notes.json').read_bytes()
         with patch.object(updater, 'wait_healthy'), patch.object(updater, 'verify_server', side_effect=RuntimeError('bad API')):
             with self.assertRaisesRegex(RuntimeError, 'bad API'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertFalse(state.exists())
         self.assertFalse((self.project / 'webclock_state').exists())
         self.assertEqual((self.project / 'manual_notes.json').read_bytes(), original)
@@ -580,7 +595,7 @@ class UpdaterTest(unittest.TestCase):
 
         with patch.object(updater, 'run', side_effect=fail_copy), patch.object(updater, 'wait_healthy'):
             with self.assertRaisesRegex(OSError, 'backup disk full'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual((self.project / 'manual_notes.json').read_bytes(), original)
         self.assertEqual((self.project / 'app.py').read_text(), 'old source\n')
         self.assertEqual(self.state, 'active')
@@ -593,7 +608,7 @@ class UpdaterTest(unittest.TestCase):
         state.mkdir()
         (state / 'manual_notes.json').write_text('[{"id":9,"text":"different"}]')
         with self.assertRaisesRegex(RuntimeError, 'reminder files differ'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
         self.assert_data_preserved()
 
@@ -603,7 +618,7 @@ class UpdaterTest(unittest.TestCase):
         (self.remote / 'private/notes.json').write_text('[]')
         self.commit('unsafe custom data')
         with self.assertRaisesRegex(RuntimeError, 'tracks installation data'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
 
     def test_unsafe_data_paths_and_lock_symlink_are_rejected(self):
@@ -618,7 +633,7 @@ class UpdaterTest(unittest.TestCase):
         victim.write_text('preserve')
         (self.project / '.webclock-update.lock').symlink_to(victim)
         with self.assertRaises(OSError):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertEqual(victim.read_text(), 'preserve')
         self.assertFalse(any(args[0] == 'systemctl' for args in self.calls))
 
@@ -664,7 +679,7 @@ class UpdaterTest(unittest.TestCase):
     def test_failed_recovery_keeps_backup_and_reports_failure(self):
         with patch.object(updater, 'wait_healthy', side_effect=RuntimeError('crash')):
             with self.assertRaisesRegex(RuntimeError, 'crash') as failure:
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertFalse(failure.exception.rollback_succeeded)
         self.assertEqual(self.state, 'inactive')
         backup = next(self.project.glob('.webclock-update-*'))
@@ -719,7 +734,7 @@ class UpdaterTest(unittest.TestCase):
         with patch.object(updater, 'http_json', side_effect=self.public_health_only), \
              patch.object(updater, 'service_property', side_effect=lambda key: '123' if key == 'MainPID' else 'active'), \
              patch.object(updater.time, 'sleep'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertEqual(json.loads((state / 'auth.json').read_text()), auth)
         self.assertEqual(list(self.project.glob('.webclock-update-*')), [])
 
@@ -734,7 +749,7 @@ class UpdaterTest(unittest.TestCase):
         with patch.object(updater, 'http_json', side_effect=self.public_health_only), \
              patch.object(updater, 'wait_healthy'), patch.object(updater, 'verify_server', side_effect=fail_after_change):
             with self.assertRaisesRegex(RuntimeError, 'failed new health'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual(json.loads((state / 'auth.json').read_text()), auth)
         self.assertEqual(json.loads((state / 'device-access.json').read_text())['devices']['latest']['status'], 'revoked')
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
@@ -759,7 +774,7 @@ class UpdaterTest(unittest.TestCase):
             raise RuntimeError('failed new health')
         with patch.object(updater, 'wait_healthy'), patch.object(updater, 'verify_server', side_effect=fail_after_change):
             with self.assertRaisesRegex(RuntimeError, 'failed new health'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertIsNone(clients.authenticate(issued['token'], 'owner', 'self'))
         self.assertEqual(read_events(state), [latest])
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
@@ -772,7 +787,7 @@ class UpdaterTest(unittest.TestCase):
         self.fail_pip = True
         with patch.object(updater, 'http_json', side_effect=self.public_health_only), patch.object(updater, 'wait_healthy'):
             with self.assertRaises(subprocess.CalledProcessError):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual(self.state, 'inactive')
         self.assertEqual(json.loads((state / 'auth.json').read_text()), auth)
         self.assertFalse(any(command[:2] == ['systemctl', 'start'] for command in self.calls))
@@ -782,11 +797,11 @@ class UpdaterTest(unittest.TestCase):
         for contents in ('{secret-invalid-json', '', json.dumps(dict(auth, mode='self'))):
             (state / 'auth.json').write_text(contents)
             with self.assertRaisesRegex(RuntimeError, 'authorization state') as error:
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
             self.assertNotIn('secret-invalid-json', str(error.exception))
         (state / 'auth.json').unlink()
         with self.assertRaisesRegex(RuntimeError, 'authorization state'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertFalse(any(command[0] == 'systemctl' for command in self.calls))
 
     def test_protected_self_update_uses_primary_data_and_preserves_dormant_owner(self):
@@ -808,7 +823,7 @@ class UpdaterTest(unittest.TestCase):
         module.write_text('AUTH_SCHEMA_VERSION = 1\nAUTH_MULTI_OWNER_VERSION = 1\n')
         self.commit('multi-owner support')
         with patch.object(updater, 'check_public_health'), patch.object(updater, 'wait_healthy') as health:
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         expected = updater.migrated_settings(settings)
         health.assert_called_once_with('http://127.0.0.1:80', expected, deployment_mode='self', tls_handler=None)
         settings_relative = (current / 'settings.json').relative_to(state)
@@ -835,7 +850,7 @@ class UpdaterTest(unittest.TestCase):
         self.fail_pip = True
         with patch.object(updater, 'check_public_health'), patch.object(updater, 'wait_healthy'):
             with self.assertRaises(subprocess.CalledProcessError):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual(self.state, 'inactive')
         self.assertEqual((state / 'auth.json').read_bytes(), before)
         self.assertFalse(any(command[:2] == ['systemctl', 'start'] for command in self.calls))
@@ -854,7 +869,7 @@ class UpdaterTest(unittest.TestCase):
             return result
         with patch.object(updater, 'run', side_effect=setup_during_stop), patch.object(updater, 'wait_healthy'):
             with self.assertRaisesRegex(RuntimeError, 'does not support protected'):
-                updater.update(self.project)
+                updater.update(self.project, upstream=True)
         self.assertEqual(self.state, 'inactive')
         self.assertFalse(any(command[:2] == ['systemctl', 'start'] for command in self.calls))
 

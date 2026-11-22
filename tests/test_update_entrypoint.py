@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 def main():
-    project = Path(sys.argv[1])
+    project = Path(sys.argv[-1])
     dirty = subprocess.run(['git', 'status', '--porcelain'], cwd=project,
                            check=True, text=True, stdout=subprocess.PIPE).stdout
     if dirty:
@@ -57,8 +57,6 @@ class UpdateEntrypointTest(unittest.TestCase):
         (self.remote / 'scripts/update_clock.py').write_text(SAMPLE_UPDATER)
         shutil.copy2(ROOT / 'update_clock.py', self.remote / 'update_clock.py')
         shutil.copy2(ROOT / 'update_clock.sh', self.remote / 'update_clock.sh')
-        (self.remote / 'scripts/update').mkdir()
-        shutil.copy2(ROOT / 'scripts/update/update_clock.sh', self.remote / 'scripts/update/update_clock.sh')
         self.commit()
         self.git('fetch', cwd=self.project)
         self.standalone = self.root / 'downloaded-updater.py'
@@ -123,23 +121,43 @@ class UpdateEntrypointTest(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD', cwd=self.project), self.old_head)
 
     def test_normal_shell_entrypoint_forwards_project_argument(self):
-        for name in ('update_clock.sh', 'scripts/update/update_clock.sh'):
-            with self.subTest(entrypoint=name):
-                result = subprocess.run(['bash', str(self.remote / name), str(self.project)],
-                                        cwd=self.root, check=True, text=True, stdout=subprocess.PIPE)
-                output = json.loads(result.stdout)
-                self.assertEqual(output['argv'][1:], [str(self.project)])
-                self.assertEqual(output['file'], str(self.remote / 'scripts/update_clock.py'))
+        result = subprocess.run(['bash', str(self.remote / 'update_clock.sh'), str(self.project)],
+                                cwd=self.root, check=True, text=True, stdout=subprocess.PIPE)
+        output = json.loads(result.stdout)
+        self.assertEqual(output['argv'][1:], [str(self.project)])
+        self.assertEqual(output['file'], str(self.remote / 'scripts/update_clock.py'))
 
     def test_shell_help_does_not_enable_or_restart_the_updater(self):
         (self.remote / 'scripts/update_clock.py').write_text(
             'import argparse\ndef main():\n    argparse.ArgumentParser().parse_args()\n')
         (self.remote / 'scripts/enable_updates.sh').write_text('echo unexpected-service-change; exit 91\n')
-        for name in ('update_clock.sh', 'scripts/update/update_clock.sh'):
-            result = subprocess.run(['bash', str(self.remote / name), '--help'], cwd=self.root,
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertNotIn('unexpected-service-change', result.stdout)
+        result = subprocess.run(['bash', str(self.remote / 'update_clock.sh'), '--help'], cwd=self.root,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('unexpected-service-change', result.stdout)
+
+    def test_downloaded_bootstrap_accepts_upstream_flag(self):
+        result = json.loads(self.bootstrap('--upstream', self.project))
+        self.assertEqual(result['argv'], [str(self.standalone), '--upstream', str(self.project)])
+        self.assertEqual(result['file'], str(self.project / 'scripts/update_clock.py'))
+
+    def test_downloaded_bootstrap_refuses_downgraded_or_diverged_upstream_before_exec(self):
+        shutil.copy2(ROOT / 'scripts/release_versions.py', self.remote / 'scripts/release_versions.py')
+        (self.remote / 'VERSION').write_text('1.2.0\n')
+        self.commit()
+        self.git('fetch', cwd=self.project)
+        self.git('merge', '--ff-only', 'origin/main', cwd=self.project)
+        (self.remote / 'VERSION').write_text('1.1.0\n')
+        (self.remote / 'scripts/update_clock.py').write_text('raise AssertionError("must not run")\n')
+        self.commit()
+        self.git('fetch', cwd=self.project)
+        with self.assertRaisesRegex(SystemExit, 'Downgrades are unsupported'):
+            self.bootstrap('--upstream', self.project)
+        self.git('reset', '--hard', 'HEAD~1', cwd=self.remote)
+        self.git('commit', '--amend', '-m', 'diverged', '--no-edit', cwd=self.remote)
+        self.git('fetch', '--force', cwd=self.project)
+        with self.assertRaisesRegex(SystemExit, 'does not descend'):
+            self.bootstrap('--upstream', self.project)
 
     def test_normal_import_alias_and_dependency_errors(self):
         import update_clock

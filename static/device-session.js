@@ -4,7 +4,7 @@
     var origin = window.webclockBase || window.location.origin || (window.location.protocol + '//' + window.location.host);
     var source = '', mode = 'unknown', identity = null, group = null, pending = null, phase = 'unknown';
     var generation = 0, sequence = 0, handled = {}, listeners = [], joining = 0, enrolling = false;
-    var resources = {}, bound = false, checked = false, checking = false, lastIdentityCheck = 0;
+    var resources = {}, bound = false, checked = false, checking = false, lastIdentityCheck = 0, identityWaiters = [];
     var applied = {display: 0, alarms: 0}, revisions = {}, commands = [], reporting = false, lastReport = 0;
     var MAX_LEASE = 300000;
     function wall() { return new Date().getTime(); }
@@ -52,7 +52,7 @@
         if (value !== origin && !/^https?:\/\/[A-Za-z0-9.\-:\[\]]+$/.test(value)) value = '';
         if (value === source) return;
         source = value; mode = sameOrigin() && (bootMode === 'self' || bootMode === 'managed') ? bootMode : 'unknown';
-        identity = null; pending = null; phase = 'unknown'; checked = false; checking = false; joining += 1; enrolling = false;
+        identity = null; pending = null; phase = 'unknown'; checked = false; checking = false; identityWaiters = []; joining += 1; enrolling = false;
         try { bound = window.localStorage.getItem(storageKey()) === '1'; } catch (error) { bound = true; }
         clear('source', true);
     }
@@ -62,6 +62,20 @@
         if (!current(request) || request.sequence <= (handled[request.channel] || 0)) return false;
         handled[request.channel] = request.sequence;
         return true;
+    }
+    function checkDisplayRevision(xhr) {
+        if (!sameOrigin() || !xhr || (xhr.status !== 200 && xhr.status !== 304)) return;
+        var rev = header(xhr, 'X-WebClock-Display-Revision');
+        if (!rev) return;
+        var state = getState();
+        for (var i = 0; i < listeners.length; i++) {
+            try { listeners[i]({type: 'display_revision', resource: 'revision', revision: rev, state: state}); } catch (error) {}
+        }
+    }
+    function runIdentityWaiters(waiters, error, data) {
+        for (var i = 0; i < waiters.length; i++) {
+            try { waiters[i](error, data); } catch (ignored) {}
+        }
     }
     function request(method, path, body, channel, callback, headers) {
         var stamp = ticket(channel), xhr = new XMLHttpRequest(), done = false;
@@ -83,7 +97,10 @@
             }
             if (xhr.status < 200 || (xhr.status >= 300 && xhr.status !== 304)) {
                 callback({code: data && data.code || 'request_failed', status: xhr.status}, data, xhr, stamp);
-            } else callback(null, data, xhr, stamp);
+            } else {
+                checkDisplayRevision(xhr);
+                callback(null, data, xhr, stamp);
+            }
         }
         try {
             xhr.open(method, source + path, true);
@@ -124,23 +141,27 @@
     function checkIdentity(callback) {
         callback = callback || function () {};
         if (!sameOrigin()) { checked = true; callback({code: 'same_origin_required'}); return; }
+        identityWaiters.push(callback);
+        if (checking) return;
         checking = true; lastIdentityCheck = wall();
         request('GET', '/api/v2/device/identity', null, 'identity', function (error, data) {
+            var waiters = identityWaiters.slice(0);
+            identityWaiters = [];
             checking = false;
             if (error) {
                 checked = error.status === 401 || error.status === 403 || error.status === 404;
                 if ((error.status === 401 || error.status === 404) && !bound && mode === 'self' && !identity) {
                     phase = 'unpaired'; pending = null; notify('identity');
                 } else unauthorized(error);
-                callback(error); return;
+                runIdentityWaiters(waiters, error); return;
             }
-            if (data && data.status === 'active' && useIdentity(data.identity, data.group)) { callback(null, data); return; }
+            if (data && data.status === 'active' && useIdentity(data.identity, data.group)) { runIdentityWaiters(waiters, null, data); return; }
             if (data && data.status === 'pending' && typeof data.attempt_id === 'string' && number(data.expires_at) && data.expires_at > 0) {
                 identity = null; group = null; pending = data; phase = 'pending'; checked = true; clear('pending', false);
-                callback(null, data); return;
+                runIdentityWaiters(waiters, null, data); return;
             }
-            callback({code: 'invalid_response'});
-        });
+            runIdentityWaiters(waiters, {code: 'invalid_response'});
+        }, {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'});
     }
     function discover(callback) {
         if (mode !== 'unknown') { callback(); return; }
@@ -175,18 +196,23 @@
     function fetchPrivate(kind, accept, failure) {
         expire();
         var old = resources[kind], currentIdentity = identityKey(identity);
-        var headers = old && old.etag ? {'If-None-Match': old.etag} : {};
+        var headers = {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'};
+        if (old && old.etag) headers['If-None-Match'] = old.etag;
         request('GET', '/api/v2/device/' + (kind === 'alarms' ? 'browser-alarms' : 'display'), null, kind, function (error, data, xhr, stamp) {
             if (error) { unauthorized(error); expire(); failure(error); return; }
             if (!identity || identityKey(identity) !== currentIdentity) return;
             if (xhr.status === 304) {
                 var renewalScope = header(xhr, 'X-WebClock-Identity-Revision');
                 if (renewalScope && renewalScope !== identity.identity_revision) { phase = 'unknown'; checked = false; clear('identity', true); checkIdentity(); return; }
-                if (!old || resources[kind] !== old || !checkLease(kind) || header(xhr, 'X-WebClock-Identity-Revision') !== identity.identity_revision) { failure({code: 'invalid_response'}); return; }
+                if (!old || resources[kind] !== old || !checkLease(kind) || header(xhr, 'X-WebClock-Identity-Revision') !== identity.identity_revision) {
+                    if (old && resources[kind] === old) old.etag = '';
+                    failure({code: 'invalid_response'}); return;
+                }
                 data = {server_timestamp: Number(header(xhr, 'X-WebClock-Server-Timestamp')),
                     lease: {issued_at: Number(header(xhr, 'X-WebClock-Server-Timestamp')), expires_at: Number(header(xhr, 'X-WebClock-Lease-Expires-At'))}};
                 var renewal = leaseValue(data, stamp);
                 if (renewal) { renewal.etag = old.etag; resources[kind] = renewal; applied[kind] += 1; report(); }
+                else { old.etag = ''; failure({code: 'invalid_response'}); }
                 return;
             }
             if (!data || data.schema_version !== 3 || !validIdentity(data.identity)) { failure({code: 'invalid_response'}); return; }
@@ -216,7 +242,7 @@
         discover(function (error) {
             if (error) { if (kind === 'display') publicTime(accept, failure); else failure(error); return; }
             if (sameOrigin() && (!checked || (!identity && (wall() < lastIdentityCheck || wall() - lastIdentityCheck >= 15000)))) {
-                if (!checking) checkIdentity(function () {
+                checkIdentity(function () {
                     if (checked) fetchData(kind, accept, failure);
                     else if (kind === 'display') publicTime(accept, failure);
                     else failure({code: 'identity_unavailable'});
@@ -262,7 +288,7 @@
     }
     function prepare(callback) {
         var attemptGeneration = ++joining, completed = callback;
-        enrolling = true; checking = false; checked = false; clear('prepare', true);
+        enrolling = true; checking = false; checked = false; identityWaiters = []; clear('prepare', true);
         callback = function (error, data) { enrolling = false; completed(error, data); };
         post('/api/v2/device/join/prepare', {}, 'prepare', function (error, data) {
             if (attemptGeneration !== joining) return;
@@ -298,7 +324,7 @@
     function leave(callback) {
         if (!sameOrigin() || !identity) { callback({code: 'device_authentication_required'}); return; }
         var attemptGeneration = ++joining;
-        enrolling = true; checking = false; phase = 'leaving';
+        enrolling = true; checking = false; identityWaiters = []; phase = 'leaving';
         clear('leaving', false);
         post('/api/v2/device/leave', {}, 'leave', function (error, data) {
             if (attemptGeneration !== joining) return;
@@ -314,7 +340,7 @@
     }
     function resume() { expire(); if (sameOrigin() && !enrolling && !checking) checkIdentity(); }
     window.WebClockDeviceSession = {setSource: setSource, getState: getState, checkIdentity: checkIdentity,
-        prepare: prepare, join: join, leave: leave, cancelJoin: function () { joining += 1; enrolling = false; checked = false; generation += 1; handled = {}; reporting = false; },
+        prepare: prepare, join: join, leave: leave, cancelJoin: function () { joining += 1; enrolling = false; checked = false; checking = false; identityWaiters = []; generation += 1; handled = {}; reporting = false; },
         fetchDisplay: function (accept, failure) { fetchData('display', accept, failure); },
         fetchAlarms: function (accept, failure) { fetchData('alarms', accept, failure); },
         hasLease: checkLease, expire: expire, subscribe: function (callback) { listeners.push(callback); }};
@@ -322,7 +348,7 @@
     window.addEventListener('pageshow', resume);
     window.addEventListener('storage', function (event) {
         if (event.key === 'webclock.deviceChanged.' + source || event.key === storageKey()) {
-            phase = 'unknown'; checked = false; joining += 1; enrolling = false; clear('identity', true); checkIdentity();
+            phase = 'unknown'; checked = false; checking = false; identityWaiters = []; joining += 1; enrolling = false; clear('identity', true); checkIdentity();
         }
     });
     setInterval(expire, 1000);

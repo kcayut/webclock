@@ -244,6 +244,7 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertIn('data-management-tab="styles"', page)
             self.assertIn('data-i18n="clock_style_flip"', page)
             self.assertIn('id="clock-style-preview"', page)
+            self.assertIn('data-i18n="clock_style_upgrade_reload_hint"', page)
             self.assertNotIn('id="clock_theme_auto"', page)
             self.assertNotIn('value="auto"', page)
             self.assertIn('id="clock_theme_dark"', page)
@@ -257,6 +258,32 @@ class ClockFeaturesTest(unittest.TestCase):
             self.assertNotIn('id="clock_style_glass"', page)
             self.assertNotIn('id="clock_style_orbit"', page)
             self.assertNotIn('id="clock_style_paper"', page)
+        self.assertIn(clock.UI_TRANSLATIONS['zh-TW']['clock_style_upgrade_reload_hint'],
+                      self.client.get('/admin').text)
+
+    def test_display_page_versioned_assets_cache_headers_and_shared_revision(self):
+        rev = clock.display_asset_revision()
+        self.assertGreaterEqual(len(rev), 8)
+        home = self.client.get('/')
+        self.assertEqual(home.status_code, 200)
+        self.assertEqual(home.headers['Cache-Control'], 'no-cache')
+        self.assertEqual(home.headers['X-WebClock-Display-Revision'], rev)
+        home_html = home.get_data(as_text=True)
+        self.assertIn(f'data-display-revision="{rev}"', home_html)
+        for asset in ('clock.css', 'clock.js', 'clock-styles.css', 'clock-styles.js', 'device-session.js'):
+            self.assertIn(f'/static/{asset}?v={rev}', home_html)
+        preview = self.client.get('/admin/preview?style=segment&theme=light')
+        self.assertEqual(preview.status_code, 200)
+        preview_html = preview.get_data(as_text=True)
+        for asset in ('clock.css', 'clock-styles.css', 'clock-styles.js', 'clock.js'):
+            self.assertIn(f'/static/{asset}?v={rev}', preview_html)
+        status = self.client.get('/api/status')
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.headers['Cache-Control'], 'no-store')
+        self.assertEqual(status.headers['X-WebClock-Display-Revision'], rev)
+        with patch.object(clock, 'display_asset_revision', return_value='injected-rev'):
+            self.assertEqual(self.client.get('/').headers['X-WebClock-Display-Revision'], 'injected-rev')
+            self.assertEqual(self.client.get('/api/status').headers['X-WebClock-Display-Revision'], 'injected-rev')
 
     def test_clock_style_preview_is_fixed_pure_and_does_not_write_settings(self):
         before = self.client.get('/api/control').json

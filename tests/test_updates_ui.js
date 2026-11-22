@@ -97,7 +97,7 @@ const initial = {supported: true, writable: true, current_version: '1.1.0', late
     assert.equal(el['update-status'].textContent, 'ja:sign_in');
     assert.equal(app.timers.size, 0, 'An expired session must stop repeated unauthorized requests');
 
-        for (const [reason, supported, message] of [['managed_required', true, 'managed_required'],
+    for (const [reason, supported, message] of [['self_update_unavailable', true, 'self_update_unavailable'],
         ['not_configured', false, 'not_configured'], ['unsupported', false, 'unsupported']]) {
         const other = setup(); await other.reply({...initial, reason, supported, writable: false});
         assert.equal(other.ids['update-status'].textContent, 'en:' + message);
@@ -109,6 +109,32 @@ const initial = {supported: true, writable: true, current_version: '1.1.0', late
         await other.reply({...initial, reason, supported, writable: false});
         assert.equal(other.timers.size, 1);
     }
+
+    const personal = setup();
+    await personal.reply({...initial, self_updates: true});
+    assert.equal(personal.ids['update-check'].disabled, false);
+    assert.equal(personal.ids['update-channel'].disabled, true);
+    personal.document.getElementById('update-key').value = 'host-key';
+    personal.ids['update-install'].trigger('click');
+    const rejected = await personal.reply({code: 'update_key_invalid'}, 403);
+    assert.equal(rejected.options.headers['X-WebClock-Update-Key'], 'host-key');
+    assert.equal(personal.ids['update-status'].textContent, 'en:update_key_invalid');
+    personal.ids['update-check'].trigger('click');
+    const checked = await personal.reply({...initial, self_updates: true, writable: false});
+    assert.equal(checked.options.headers['X-WebClock-Update-Key'], undefined);
+    assert.equal(personal.ids['update-key-setup'].hidden, false);
+    assert.equal(personal.ids['update-install'].disabled, true);
+    assert.equal(personal.ids['update-check'].disabled, false);
+    assert.equal(personal.ids['update-key'].value, '');
+    personal.ids['update-check'].trigger('click');
+    await personal.reply({code: 'csrf_failed'}, 403);
+    assert.equal(personal.ids['update-status'].textContent, 'en:reload_page');
+    assert.equal(personal.ids['update-check'].disabled, true);
+    assert.equal(personal.timers.size, 0);
+    const switched = setup(); await switched.reply({...initial, self_updates: true});
+    switched.poll(); await switched.reply({code: 'admin_required'}, 403);
+    assert.equal(switched.ids['update-status'].textContent, 'en:sign_in');
+    assert.equal(switched.timers.size, 0);
 
     const dockerApp = setup();
     await dockerApp.reply({...initial, installation_type: 'docker', supported: false, reason: 'not_configured', writable: false});

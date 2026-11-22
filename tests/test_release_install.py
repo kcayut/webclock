@@ -176,21 +176,75 @@ class ReleaseUpdateTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'tag and product version differ'):
                 update_clock.update_target(self.project, ['git'], channel='stable')
 
+    def test_pre_version_checkout_can_discover_first_official_upgrade(self):
+        (self.project / 'VERSION').unlink()
+        with patch.object(update_clock.release_versions, 'discover_release',
+                          return_value={'update_available': False}) as discover:
+            self.assertIsNone(update_clock.update_target(self.project, ['git'], channel='stable'))
+            discover.assert_called_once_with('stable', '0.0.0')
+
     def test_unknown_channel_is_rejected_before_network_access(self):
         with patch.object(update_clock.release_versions, 'discover_release') as discover:
             with self.assertRaisesRegex(RuntimeError, 'Unknown WebClock release channel'):
                 update_clock.update_target(self.project, ['git'], channel='nightly')
             discover.assert_not_called()
 
-    def test_developer_checkout_keeps_its_configured_upstream(self):
-        def run(args, cwd=None):
-            if args[1] == 'config':
+    def test_unset_channel_defaults_to_stable_and_explicit_upstream_uses_git_tracking_branch(self):
+        def unset_run(args, cwd=None):
+            if args[1:3] == ['config', '--get']:
                 raise subprocess.CalledProcessError(1, args)
+            if args[1] == 'rev-parse':
+                return 'release-commit'
+            if args[1] == 'show':
+                return '1.1.1'
+            return ''
+        with patch.object(update_clock, 'run', side_effect=unset_run), \
+             patch.object(update_clock.release_versions, 'discover_release', return_value=self.release) as discover:
+            self.assertEqual(update_clock.update_target(self.project, ['git']), 'release-commit')
+            discover.assert_called_once_with('stable', '1.1.0')
+
+        def upstream_run(args, cwd=None):
+            if args[1:3] == ['rev-parse', '--abbrev-ref']:
+                return 'origin/main'
             return 'development-commit' if args[1] == 'rev-parse' else ''
-        with patch.object(update_clock, 'run', side_effect=run), \
+        with patch.object(update_clock, 'run', side_effect=upstream_run), \
              patch.object(update_clock.release_versions, 'discover_release') as network:
-            self.assertEqual(update_clock.update_target(Path('/test'), ['git']), 'development-commit')
+            self.assertEqual(update_clock.update_target(Path('/test'), ['git'], upstream=True), 'development-commit')
             network.assert_not_called()
+
+        with self.assertRaisesRegex(RuntimeError, 'cannot be combined'):
+            update_clock.update_target(self.project, ['git'], channel='stable', upstream=True)
+
+        def missing_upstream(args, cwd=None):
+            if args[1] == 'rev-parse':
+                raise subprocess.CalledProcessError(128, args)
+            return ''
+        with patch.object(update_clock, 'run', side_effect=missing_upstream):
+            with self.assertRaisesRegex(RuntimeError, 'No Git upstream tracking branch'):
+                update_clock.update_target(self.project, ['git'], upstream=True)
+
+    def test_upstream_and_main_guard_against_downgrades_and_failed_channel_mutation(self):
+        def show_version(args, cwd=None):
+            if args[1] == 'show':
+                return '1.2.0' if args[2].startswith('old:') else '1.1.0'
+            return ''
+        with patch.object(update_clock, 'run', side_effect=show_version):
+            with self.assertRaisesRegex(RuntimeError, 'Downgrades are unsupported'):
+                update_clock.check_git_version_upgrade(['git'], self.project, 'old', 'new', ['VERSION'], ['VERSION'], allow_equal=True)
+            with self.assertRaisesRegex(RuntimeError, 'missing VERSION'):
+                update_clock.check_git_version_upgrade(['git'], self.project, 'old', 'new', ['VERSION'], ['app.py'], allow_equal=True)
+            update_clock.check_git_version_upgrade(['git'], self.project, 'old', 'new', ['app.py'], ['app.py'], allow_equal=True)
+        with patch.object(update_clock, 'run', return_value='1.2.0'):
+            update_clock.check_git_version_upgrade(['git'], self.project, 'old', 'new', ['VERSION'], ['VERSION'], allow_equal=True)
+            with self.assertRaisesRegex(RuntimeError, 'Downgrades are unsupported'):
+                update_clock.check_git_version_upgrade(['git'], self.project, 'old', 'new', ['VERSION'], ['VERSION'], allow_equal=False)
+        with patch.object(update_clock.os, 'geteuid', return_value=0), \
+             patch.object(update_clock, 'update', side_effect=RuntimeError('broken')), \
+             patch.object(update_clock, 'set_channel') as set_channel, \
+             patch.object(sys, 'argv', ['update_clock.py', '--channel', 'beta', str(self.project)]), \
+             self.assertRaises(SystemExit):
+            update_clock.main()
+        set_channel.assert_not_called()
 
 
 if __name__ == '__main__':

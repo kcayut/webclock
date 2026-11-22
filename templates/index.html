@@ -7,8 +7,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{{ translations[language].app_title }}</title>
     {% include 'brand_head.html' %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='clock.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='time-inputs.css') }}">
+    <link rel="stylesheet" href="{{ static_url('clock.css') }}">
+    <link rel="stylesheet" href="{{ static_url('time-inputs.css') }}">
     <style>
         #alarm-bell {
             display: none; position: fixed; top: 8px; right: 8px; z-index: 140;
@@ -46,6 +46,7 @@
             display: none;
             width: 95%;
             height: 25vh;
+            -webkit-flex-shrink: 0;
             flex-shrink: 0;
             margin-top: 0;
             position: relative;
@@ -286,10 +287,12 @@
         }
 
         .local-event-item {
+            display: -webkit-flex;
             display: flex;
+            -webkit-align-items: center;
             align-items: center;
+            -webkit-justify-content: space-between;
             justify-content: space-between;
-            gap: 8px;
             border-top: 1px solid #2c2c2c;
             padding: 6px 0;
         }
@@ -300,11 +303,14 @@
 
         .local-event-item button {
             color: #ffb4af;
+            margin-left: 8px;
+            -webkit-flex-shrink: 0;
+            flex-shrink: 0;
         }
     </style>
 </head>
 
-<body data-deployment-mode="{{ deployment_mode }}">
+<body data-deployment-mode="{{ deployment_mode }}" data-display-revision="{{ display_revision }}">
     <div id="clock-backdrop" aria-hidden="true"></div>
     <button id="alarm-bell" type="button" aria-label="{{ translations[language].alarm_set }}">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4M12 2v2"/></svg>
@@ -367,7 +373,7 @@
         <p id="alarm-help">{{ translations[language].alarm_sound_hint }}</p>
     </div>
 
-    <script src="{{ url_for('static', filename='clock.js') }}"></script>
+    <script src="{{ static_url('clock.js') }}"></script>
     <script>
         window.WebClockCore.start({
             weekDays: {{ translations[language].weekdays | tojson }},
@@ -375,11 +381,11 @@
         });
     </script>
     <!-- Optional style assets must not prevent the essential clock above from starting. -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='clock-styles.css') }}">
-    <script src="{{ url_for('static', filename='clock-styles.js') }}"></script>
-    <script src="{{ url_for('static', filename='device-session.js') }}"></script>
+    <link id="clock-styles-link" rel="stylesheet" href="{{ static_url('clock-styles.css') }}">
+    <script src="{{ static_url('clock-styles.js') }}"></script>
+    <script src="{{ static_url('device-session.js') }}"></script>
     <script>window.WebClockEnrollmentTranslations = {{ device_enrollment_translations | tojson }};</script>
-    <script src="{{ url_for('static', filename='time-format.js') }}"></script>
+    <script src="{{ static_url('time-format.js') }}"></script>
     <script>
         var I18N = {{ translations | tojson }};
         var currentLanguage = {{ language | tojson }};
@@ -391,6 +397,8 @@
         if (window.webclockBase && storedServerUrl === window.location.origin) storedServerUrl = localServerUrl;
         var serverUrl = normalizeServerUrl(storedServerUrl) || localServerUrl;
         var deploymentMode = document.body.getAttribute('data-deployment-mode');
+        var displayRevision = document.body.getAttribute('data-display-revision') || '';
+        var reloadingForRevision = false;
         var deviceSession = window.WebClockDeviceSession;
         var connectionMode = 'server';
         var activeSettings = {};
@@ -398,6 +406,29 @@
         var connectionGeneration = 1;
         var statusRequestSequence = 0;
         var lastHandledStatusSequence = 0;
+
+        function maybeReloadForDisplayRevision(nextRevision) {
+            if (!displayRevision || !nextRevision || nextRevision === displayRevision || reloadingForRevision) return;
+            var loc = window.location;
+            if (!loc || typeof loc.reload !== 'function' || !/^https?:$/i.test(loc.protocol || '')) return;
+            var pageOrigin = loc.origin || (loc.protocol + '//' + loc.host);
+            if (!pageOrigin || serverUrl !== localServerUrl || localServerUrl.indexOf(pageOrigin) !== 0) return;
+            if (typeof navigator === 'object' && navigator.onLine === false) return;
+            if (deviceSession && typeof deviceSession.getState === 'function') {
+                var sessionState = deviceSession.getState();
+                if (sessionState && (sessionState.attempt_id || sessionState.phase === 'pending' || sessionState.phase === 'leaving')) return;
+            }
+            var panel = document.getElementById('connection-panel');
+            if ((panel && panel.classList.contains('open')) || document.body.classList.contains('alarm-ringing')) return;
+            try {
+                if (window.sessionStorage) {
+                    if (window.sessionStorage.getItem('webclock.reloadedRevision') === nextRevision) return;
+                    window.sessionStorage.setItem('webclock.reloadedRevision', nextRevision);
+                }
+            } catch (e) {}
+            reloadingForRevision = true;
+            loc.reload();
+        }
 
         function t(key) {
             var pack = I18N[currentLanguage] || I18N['zh-TW'];
@@ -827,10 +858,13 @@
                 if (xhr.status === 0) return;
                 finishStatusRequest(request, function () {
                     if (xhr.status === 200) {
+                        var nextRevision = typeof xhr.getResponseHeader === 'function'
+                            ? xhr.getResponseHeader('X-WebClock-Display-Revision') : '';
                         try {
                             var data = JSON.parse(xhr.responseText);
                             if (!safeShared) { setClockBase(data.server_timestamp); enterStandaloneMode('connection_connected'); }
                             else if (!enterServerMode(data, false)) enterStandaloneMode('connection_unreadable');
+                            else if (nextRevision) maybeReloadForDisplayRevision(nextRevision);
                         } catch (e) {
                             enterStandaloneMode('connection_unreadable');
                         }
@@ -1081,10 +1115,19 @@
 
         // Upgrade the already-running basic clock without creating another timer.
         window.WebClockCore.useUpdater(updateClock);
+        var styleSheetLink = document.getElementById('clock-styles-link');
+        if (styleSheetLink && styleSheetLink.addEventListener) {
+            styleSheetLink.addEventListener('load', function () { updateClock(); });
+        }
         if (deviceSession) {
             deviceSession.setSource(serverUrl, deploymentMode);
             deviceSession.subscribe(function (event) {
-                if (event.type === 'sync' || event.type === 'joined') { fetchStatus(); return; }
+                if (event.type === 'display_revision') { maybeReloadForDisplayRevision(event.revision); return; }
+                if (event.type === 'sync' || event.type === 'joined' ||
+                        (event.type === 'identity' && event.state && event.state.phase === 'active')) {
+                    fetchStatus();
+                    return;
+                }
                 if (event.resource === 'display' || event.resource === 'all') {
                     enterStandaloneMode('connection_standalone');
                     document.getElementById('day-part').classList.remove('holiday-highlight');
@@ -1097,12 +1140,12 @@
         setInterval(fetchStatus, 5000);
         fetchStatus();
     </script>
-    <script src="{{ url_for('static', filename='time-inputs.js') }}"></script>
+    <script src="{{ static_url('time-inputs.js') }}"></script>
     <script>refreshLocalTimeInput();</script>
-    <script src="{{ url_for('static', filename='offline.js') }}"></script>
-    <script src="{{ url_for('static', filename='device-enrollment.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='alarms.js') }}"></script>
+    <script src="{{ static_url('offline.js') }}"></script>
+    <script src="{{ static_url('device-enrollment.js') }}"></script>
+    <script defer src="{{ static_url('alarm-audio.js') }}"></script>
+    <script defer src="{{ static_url('alarms.js') }}"></script>
 </body>
 
 </html>

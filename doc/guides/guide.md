@@ -239,7 +239,7 @@ docker compose pull
 docker compose up -d --no-build
 ```
 
-由 Linux 安裝腳本建立的服務支援於受管模式管理頁「更新」（`/updates`）點擊一鍵升級、由背景服務自動檢查與升級，或在主機執行：
+啟用更新服務後，可在「版本更新」（`/updates`）檢查 GitHub Release。自用模式可使用[主機更新金鑰](../operations/update-operations.md#self-模式與宿主機設定)安裝，受管模式由已登入的管理員安裝。Linux 主機也可執行：
 
 ```bash
 sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh

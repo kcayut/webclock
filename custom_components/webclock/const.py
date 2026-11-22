@@ -1,6 +1,6 @@
 """WebClock integration constants."""
 DOMAIN = "webclock"
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 CONF_URL = "server_url"
 CONF_CODE = "join_code"
 CONF_TOKEN = "device_token"

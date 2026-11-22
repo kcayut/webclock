@@ -172,7 +172,7 @@ class MigrationTest(unittest.TestCase):
 
     def test_real_managed_server_update_uses_public_health_and_preserves_identity(self):
         with patch.object(updater.time, 'sleep'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.stop_service()
         self.real_run([sys.executable, '-B', '-c', '''
 from webclock.services.auth_service import AuthService
@@ -195,7 +195,7 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
             self.assertIsNone(data)
             return original_http(url, data, headers, tls_handler=tls_handler)
         with patch.object(updater, 'http_json', side_effect=public_only), patch.object(updater.time, 'sleep'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), expected_head)
         self.assertEqual(auth_path.read_bytes(), original_auth)
         self.assertEqual(original_http(self.url + '/api/health')['deployment_mode'], 'managed')
@@ -207,7 +207,7 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
         self.assertEqual(missing.exception.code, 404)
         missing.exception.close()
         with patch.object(updater.time, 'sleep'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
 
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.new_head)
         for name, content in self.before.items():
@@ -248,7 +248,7 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
         with patch.object(updater, 'verify_server', side_effect=fail_after_writing):
             with patch.object(updater.time, 'sleep'):
                 with self.assertRaisesRegex(RuntimeError, 'Failure after real API writes'):
-                    updater.update(self.project)
+                    updater.update(self.project, upstream=True)
 
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.old_head)
         self.assertEqual((self.project / 'venv/package-marker').read_text(), 'old packages')
@@ -284,7 +284,7 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
         self.assertFalse(state.exists())
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
         with patch.object(updater.time, 'sleep'):
-            updater.update(self.project)
+            updater.update(self.project, upstream=True)
 
         self.assertEqual(self.real_run(['git', 'rev-parse', 'HEAD'], cwd=self.project), self.new_head)
         for name, content in self.before.items():

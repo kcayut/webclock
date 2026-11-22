@@ -72,8 +72,35 @@ def run(args, cwd=None, env=None):
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
 
 
-def update_target(project, git, channel=None, expected_version=None):
-    """Use published versions for release installs and explicit web update requests."""
+def check_git_version_upgrade(git, project, old_head, target, old_files, target_files, *, allow_equal=True):
+    """Refuse updates that lower VERSION or return to a pre-VERSION commit."""
+    has_old = 'VERSION' in old_files
+    has_new = 'VERSION' in target_files
+    if has_old and not has_new:
+        raise RuntimeError('Target commit is missing VERSION; refusing downgrade.')
+    if not (has_old and has_new):
+        return
+    old_version = run(git + ['show', old_head + ':VERSION'], cwd=project).strip()
+    new_version = run(git + ['show', target + ':VERSION'], cwd=project).strip()
+    old_prec = release_versions.parse_version(old_version)
+    new_prec = release_versions.parse_version(new_version)
+    if new_prec < old_prec or (not allow_equal and new_prec <= old_prec):
+        raise RuntimeError(f'Downgrades are unsupported ({old_version} -> {new_version}).')
+
+
+def update_target(project, git, channel=None, expected_version=None, *, upstream=False):
+    """Use official GitHub releases by default, or the configured Git upstream when explicitly requested."""
+    if upstream:
+        if channel is not None or expected_version is not None:
+            raise RuntimeError('--upstream cannot be combined with --channel or expected_version.')
+        try:
+            run(git + ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], cwd=project)
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(
+                'No Git upstream tracking branch is configured; configure one or update from official releases.'
+            ) from error
+        run(git + ['fetch'], cwd=project)
+        return run(git + ['rev-parse', '--verify', '@{upstream}^{commit}'], cwd=project)
     if channel is None:
         try:
             channel = run(git + ['config', '--get', 'webclock.releaseChannel'], cwd=project)
@@ -81,12 +108,18 @@ def update_target(project, git, channel=None, expected_version=None):
             if error.returncode != 1:
                 raise
             channel = ''
-    if not channel:
-        run(git + ['fetch'], cwd=project)
-        return run(git + ['rev-parse', '@{upstream}'], cwd=project)
+        if not channel:
+            channel = 'stable'
     if channel not in ('stable', 'beta'):
         raise RuntimeError('Unknown WebClock release channel; nothing updated.')
-    current = (project / 'VERSION').read_text().strip()
+    try:
+        current = (project / 'VERSION').read_text().strip()
+    except FileNotFoundError:
+        # Checkouts from before the first numbered release can migrate to stable.
+        current = '0.0.0'
+    if expected_version is not None:
+        if release_versions.release_version(expected_version) <= release_versions.parse_version(current):
+            raise RuntimeError(f'Downgrades are unsupported ({current} -> {expected_version}).')
     release = release_versions.discover_release(channel, current)
     if not release['update_available']:
         return None
@@ -626,15 +659,16 @@ def verify_server(project, url, layout, expected_notes, configuration, tls_handl
             raise RuntimeError('Management/device API health check failed.')
 
 
-def update(project, channel=None, expected_version=None, progress=None):
+def update(project, channel=None, expected_version=None, progress=None, *, upstream=False):
     project = project.resolve()
     fd = os.open(project / '.webclock-update.lock', os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return perform_update(project, channel=channel, expected_version=expected_version, progress=progress)
+        return perform_update(project, channel=channel, expected_version=expected_version,
+                              progress=progress, upstream=upstream)
 
 
-def perform_update(project, channel=None, expected_version=None, progress=None):
+def perform_update(project, channel=None, expected_version=None, progress=None, *, upstream=False):
     raw_progress = progress or (lambda phase: None)
     def safe_progress(phase):
         try:
@@ -663,17 +697,25 @@ def perform_update(project, channel=None, expected_version=None, progress=None):
             raise RuntimeError('Uncommitted/untracked files found. Commit or move them before updating.')
         old_head = run(git_prefix + ['rev-parse', 'HEAD'], cwd=project)
         progress('downloading')
-        target = update_target(project, git_prefix, channel=channel, expected_version=expected_version)
+        if upstream:
+            target = update_target(project, git_prefix, channel=channel, expected_version=expected_version, upstream=True)
+        else:
+            target = update_target(project, git_prefix, channel=channel, expected_version=expected_version)
         if target is None or target == old_head:
             progress('complete')
             return 'up_to_date'
-        run(git_prefix + ['merge-base', '--is-ancestor', old_head, target], cwd=project)
+        try:
+            run(git_prefix + ['merge-base', '--is-ancestor', old_head, target], cwd=project)
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError('Target commit does not descend from the installed version; refusing non-fast-forward update or downgrade.') from error
         revisions = [run(git_prefix + ['ls-tree', '-r', '--name-only', ref], cwd=project).splitlines()
                      for ref in (old_head, target)]
+        check_git_version_upgrade(git_prefix, project, old_head, target, revisions[0], revisions[1],
+                                  allow_equal=upstream)
         target_layout = data_layout(project, configuration, 'webclock/app.py' in revisions[1])
     else:
-        if channel is not None:
-            raise RuntimeError('One-click upgrades require an official Git installation.')
+        if channel is not None or upstream:
+            raise RuntimeError('One-click and upstream upgrades require a Git installation.')
         print('No Git repository: using files already copied here; old source cannot be recovered.', flush=True)
 
     paths = protected_paths(project, current, target_layout)
@@ -830,8 +872,11 @@ def refresh_update_service(project):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('project', nargs='?', type=Path, default=Path(__file__).resolve().parent.parent)
-    parser.add_argument('--channel', choices=('stable', 'beta'),
-                        help='switch this installation to the stable or beta release channel first')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--channel', choices=('stable', 'beta'),
+                       help='switch this installation to the stable or beta release channel first')
+    group.add_argument('--upstream', action='store_true',
+                       help='update from the checkout\'s already-configured Git upstream (for example Gitea) without changing releaseChannel')
     args = parser.parse_args()
     if os.geteuid() != 0:
         sys.exit('Please run: sudo bash update_clock.sh')
@@ -840,9 +885,10 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     project = args.project.resolve()
     try:
+        result = update(project, channel=args.channel, upstream=args.upstream)
         if args.channel:
             set_channel(project, args.channel)
-        if update(project) == 'up_to_date':
+        if result == 'up_to_date':
             print('WebClock is already up to date.', flush=True)
     except (Exception, KeyboardInterrupt) as error:
         print('Update failed: ' + str(error), file=sys.stderr)

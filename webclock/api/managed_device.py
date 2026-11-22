@@ -17,7 +17,8 @@ COOKIE_SECONDS = 365 * 24 * 60 * 60
 NATIVE_ENDPOINTS = {'managed_device.token_prepare', 'managed_device.token_join', 'managed_device.token_leave'}
 
 
-def managed_device_api(access_provider, device_provider, auth_provider, display_provider, alarms_provider):
+def managed_device_api(access_provider, device_provider, auth_provider, display_provider, alarms_provider,
+                       display_revision_provider=None):
     api = Blueprint('managed_device', __name__, url_prefix='/api/v2/device')
 
     def failure(error):
@@ -48,6 +49,9 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
                                     and response.status_code in (200, 304) else 'no-store')
         if request.endpoint in ('managed_device.identity', 'managed_device.prepare', 'managed_device.join'):
             response.headers['Cache-Control'] = 'no-store'
+        if (display_revision_provider and request.endpoint == 'managed_device.display'
+                and response.status_code in (200, 304)):
+            response.headers['X-WebClock-Display-Revision'] = display_revision_provider()
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers.pop('Access-Control-Allow-Origin', None)
         return response

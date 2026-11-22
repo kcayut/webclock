@@ -331,4 +331,31 @@ for (const failure of ['network', 'storage']) {
     failed.respond('/identity', {status: 'active', identity: failed.identity, group: {id: failed.identity.group_id, name: 'Still joined'}});
     assert.equal(failed.node('device-group-name').textContent, 'Still joined');
 }
+
+// Regression checks for legacy Safari polling: no-cache headers, concurrent identity wait, 304 fallback, display revision event.
+{
+    const poll = browser();
+    poll.dispatch('pageshow');
+    assert.equal(poll.pending('/identity').headers['Cache-Control'], 'no-cache');
+    assert.equal(poll.pending('/identity').headers['Pragma'], 'no-cache');
+    let concurrentApplied = 0;
+    poll.session.fetchDisplay(data => { concurrentApplied += 1; return true; });
+    assert.equal(poll.requests.filter(r => r.url.endsWith('/identity')).length, 1, 'concurrent fetchDisplay joins in-flight identity check');
+    poll.respond('/identity', {status: 'active', identity: poll.identity, group: {id: poll.identity.group_id, name: 'Living room'}});
+    assert.equal(poll.pending('/display').headers['Cache-Control'], 'no-cache');
+    assert.equal(poll.pending('/display').headers['Pragma'], 'no-cache');
+    poll.respond('/display', poll.snapshot({settings: {mode: 'normal', brightness: 90, timezone_offset: 8, language: 'zh-TW', time_format: '24h', clock_style: 'flip', clock_theme: 'light'}}), 200, {
+        ETag: '"v1"', 'X-WebClock-Display-Revision': 'rev-1',
+    });
+    assert.equal(concurrentApplied, 1);
+    assert.equal(poll.changes.filter(e => e.type === 'display_revision').pop().revision, 'rev-1');
+    assert.equal(poll.changes.filter(e => e.type === 'display_revision').pop().resource, 'revision');
+
+    poll.session.fetchDisplay(() => true, err => { assert.equal(err.code, 'invalid_response'); });
+    poll.respond('/display', null, 304, {'X-WebClock-Identity-Revision': poll.identity.identity_revision});
+    poll.session.fetchDisplay(() => { concurrentApplied += 1; return true; });
+    assert.equal(poll.pending('/display').headers['If-None-Match'], undefined, 'broken 304 headers drop stale etag for fresh 200 recovery');
+    poll.respond('/display', poll.snapshot(), 200, {ETag: '"v2"', 'X-WebClock-Display-Revision': 'rev-2'});
+    assert.equal(concurrentApplied, 2);
+}
 console.log('Membership UI checks passed: restore, real recheck, hidden code, confirmed leave, stale responses, local reminders and failed leave.');

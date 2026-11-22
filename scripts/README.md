@@ -2,12 +2,12 @@
 
 此目錄只放安裝後需要的 helper 與管理指令。一般使用者從根目錄的 `install.sh`、`setup.sh`、`update_clock.sh`、`docker_update.sh` 操作；完整指令見[安裝指南](../doc/installation.md)與[更新維護](../doc/operations/update-operations.md)。
 
-自己在主機上執行的手動／可攜式更新腳本集中於 [`update/`](update/README.md)；根目錄的兩支一般更新指令保留為相容轉接。
+平常在安裝目錄執行 `bash update_clock.sh` 或 `bash docker_update.sh`。從安裝目錄外升級或救援時，請使用[可攜式更新工具](update/README.md)。
 
 | 用途 | 檔案 |
 | --- | --- |
 | 新安裝與健康檢查 | `setup.sh`、`install_check.py` |
-| 手動／可攜式更新入口 | [`update/`](update/README.md) 中的四支 shell 腳本 |
+| 手動／可攜式更新入口 | 根目錄的兩支更新指令，以及 [`update/`](update/README.md) 中的 Linux 和 Docker 可攜式入口 |
 | 裸機安全升級 | `update_clock.py`、`enable_updates.sh` |
 | Docker 升級、worker 啟用與受保護目錄遷移 | `docker_update.py`、`docker_update_install.py`、`docker_update_migrate.py`、`enable_docker_updates.sh` |
 | 共用版本選擇、更新服務與設定 | `release_versions.py`、`updater_service.py`、`update_settings.py` |

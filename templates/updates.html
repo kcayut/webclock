@@ -63,6 +63,11 @@
                 </dl>
                 <p class="help"><span data-update-text="last_checked">{{ update_text.last_checked }}</span> <span id="update-last-checked">—</span></p>
                 <p class="help"><span data-update-text="next_check">{{ update_text.next_check }}</span> <span id="update-next-check">—</span></p>
+                <p id="update-key-setup" class="help" hidden data-update-text="self_update_unavailable">{{ update_text.self_update_unavailable }}</p>
+                <div id="update-key-field" class="field" hidden>
+                    <label for="update-key" data-update-text="update_key">{{ update_text.update_key }}</label>
+                    <input id="update-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false">
+                </div>
                 <div class="actions">
                     <button id="update-check" type="button" disabled data-update-text="check">{{ update_text.check }}</button>
                     <button id="update-install" type="button" class="primary" disabled data-update-text="install">{{ update_text.install }}</button>

@@ -135,7 +135,7 @@ def main():
 
     def update():
         # Load the candidate updater before changing the installed checkout.
-        result = run(sys.executable, SOURCE / 'scripts/update_clock.py', installed, check=False)
+        result = run(sys.executable, SOURCE / 'scripts/update_clock.py', '--upstream', installed, check=False)
         print(result.stdout, flush=True)
         return result
 

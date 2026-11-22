@@ -96,10 +96,11 @@ def build_release(output, version=None, root=ROOT):
     actual = check_versions(lambda name: files[name][1].decode(), 'v' + version if version else None)
     for required in ('install.sh', 'setup.sh', 'scripts/setup.sh', 'app.py', 'webclock/app.py',
                      'homeassistant/prepare_local_app.sh',
-                     'scripts/update/update_clock.sh', 'scripts/update/docker_update.sh',
-                     'portable_docker_update.sh', 'docker_update.sh', 'scripts/docker_update.py',
-                     'scripts/docker_update_install.py', 'scripts/docker_update_migrate.py',
-                     'scripts/update_settings.py', *CLOCK_FILES):
+                     'update_clock.sh', 'update_clock.py', 'docker_update.sh',
+                     'scripts/update/portable_update_clock.sh', 'scripts/update/portable_docker_update.sh',
+                     'portable_update_clock.sh', 'portable_docker_update.sh',
+                     'scripts/docker_update.py', 'scripts/docker_update_install.py',
+                     'scripts/docker_update_migrate.py', 'scripts/update_settings.py', *CLOCK_FILES):
         if required not in files:
             raise ValueError('Missing release file: ' + required)
     output = Path(output)

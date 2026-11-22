@@ -19,7 +19,7 @@ WebClock/
 ├── webclock/                            # Server、API、服務及翻譯
 ├── templates/、static/                  # Server 畫面與共用靜態資產
 ├── scripts/                             # 已安裝系統需要的共用 helper
-│   └── update/                          # 四支手動／可攜更新腳本
+│   └── update/                          # Linux 與 Docker 可攜式更新腳本
 ├── tools/                               # 開發／發佈工具
 ├── custom_components/webclock/          # HACS integration，包含卡片
 ├── homeassistant/
