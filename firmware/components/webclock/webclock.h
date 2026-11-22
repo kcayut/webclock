@@ -1,6 +1,10 @@
 #pragma once
 
+#include "esphome/core/defines.h"
 #include "alarm_core.h"
+#ifdef USE_WEBCLOCK_DESK
+#include "desk_sync.h"
+#endif
 #include "esphome/core/component.h"
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/components/output/float_output.h"
@@ -26,8 +30,31 @@ class WebClock : public Component {
   float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
   void draw(display::Display &screen);
   void stop();
+  bool is_ringing() const { return ringing_; }
 
+#ifdef USE_WEBCLOCK_DESK
+  void set_desk_tokens(const std::string &control, const std::string &display) {
+    control_token_ = control; display_token_ = display;
+  }
+  void set_usb_desk_profile(const std::string &url, const std::string &control, const std::string &display) {
+    server_url_ = url;
+    api_token_.clear();
+    set_desk_tokens(control, display);
+    usb_desk_only_ = true;
+  }
+  bool desk_tick(DeskAlarm &state, int legacy_value);
+  const std::string &ticker() const { return ticker_; }
+#endif
  protected:
+#ifdef USE_WEBCLOCK_DESK
+  bool usb_desk_only_{false};
+  struct TickerUpdate { std::string *line; uint32_t deadline; };
+  void sync_desk_();
+  std::string control_token_, display_token_, mirror_id_, ticker_;
+  uint64_t binding_{0};
+  uint32_t mirror_generation_{0}, ticker_deadline_{0};
+  QueueHandle_t desk_out_{nullptr}, desk_in_{nullptr}, ticker_in_{nullptr};
+#endif
   // Network/JSON work stays on a worker; only the ESPHome loop touches output/display.
   struct Update { Snapshot *snapshot; bool authorized; };
   static void task_entry_(void *arg);

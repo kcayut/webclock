@@ -71,7 +71,7 @@ display／browser-alarms 回 `schema_version: 3`、`identity`、`config_revision
 本專案負責管理排程、台灣工作日資料、裝置登錄、同步版本及最後回報，並讓自架時鐘頁執行網頁鬧鐘。
 `/schedules` 編輯與預覽鬧鐘排程，時鐘頁 `/` 播放內建音色並顯示紅邊提示；`/admin` 分開管理顯示設定、訂閱行事曆與文字提醒。
 
-獨立硬體由裝置端執行。[`firmware/`](../../firmware/README.md) 已提供通過交叉編譯的 ESP32-S3／ESPHome 原型：OLED、固定規則鬧鐘同步、持久快取、壓電蜂鳴器與停止按鍵；尚未實機驗收。行事曆聯動、保真音色／音檔、貪睡、RTC 斷電保時、OTA 與通用公開韌體仍未提供，實際使用與限制見 [ESPHome 裝置指南](../guides/esp-home.md)。網頁鬧鐘使用瀏覽器音訊與畫面，不直接控制硬體播放器。
+EE04 電子紙桌鐘支援本機每日鬧鐘、RTC 保時、配對後同步鬧鐘與行事曆顯示。編譯、刷機與實機驗收見[韌體指南](../../firmware/ee04-clock/README.md)。
 裝置使用 HTTP/JSON API 接入，不需要匯入這個專案的 Python 模組。
 
 自用模式仍是單一管理空間，**舊裝置 API 共用同一組排程與日曆**。新 schema 3 裝置依已認證身份取得單台／群組的有效內容指派；一般成員帳號與多租戶仍未提供。
@@ -126,7 +126,7 @@ static/                      網頁 CSS / JS
 scripts/                     安裝與更新
 tests/                       Server、API 與網頁回歸測試
 doc/                         架構與 API 契約
-firmware/                    ESP32-S3 ESPHome YAML、同步元件與核心測試；已編譯，待實機驗收
+firmware/                    桌鐘韌體與測試
 webclock_state/              私人執行資料，不進 Git
   calendar.json              多來源行事曆網址、名稱及顯示選擇
   settings.json
@@ -538,7 +538,7 @@ curl -i -H 'Content-Type: application/json' \
 
 先檢查 HTTP 狀態碼，再依 Content-Type 解析；代理登入頁、未預期例外不保證有 `error` JSON。逾時、斷線及 5xx 不 ACK 未完成同步。ACK 成功但回應遺失可重送；格式合法但不屬於該裝置的指令 ID 不會清除其他裝置命令。
 
-韌體的認證／同步失敗不得阻塞基本走時。ESPHome 原型使用背景網路 worker，主畫面不自動彈出系統錯誤，診斷由序列日誌與後台查看，尚無裝置設定頁。每次重啟須取得可信時間並向 Server 驗證 config，才啟用鬧鐘；之後運轉中斷網可使用快取。無 RTC／無可信時間時無法取得正確日期，詳見 [ESPHome 裝置指南](../guides/esp-home.md#時間斷網斷電與認證)。
+韌體的認證／同步失敗不得阻塞基本走時。桌鐘的本機每日鬧鐘可使用 RTC 時間離線運作，詳見 [ESPHome 裝置指南](../guides/esp-home.md#時間斷網斷電與認證)。
 
 ### 後續擴充界線
 

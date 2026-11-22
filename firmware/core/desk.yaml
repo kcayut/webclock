@@ -1,0 +1,292 @@
+esphome:
+  name_add_mac_suffix: true
+  min_version: 2026.9.1
+  includes:
+    - ${core_src}/local_alarm.h
+    - ${core_src}/menu.h
+    - ${core_src}/rtc.h
+    - ${core_src}/usb_profile.h
+    - <esp_pm.h>
+    - <sys/time.h>
+  on_boot:
+    - priority: 650
+      then:
+        - lambda: deskusb::restore(id(service_clock));
+    - priority: -100
+      then:
+        - lambda: |-
+            uint8_t ctrl, data[7];
+            if (id(wall).utcnow().is_valid()) return;
+            if (id(rtc).read_byte(0x00, &ctrl) && !(ctrl & 0x22) &&
+                id(rtc).read_bytes(0x04, data, sizeof(data))) {
+              const auto epoch = deskclock::rtc_epoch(data);
+              if (epoch > 0) {
+                timeval t{static_cast<time_t>(epoch), 0};
+                settimeofday(&t, nullptr);
+              }
+            }
+        - lambda: |-
+            esp_pm_config_t pm{};
+            pm.max_freq_mhz = 240;
+            pm.min_freq_mhz = ${min_cpu};
+            pm.light_sleep_enable = true;
+            if (esp_pm_configure(&pm) != ESP_OK) ESP_LOGW("clock", "Light sleep unavailable");
+            if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "piezo", &id(audio_lock)) != ESP_OK)
+              ESP_LOGW("clock", "Audio sleep lock unavailable");
+
+wifi:
+  power_save_mode: LIGHT
+  reboot_timeout: 0s
+
+improv_serial:
+  id: wifi_setup
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+preferences:
+  flash_write_interval: 1s
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [webclock]
+
+webclock:
+  id: service_clock
+  time_id: wall
+  buzzer_id: service_audio
+  server_url: !secret webclock_url
+  api_token: !secret webclock_token
+  device_name: !secret device_name
+  volume_limit: 0.25
+  desk_sync:
+    control_token: !secret webclock_control_token
+    display_token: !secret webclock_display_token
+
+i2c_device:
+  - id: rtc
+    address: 0x51
+
+time:
+  - platform: sntp
+    id: wall
+    timezone: Asia/Taipei
+    on_time_sync:
+      - script.execute: write_rtc
+
+globals:
+  - {id: alarm_value, type: int, restore_value: yes, initial_value: '420'}
+  - {id: daily, type: webclock::DeskAlarm, restore_value: yes}
+  - {id: last_minute, type: int, restore_value: yes, initial_value: '0'}
+  - {id: remote_level, type: float, initial_value: '0'}
+  - {id: ring_start, type: uint32_t}
+  - {id: ringing, type: bool}
+  - {id: dirty, type: bool, initial_value: 'true'}
+  - {id: audio_lock, type: esp_pm_lock_handle_t, initial_value: 'nullptr'}
+
+output:
+  - platform: ledc
+    id: piezo
+    pin: ${piezo_pin}
+    frequency: 4000Hz
+  - platform: template
+    id: service_audio
+    type: float
+    write_action:
+      - lambda: id(remote_level) = state;
+      - script.execute: mix_audio
+
+script:
+  - id: poll_pairing_usb
+    mode: restart
+    then:
+      - while:
+          condition:
+            lambda: return deskusb::active();
+          then:
+            - lambda: |-
+                if (int32_t(millis() - deskusb::deadline) >= 0) {
+                  deskusb::clear(); id(wifi_setup).enable_loop(); id(dirty) = true;
+                } else if (deskusb::poll()) {
+                  App.safe_reboot();
+                }
+            - delay: 25ms
+
+  - id: write_rtc
+    then:
+      - lambda: |-
+          const auto t = id(wall).utcnow();
+          uint8_t ctrl;
+          if (!t.is_valid() || t.year > 2099 || !id(rtc).read_byte(0x00, &ctrl)) return;
+          // Preserve oscillator capacitance and calibration; use 24-hour running mode.
+          if ((ctrl & 0x22) && !id(rtc).write_byte(0x00, ctrl & ~0x22)) return;
+          using deskclock::bcd;
+          uint8_t data[]{bcd(t.second), bcd(t.minute), bcd(t.hour), bcd(t.day_of_month),
+                         uint8_t(t.day_of_week - 1), bcd(t.month), bcd(t.year - 2000)};
+          if (!id(rtc).write_bytes(0x04, data, sizeof(data))) ESP_LOGW("clock", "RTC write failed");
+
+  - id: mix_audio
+    then:
+      - lambda: |-
+          const bool beep = id(ringing) && (millis() - id(ring_start)) % 1000 < 500;
+          const float level = std::max(beep ? 0.25f : 0.0f, id(remote_level));
+          static bool locked = false;
+          if (id(audio_lock) && (level > 0) != locked) {
+            if (level > 0) esp_pm_lock_acquire(id(audio_lock));
+            else esp_pm_lock_release(id(audio_lock));
+            locked = level > 0;
+          }
+          id(piezo).set_level(level);
+
+binary_sensor:
+  - platform: gpio
+    id: select_key
+    filters: [{delayed_on_off: 25ms}]
+    on_press:
+      - lambda: |-
+          if (id(ringing) || id(service_clock).is_ringing()) {
+            if (deskclock::ring_cancel.open) {
+              deskclock::ring_cancel.toggle();
+              id(dirty) = true;
+            }
+            return;
+          }
+          if (deskusb::active()) return;
+          auto &clock = deskclock::manual;
+          if (deskclock::editor.field != deskclock::Editor::Clock) {
+            deskclock::editor.select();
+          } else if (clock.field != deskclock::ManualClock::Idle) {
+            clock.select();
+          } else if (deskclock::menu.active()) {
+            deskclock::menu.next();
+          } else {
+            return;
+          }
+          id(dirty) = true;
+  - platform: gpio
+    id: ok_key
+    filters: [{delayed_on_off: 25ms}]
+    on_press:
+      - lambda: |-
+          if (id(ringing) || id(service_clock).is_ringing()) {
+            if (!deskclock::ring_cancel.open) {
+              deskclock::ring_cancel.open = true;
+              deskclock::ring_cancel.choice = deskclock::RingCancel::Cancel;
+            } else if (deskclock::ring_cancel.choice == deskclock::RingCancel::Confirm) {
+              id(service_clock).stop();
+              id(ringing) = false;
+              id(remote_level) = 0;
+              deskclock::ring_cancel.reset();
+              id(mix_audio).execute();
+            } else {
+              deskclock::ring_cancel.reset();
+            }
+            id(dirty) = true;
+            return;
+          }
+          if (deskusb::active()) return;
+          auto &clock = deskclock::manual;
+          if (clock.field != deskclock::ManualClock::Idle) {
+            if (clock.field == deskclock::ManualClock::Units) {
+              timeval t{static_cast<time_t>(clock.epoch()), 0};
+              if (settimeofday(&t, nullptr) == 0) id(write_rtc).execute();
+              clock.field = deskclock::ManualClock::Idle;
+              deskclock::menu.close();
+            } else {
+              clock.field = static_cast<deskclock::ManualClock::Field>(clock.field + 1);
+            }
+          } else if (deskclock::editor.field != deskclock::Editor::Clock) {
+            int value = id(daily).value;
+            const bool save = deskclock::editor.field == deskclock::Editor::Units;
+            deskclock::editor.confirm(value);
+            if (save) {
+              id(daily).save(value);
+              deskclock::menu.close();
+            }
+          } else if (deskclock::menu.active()) {
+            switch (deskclock::menu.item) {
+              case deskclock::Menu::Time:
+                if (const auto t = id(wall).now(); t.is_valid())
+                  clock = {deskclock::ManualClock::Year, t.year, t.month, t.day_of_month, t.hour, t.minute};
+                clock.field = deskclock::ManualClock::Year;
+                break;
+              case deskclock::Menu::Alarm: {
+                int value = id(daily).value;
+                deskclock::editor.confirm(value);
+                break;
+              }
+              case deskclock::Menu::Usb:
+                id(wifi_setup).disable_loop();
+                deskusb::deadline = millis() + 300000;
+                id(poll_pairing_usb).execute();
+                break;
+              default:
+                break;
+            }
+          } else {
+            deskclock::menu.open();
+          }
+          id(dirty) = true;
+  - platform: gpio
+    id: cancel_key
+    filters: [{delayed_on_off: 25ms}]
+    on_press:
+      - lambda: |-
+          if (id(ringing) || id(service_clock).is_ringing()) {
+            if (deskclock::ring_cancel.open) {
+              deskclock::ring_cancel.reset();
+              id(dirty) = true;
+            }
+            return;
+          }
+          id(service_clock).stop();
+          id(ringing) = false;
+          if (deskusb::active()) {
+            deskusb::clear();
+            id(wifi_setup).enable_loop();
+            id(dirty) = true;
+          } else if (deskclock::manual.field != deskclock::ManualClock::Idle) {
+            deskclock::manual.field = deskclock::ManualClock::Idle;
+            id(dirty) = true;
+          } else if (deskclock::editor.field != deskclock::Editor::Clock) {
+            deskclock::editor.cancel();
+            id(dirty) = true;
+          } else if (deskclock::menu.active()) {
+            deskclock::menu.close();
+            id(dirty) = true;
+          }
+      - script.execute: mix_audio
+
+interval:
+  - interval: 250ms
+    then:
+      - lambda: |-
+          if (id(service_clock).desk_tick(id(daily), id(alarm_value))) id(dirty) = true;
+          auto now = id(wall).now();
+          const bool valid = now.is_valid();
+          const int stamp = valid ? now.timestamp / 60 : 0;
+          if (valid && id(last_minute) > stamp) id(last_minute) = 0;
+          if (valid && deskclock::due(id(daily).value, now.hour, now.minute, now.second, stamp, id(last_minute))) {
+            id(last_minute) = stamp;
+            id(ring_start) = millis();
+            id(ringing) = true;
+            deskclock::ring_cancel.reset();
+            id(dirty) = true;
+          }
+          if (id(ringing)) {
+            if (millis() - id(ring_start) >= 60000) {
+              id(ringing) = false;
+              deskclock::ring_cancel.reset();
+              id(dirty) = true;
+            }
+            id(mix_audio).execute();
+          }
+          static bool previous_service_ring = false;
+          if (previous_service_ring != id(service_clock).is_ringing()) {
+            previous_service_ring = id(service_clock).is_ringing();
+            deskclock::ring_cancel.reset();
+            id(dirty) = true;
+          }

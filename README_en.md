@@ -51,7 +51,7 @@ Linux and Docker default to self mode without sign-in; use only on a trusted LAN
 - [Display setup](doc/guides/display-devices.md): home-screen shortcuts, fullscreen, and keeping the screen awake, including iPad mini 1 / iOS 9.
 - [English guide](doc/guides/guide_en.md): calendars, alarms, groups, and backups.
 - [Updates and recovery](doc/operations/update-operations.md) · [HTTPS and accounts](doc/operations/accounts-and-https.md).
-- [Device API](doc/api/server-api_en.md) · [ESP32-S3 prototype](firmware/README.md) · [Release and hardware validation](doc/ha-release.md).
+- [Device API](doc/api/server-api_en.md) · [EE04 e-paper desk clock firmware](firmware/ee04-clock/README.md) · [Release and hardware validation](doc/ha-release.md).
 
 Installation, maintenance, and hardware documentation is in Traditional Chinese.
 

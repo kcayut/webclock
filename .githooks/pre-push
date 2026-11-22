@@ -1,0 +1,28 @@
+#!/bin/sh
+# Reject pushes that would publish hardware design files to the public GitHub remote.
+set -eu
+
+remote_url=${2:-}
+case "$remote_url" in
+  *github.com*) ;;
+  *) exit 0 ;;
+esac
+
+zero=0000000000000000000000000000000000000000
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    commits=$(git rev-list "$local_sha" --not --remotes=github 2>/dev/null || git rev-list "$local_sha")
+  else
+    commits=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null || true)
+  fi
+  for commit in $commits; do
+    if git ls-tree -r --name-only "$commit" | grep -q '^hardware/'; then
+      echo "拒絕推送 $local_ref：提交 $commit 含硬體設計，GitHub 是公開倉庫。" >&2
+      status=1
+      break
+    fi
+  done
+done
+exit "$status"

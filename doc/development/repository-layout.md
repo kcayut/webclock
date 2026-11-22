@@ -26,7 +26,7 @@ WebClock/
 │   ├── addon/                           # App manifest、Dockerfile 與商店文件
 │   ├── prepare_local_app.sh             # 完整的 Local App build context
 │   └── tests/                          # HA 整合、卡片、容器檢查
-├── firmware/                            # ESPHome 元件與硬體測試
+├── firmware/                            # 板型韌體、核心、顯示、配對工具與測試
 ├── tests/
 │   ├── test_*.py、test_*.js、fixtures/   # 一般本機回歸
 │   └── rehearsal/                      # 可丟棄主機上的安裝／升級演練
@@ -52,6 +52,7 @@ WebClock/
 - 原始碼的 portable 腳本集中於 [`scripts/update/`](../../scripts/update/README.md)；Server 壓縮檔仍從同一份來源產生根目錄的兩個同名檔案。原始碼與發佈包在這兩個相容路徑上有意不同。
 - 新的開發工具放 `tools/`；安裝後的管理 helper 放 `scripts/`；HA 專用工具與測試放 `homeassistant/`。移動檔案須同步更新 caller、測試、Docker COPY、Release 白名單及 CI 指令與 paths filter。
 - `.env`、`webclock_state/`、`manual_notes.json`、`tls/`、更新 socket／交易／備份目錄與 `venv/` 是本機或安裝資料，不納入 Git 或發行包，也不為了整理原始碼而刪除、搬移。
+- 硬體設計（`hardware/`）不屬於這個公開倉庫；只在 Gitea 的 `hardware/ee04-clock` 分支維護，不得推送至 GitHub。`origin` 只推送 Gitea；GitHub 使用獨立的 `github` remote。推送前掛鉤會阻擋含 `hardware/` 的提交送往 GitHub。
 - 根目錄 `index.html` 與 `templates/index.html` 分別供無 Server 離線時鐘與 Flask 使用；`doc/images/` 和 `static/images/` 分別服務文件與網頁，不因檔名相同就合併。
 
 ## 驗證入口

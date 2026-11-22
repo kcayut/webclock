@@ -58,9 +58,9 @@ Private caches are scoped to device identity. A 401/403, identity change or expi
 
 This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Enrolled schema 3 clocks receive private content from their effective device/group assignments.
 
-Device execution remains a firmware responsibility. [`firmware/`](../../firmware/README.md) contains an ESP32-S3 ESPHome prototype that cross-compiles successfully, with an OLED, fixed-rule alarm synchronization, persistent cache, passive piezo output, and a stop button. Physical hardware has not been validated. Calendar-linked alarms, faithful browser tones/audio files, snooze, battery-backed RTC, OTA, and a generic public firmware image remain unimplemented. Devices integrate through HTTP/JSON and do not import this project's Python modules.
+The EE04 e-paper desk clock supports standalone daily alarms, battery-backed timekeeping, alarm synchronization and a calendar ticker. See the [firmware guide](../../firmware/ee04-clock/README.md) for compilation, flashing and physical validation.
 
-See the [ESPHome device guide](../guides/esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples. Each boot requires valid time and successful server configuration validation before alarms activate; cached alarms can continue through network loss during that run, but do not activate automatically after an offline reboot.
+See the [ESPHome device guide](../guides/esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples.
 
 Management data is scoped to the active owner. **Legacy self-mode devices use the same schedules and calendars**. Schema 3 resolves device overrides and group assignments for authenticated devices. Managed mode supports administrator and member accounts with separate data spaces; self mode serves the selected primary owner. See [account management](../operations/accounts-and-https.md).
 
@@ -108,7 +108,7 @@ static/                      web CSS and JavaScript
 scripts/                     installation and update logic
 tests/                       server, API, and web regression tests
 doc/                         guides and API contracts
-firmware/                    ESP32-S3 ESPHome YAML, sync component, host tests; cross-compiled, hardware untested
+firmware/                    Desk clock firmware and tests
 webclock_state/              private runtime data; never commit it
 ```
 

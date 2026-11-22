@@ -49,7 +49,8 @@ esp_err_t receive(esp_http_client_event_t *event) {
   return ESP_OK;
 }
 Response request(const std::string &url, const std::string &token,
-                 const std::string &body = "", const std::string &etag = "") {
+                 const std::string &body = "", const std::string &etag = "",
+                 esp_http_client_method_t method = HTTP_METHOD_POST) {
   Response response;
   if (!response.body) return response;
   esp_http_client_config_t config{};
@@ -66,7 +67,7 @@ Response request(const std::string &url, const std::string &token,
   esp_http_client_set_header(client, "Accept", "application/json");
   if (!etag.empty()) esp_http_client_set_header(client, "If-None-Match", etag.c_str());
   if (!body.empty()) {
-    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_method(client, method);
     esp_http_client_set_header(client, "Content-Type", "application/json");
     esp_http_client_set_post_field(client, body.data(), body.size());
   }
@@ -133,6 +134,7 @@ std::string fingerprint(const std::string &url, const std::string &token) {
 }  // namespace
 
 void WebClock::setup() {
+  if (server_url_.empty()) return;
   device_id_ = "wc-" + get_mac_address();
   scope_ = fingerprint(server_url_, api_token_);
   storage_ready_ = nvs_flash_init_partition("webclock") == ESP_OK;
@@ -146,6 +148,12 @@ void WebClock::setup() {
     }
     nvs_close(handle);
   }
+#ifdef USE_WEBCLOCK_DESK
+  binding_ = strtoull(fingerprint(server_url_, control_token_).substr(0, 16).c_str(), nullptr, 16);
+  desk_out_ = xQueueCreate(1, sizeof(DeskAlarm));
+  desk_in_ = xQueueCreate(1, sizeof(DeskAck));
+  ticker_in_ = xQueueCreate(1, sizeof(TickerUpdate));
+#endif
   updates_ = xQueueCreate(1, sizeof(Update));
   applied_ = xQueueCreate(1, sizeof(bool));
   if (!updates_ || !applied_ || xTaskCreate(task_entry_, "webclock_sync", 16384, this, 1, nullptr) != pdPASS) {
@@ -160,6 +168,14 @@ void WebClock::dump_config() {
 void WebClock::task_entry_(void *arg) { static_cast<WebClock *>(arg)->sync_task_(); vTaskDelete(nullptr); }
 void WebClock::publish_(const Snapshot *snapshot, bool authorized) {
   Update update{snapshot ? new Snapshot(*snapshot) : nullptr, authorized};
+#ifdef USE_WEBCLOCK_DESK
+  if (update.snapshot && !mirror_id_.empty()) {
+    auto &rows = update.snapshot->schedules;
+    rows.erase(std::remove_if(rows.begin(), rows.end(), [&](const Schedule &row) {
+      return row.id == mirror_id_;
+    }), rows.end());
+  }
+#endif
   xQueueSend(updates_, &update, portMAX_DELAY);
   bool applied;
   xQueueReceive(applied_, &applied, portMAX_DELAY);  // ACK only after the main loop activates it.
@@ -208,6 +224,64 @@ void WebClock::loop() {
   if (level != output_level_) { buzzer_->set_level(level); output_level_ = level; }
 }
 
+#ifdef USE_WEBCLOCK_DESK
+bool WebClock::desk_tick(DeskAlarm &state, int legacy_value) {
+  if (state.value < 0 || state.value >= 2880)
+    state.value = legacy_value >= 0 && legacy_value < 2880 ? legacy_value : 420;
+  if (!control_token_.empty() && binding_ && state.binding != binding_) {
+    state.binding = binding_;
+    state.base = -1;
+    state.generation = 0;
+  }
+  const int before = state.value, previous_base = state.base;
+  DeskAck ack;
+  if (desk_in_ && xQueueReceive(desk_in_, &ack, 0)) apply_ack(state, ack);
+  if (desk_out_) xQueueOverwrite(desk_out_, &state);
+  TickerUpdate incoming;
+  if (ticker_in_ && xQueueReceive(ticker_in_, &incoming, 0)) {
+    std::unique_ptr<std::string> line(incoming.line);
+    ticker_deadline_ = incoming.deadline;
+    if (int32_t(millis() - ticker_deadline_) >= 0) line->clear();
+    if (ticker_ != *line) { ticker_.swap(*line); return true; }
+  }
+  if (!ticker_.empty() && int32_t(millis() - ticker_deadline_) >= 0) {
+    ticker_.clear();
+    return true;
+  }
+  return before != state.value || previous_base != state.base;
+}
+
+void WebClock::sync_desk_() {
+  DeskAlarm state;
+  if (!control_token_.empty() && desk_out_ && desk_in_ && xQueuePeek(desk_out_, &state, 0)) {
+    if (state.generation != mirror_generation_) {
+      mirror_generation_ = state.generation;
+      mirror_id_.clear();
+    }
+    auto call = [&](const char *method, const std::string &path, const JsonDocument &data, JsonDocument &doc) {
+      std::string body;
+      if (strcmp(method, "GET") != 0) serializeJson(data, body);
+      auto response = request(server_url_ + "/api/v1/control" + path, control_token_, body, "",
+                              strcmp(method, "PATCH") == 0 ? HTTP_METHOD_PATCH : HTTP_METHOD_POST);
+      doc = parse(response);
+      return response.status;
+    };
+    DeskAck ack{state, 0};
+    if (sync_daily(state, device_id_, mirror_id_, call, ack.remote)) xQueueOverwrite(desk_in_, &ack);
+  }
+  if (!ticker_in_) return;
+  const bool managed = !display_token_.empty();
+  const uint32_t started = millis();
+  auto response = request(server_url_ + (managed ? "/api/v2/device/display" : "/api/status"), display_token_);
+  auto doc = parse(response);
+  auto line = std::make_unique<std::string>();
+  uint32_t lifetime = 0;
+  if (response.status == 200) lifetime = calendar_line(doc, managed, *line);
+  TickerUpdate update{line.get(), started + lifetime};
+  if (xQueueSend(ticker_in_, &update, pdMS_TO_TICKS(100))) line.release();
+}
+#endif
+
 void WebClock::sync_task_() {
   auto bundle = load_bundle();
   Snapshot saved;
@@ -239,6 +313,10 @@ void WebClock::sync_task_() {
   while (true) {
     wifi_ap_record_t ap;
     if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK || !storage_ready_) { vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
+#ifdef USE_WEBCLOCK_DESK
+    sync_desk_();
+    if (!subscribe_legacy_schedules(usb_desk_only_, !display_token_.empty())) { vTaskDelay(pdMS_TO_TICKS(30000)); continue; }
+#endif
     bool ok = false, denied = false, synced = false;
     if (!registered) {
       std::string payload = json::build_json([&](JsonObject root) { root["id"] = device_id_; root["name"] = device_name_; });
@@ -296,7 +374,11 @@ void WebClock::sync_task_() {
       if (!denied) {
         std::string payload = json::build_json([&](JsonObject root) {
           root["id"] = device_id_;
+#ifdef CONFIG_IDF_TARGET_ESP32S3
           root["firmware"] = "0.1.0-s3";
+#else
+          root["firmware"] = "0.1.0-" CONFIG_IDF_TARGET;
+#endif
           if (have && active) {
             root["config_revision"] = saved.config_revision;
             root["schedule_revision"] = saved.schedule_revision;
@@ -321,7 +403,10 @@ void WebClock::sync_task_() {
     force = !pending.empty() || !have;
     if (ok && !denied) retry_ms = 5000;
     else { ESP_LOGW(TAG, "Sync incomplete; retaining the previous valid snapshot where authorized"); retry_ms = std::min(retry_ms * 2, uint32_t(300000)); }
-    const uint32_t delay_ms = ok && !denied ? (force ? 1000 : 30000) : retry_ms;
+    uint32_t delay_ms = ok && !denied ? (force ? 1000 : 30000) : retry_ms;
+#ifdef USE_WEBCLOCK_DESK
+    delay_ms = std::min(delay_ms, uint32_t(30000));
+#endif
     vTaskDelay(pdMS_TO_TICKS(delay_ms + (esp_random() % 1000)));
   }
 }

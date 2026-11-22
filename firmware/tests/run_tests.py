@@ -18,7 +18,7 @@ parser.add_argument("--arduinojson", type=Path, help="Directory containing Ardui
 args = parser.parse_args()
 include = args.arduinojson
 if include is None:
-    headers = [path for path in (ROOT / ".esphome" / "build" / "webclock-alarm").rglob("ArduinoJson.h")
+    headers = [path for path in (ROOT / "ee04-clock/.esphome/build/ee04-clock").rglob("ArduinoJson.h")
                if (path.parent / "ArduinoJson.hpp").is_file()]
     if not headers:
         parser.error("Compile the ESPHome YAML once to fetch ArduinoJson, or pass --arduinojson PATH")

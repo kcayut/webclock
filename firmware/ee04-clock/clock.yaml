@@ -1,0 +1,70 @@
+substitutions:
+  core_src: "../core"
+  view_src: "../views"
+  piezo_pin: GPIO8
+  min_cpu: "80"
+packages:
+  desk: !include ../core/desk.yaml
+  face: !include ../views/classic.yaml
+
+esphome:
+  name: ee04-clock
+wifi:
+  id: desk_wifi
+  on_connect:
+    # After joining once, a router outage should not power a setup AP until reboot.
+    - lambda: id(desk_wifi).set_ap_timeout(0);
+  ap:
+    ssid: WebClock-Setup
+    password: !env_var WEBCLOCK_DESK_AP_PASSWORD
+    ap_timeout: 60s
+captive_portal:
+provisioning:
+  timeout: 10min
+esp32:
+  board: seeed_xiao_esp32s3
+  flash_size: 16MB
+  cpu_frequency: 240MHz
+  partitions: partitions.csv
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_PM_ENABLE: "y"
+      CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION: "y"
+      CONFIG_FREERTOS_USE_TICKLESS_IDLE: "y"
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "y"
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL: "y"
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN: "n"
+psram:
+  mode: octal
+  speed: 80MHz
+  ignore_not_found: false
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+i2c:
+  sda: GPIO41
+  scl: GPIO42
+  frequency: 50kHz
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO9
+switch:
+  - platform: gpio
+    id: panel_power
+    pin: GPIO43
+    restore_mode: ALWAYS_ON
+    internal: true
+binary_sensor:
+  - id: !extend select_key
+    pin: {number: GPIO2, mode: INPUT_PULLUP, inverted: true}
+  - id: !extend ok_key
+    pin: {number: GPIO3, mode: INPUT_PULLUP, inverted: true}
+  - id: !extend cancel_key
+    pin: {number: GPIO5, mode: INPUT_PULLUP, inverted: true}
+display:
+  - platform: epaper_spi
+    id: panel
+    model: Seeed-ee04-mono-4.26
+    full_update_every: 30
+    update_interval: never
+    lambda: !include ../views/classic-frame.yaml

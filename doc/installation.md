@@ -166,4 +166,4 @@ Docker 加 `--docker`；私人 CA 加 `--tls-ca /absolute/path/ca.pem`，並在�
 <a id="ha-local"></a>
 ### 開發與其他裝置
 
-[原始碼安裝](development/source-installation.md#source-install) · [手動 Python](development/source-installation.md#manual-python) · [HA 本機建置](development/source-installation.md#ha-local) · [ESP32-S3 韌體](../firmware/README.md)
+[原始碼安裝](development/source-installation.md#source-install) · [手動 Python](development/source-installation.md#manual-python) · [HA 本機建置](development/source-installation.md#ha-local) · [EE04 電子紙桌鐘韌體](../firmware/ee04-clock/README.md#刷入韌體)

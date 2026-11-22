@@ -15,6 +15,8 @@ WebClock = namespace.class_("WebClock", cg.Component)
 
 def server_url(value):
     value = cv.string_strict(value).rstrip("/")
+    if not value:
+        return ""  # Offline desk clock.
     url = urlsplit(value)
     if (url.scheme not in ("http", "https") or not url.hostname or url.username
             or url.password or url.query or url.fragment or any(ord(c) < 32 for c in value)):
@@ -43,6 +45,10 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Required("server_url"): server_url,
     cv.Optional("api_token", default=""): token,
     cv.Optional("device_name", default="WebClock ESP32-S3"): device_name,
+    cv.Optional("desk_sync"): cv.Schema({
+        cv.Optional("control_token", default=""): token,
+        cv.Optional("display_token", default=""): token,
+    }),
     cv.Optional("volume_limit", default=0.25): cv.float_range(min=0, max=0.5),
 }).extend(cv.COMPONENT_SCHEMA)
 
@@ -53,5 +59,8 @@ async def to_code(config):
     await cg.register_component(var, config)
     cg.add(var.set_clock(await cg.get_variable(config["time_id"])))
     cg.add(var.set_buzzer(await cg.get_variable(config["buzzer_id"])))
+    if "desk_sync" in config:
+        cg.add_define("USE_WEBCLOCK_DESK")
+        cg.add(var.set_desk_tokens(config["desk_sync"]["control_token"], config["desk_sync"]["display_token"]))
     for key in ("server_url", "api_token", "device_name", "volume_limit"):
         cg.add(getattr(var, "set_" + key)(config[key]))

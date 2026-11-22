@@ -51,7 +51,7 @@ Linux／Docker 預設為免登入的 self 模式，限可信任區網使用；�
 - [裝置顯示設定](doc/guides/display-devices.md)：主畫面圖示、全螢幕與恆亮，包含 iPad mini 1／iOS 9。
 - [使用指南](doc/guides/guide.md)：行事曆、鬧鐘、群組與備份。
 - [更新與復原](doc/operations/update-operations.md) · [HTTPS 與帳號管理](doc/operations/accounts-and-https.md)。
-- [裝置 API](doc/api/server-api.md) · [ESP32-S3 原型](firmware/README.md) · [發行與實機驗證狀態](doc/ha-release.md)。
+- [裝置 API](doc/api/server-api.md) · [EE04 電子紙桌鐘韌體](firmware/ee04-clock/README.md) · [發行與實機驗證狀態](doc/ha-release.md)。
 
 ## 支持開發
 
