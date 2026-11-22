@@ -19,7 +19,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
   for commit in $commits; do
     if git ls-tree -r --name-only "$commit" | grep -q '^hardware/'; then
-      echo "拒絕推送 $local_ref：提交 $commit 含硬體設計，GitHub 是公開倉庫。" >&2
+      echo "拒絕推送 ${local_ref}：提交 ${commit} 含硬體設計，GitHub 是公開倉庫。" >&2
       status=1
       break
     fi
