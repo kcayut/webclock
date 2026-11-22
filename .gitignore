@@ -28,3 +28,10 @@ TODO.md
 .docker-update*
 webclock_updater_run/
 .docker-migration.json
+
+# Private hardware sourcing and generated modeling files
+hardware/ee04-clock/BOM.md
+hardware/ee04-clock/台灣原型採購.md
+hardware/ee04-clock/electrical/*.kicad_prl
+hardware/ee04-clock/enclosure/*.blend
+hardware/ee04-clock/enclosure/*.blend1
