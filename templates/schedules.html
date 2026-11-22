@@ -2,7 +2,7 @@
 <html lang="{{ language }}">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta id="csrf-token" name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ schedule_translations.title }} · WebClock</title>
     {% include 'brand_head.html' %}
@@ -18,6 +18,7 @@
     <script defer src="{{ url_for('static', filename='calendar-chooser.js') }}"></script>
     <script defer src="{{ url_for('static', filename='device-content.js') }}"></script>
     <script defer src="{{ url_for('static', filename='schedules.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/qrcode.js') }}"></script>
     <script defer src="{{ url_for('static', filename='groups.js') }}"></script>
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
 </head>
@@ -194,7 +195,7 @@
                     <div class="actions group-save-actions"><button id="group-save" class="primary" type="submit" data-group-i18n="group_save">{{ t.group_save }}</button><button id="group-delete" class="danger" type="button" data-group-i18n="group_delete">{{ t.group_delete }}</button></div>
                 </form>
                 <div id="group-access" hidden>
-                    <section class="group-section" aria-labelledby="group-invite-title"><h3 id="group-invite-title" data-group-i18n="group_invite_title">{{ t.group_invite_title }}</h3><p class="help" data-group-i18n="group_invite_hint">{{ t.group_invite_hint }}</p><div class="group-invite-actions"><label for="group-invite-capacity" data-group-i18n="group_invite_capacity">{{ t.group_invite_capacity }}</label><input id="group-invite-capacity" type="number" min="1" max="100" step="1" value="5"><button id="group-invite-create" type="button" data-group-i18n="group_invite_create">{{ t.group_invite_create }}</button><button id="group-invite-close" type="button" data-group-i18n="group_invite_close">{{ t.group_invite_close }}</button></div><p id="group-invite-status" class="help"></p><div id="group-code-box" class="group-code-box" hidden><strong id="group-code" aria-live="polite"></strong><p class="help" data-group-i18n="group_code_hint">{{ t.group_code_hint }}</p></div><p id="group-access-status" class="error" role="status" aria-live="polite"></p></section>
+                    <section class="group-section" aria-labelledby="group-invite-title"><h3 id="group-invite-title" data-group-i18n="group_invite_title">{{ t.group_invite_title }}</h3><p class="help" data-group-i18n="group_invite_hint">{{ t.group_invite_hint }}</p><div class="group-invite-actions"><label for="group-invite-capacity" data-group-i18n="group_invite_capacity">{{ t.group_invite_capacity }}</label><input id="group-invite-capacity" type="number" min="1" max="100" step="1" value="5"><button id="group-invite-create" type="button" data-group-i18n="group_invite_create">{{ t.group_invite_create }}</button><button id="group-invite-close" type="button" data-group-i18n="group_invite_close">{{ t.group_invite_close }}</button></div><p id="group-invite-status" class="help"></p><div id="group-code-box" class="group-code-box" hidden><div class="group-code-content"><div id="group-code-qr" class="group-code-qr"></div><div class="group-code-details"><strong id="group-code" aria-live="polite"></strong><p class="help" data-group-i18n="group_code_scan_hint">{{ t.group_code_scan_hint }}</p><div class="group-code-url"><label class="visually-hidden" for="group-code-url" data-group-i18n="group_code_link_label">{{ t.group_code_link_label }}</label><input id="group-code-url" type="text" readonly><button id="group-code-copy" type="button" data-group-i18n="group_code_copy">{{ t.group_code_copy }}</button></div><p id="group-code-status" class="help" role="status" aria-live="polite"></p><p class="help" data-group-i18n="group_code_hint">{{ t.group_code_hint }}</p></div></div></div><p id="group-access-status" class="error" role="status" aria-live="polite"></p></section>
                     <section class="group-section" aria-labelledby="group-members-title"><h3 id="group-members-title" data-group-i18n="group_members">{{ t.group_members }}</h3><p class="help" data-group-i18n="group_members_hint">{{ t.group_members_hint }}</p><ul id="group-members" class="group-members"></ul></section>
                 </div>
             </section>

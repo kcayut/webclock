@@ -5,6 +5,7 @@
         document.documentElement.setAttribute('data-management-theme', window.localStorage.getItem('webclock-management-theme') === 'dark' ? 'dark' : 'light');
     } catch (error) {}
 </script>
+<script>if (document.documentElement.classList) document.documentElement.classList.add('webclock-js');</script>
 {% macro nav_icon(name) -%}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
 {% if name == 'display' %}<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8m-4-4v4"/>
@@ -23,10 +24,17 @@
 {%- endmacro %}
 <a class="skip-link" href="#management-main"><span data-i18n="management_skip_content">{{ m.management_skip_content }}</span></a>
 <aside class="management-sidebar">
-    <a class="management-brand" href="{{ url_for('admin', _anchor='display') }}" aria-label="WebClock">
-        <img src="{{ url_for('static', filename='brand/logo.svg', v=2) }}" width="38" height="38" alt="" aria-hidden="true">
-        <span>WebClock</span>
-    </a>
+    <div class="management-sidebar-head">
+        <a class="management-brand" href="{{ url_for('admin', _anchor='display') }}" aria-label="WebClock">
+            <img src="{{ url_for('static', filename='brand/logo.svg', v=2) }}" width="38" height="38" alt="" aria-hidden="true">
+            <span>WebClock</span>
+        </a>
+        <button type="button" class="management-menu-toggle" id="management-menu-toggle" aria-expanded="false" aria-controls="management-menu" data-i18n-aria-label="management_menu" aria-label="{{ m.management_menu }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            <span data-i18n="management_menu">{{ m.management_menu }}</span>
+        </button>
+    </div>
+    <div class="management-menu" id="management-menu">
     <nav class="management-navigation" data-i18n-aria-label="management_navigation" aria-label="{{ m.management_navigation }}">
         {% for panel, path, key in [('calendar', url_for('admin', _anchor='calendar-title'), 'management_calendar'), ('alarms', url_for('server_api.management.management', _anchor='alarms'), 'management_alarms'), ('devices', url_for('server_api.management.management', _anchor='devices'), 'management_devices')] %}
         <a href="{{ path }}" data-management-link="{{ panel }}">{{ nav_icon(panel) }}<span data-i18n="{{ key }}">{{ m[key] }}</span></a>
@@ -44,6 +52,10 @@
         </details>
     </nav>
     <div class="management-sidebar-tools">
+        <button type="button" class="management-install-link" id="management-install-open" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-2"/></svg>
+            <span data-i18n="management_install_app">{{ m.management_install_app }}</span>
+        </button>
         <span id="management-theme-label" class="management-tool-label" data-i18n="management_theme">{{ m.management_theme }}</span>
         <div id="management-theme-toggle" class="management-theme-toggle" role="group" aria-labelledby="management-theme-label" aria-describedby="management-theme-hint">
             <button type="button" data-theme="light" aria-pressed="true" data-i18n-aria-label="management_theme_light" aria-label="{{ m.management_theme_light }}">{{ nav_icon('sun') }}</button>
@@ -60,7 +72,27 @@
         <a class="management-about-link" href="{{ url_for('admin', _anchor='about') }}" data-management-link="about">{{ nav_icon('about') }}<span data-i18n="management_about">{{ m.management_about }}</span></a>
         <p class="management-sidebar-footer">WebClock <span data-i18n="management_title">{{ m.management_title }}</span></p>
     </div>
+    </div>
 </aside>
+<dialog id="management-install-dialog" class="management-dialog management-install-dialog" aria-labelledby="management-install-title">
+    <div class="management-overlay-header">
+        <h2 id="management-install-title" data-i18n="management_install_title">{{ m.management_install_title }}</h2>
+        <button type="button" class="management-overlay-close" data-dialog-close data-i18n-aria-label="management_install_dismiss" aria-label="{{ m.management_install_dismiss }}">×</button>
+    </div>
+    <div class="management-overlay-body">
+        <p data-i18n="management_install_hint">{{ m.management_install_hint }}</p>
+        <ul class="management-install-steps">
+            <li data-i18n="management_install_ios">{{ m.management_install_ios }}</li>
+            <li data-i18n="management_install_android">{{ m.management_install_android }}</li>
+            <li data-i18n="management_install_desktop">{{ m.management_install_desktop }}</li>
+        </ul>
+        <p id="management-install-status" class="help" role="status" aria-live="polite"></p>
+    </div>
+    <div class="management-overlay-actions">
+        <button type="button" data-dialog-close data-i18n="management_install_dismiss">{{ m.management_install_dismiss }}</button>
+        <button type="button" id="management-install-action" class="primary" hidden data-i18n="management_install_now">{{ m.management_install_now }}</button>
+    </div>
+</dialog>
 <header class="management-topbar">
     {% if management_authenticated %}
     <form method="post" action="{{ url_for('auth.logout') }}">

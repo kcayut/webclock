@@ -14,7 +14,7 @@
 | --- | --- | --- | --- |
 | [iPad mini 1／iOS 9](#ipad-ios9) | Safari「加入主畫面」 | 從主畫面圖示開啟，隱藏 Safari 網址列 | 一般 → 自動鎖定 → 永不 |
 | [其他 iPad／iPhone](#ipad) | Safari「加入主畫面」 | 新版另開啟「打開為網頁 App」 | 螢幕顯示與亮度 → 自動鎖定 → 永不 |
-| [Android](#android) | Chrome「建立捷徑」或「加入主畫面」 | 捷徑不保證全螢幕；專用平板可選全螢幕瀏覽器 | 螢幕逾時設永不；沒有此選項時使用插電保持喚醒 |
+| [Android](#android) | Chrome「安裝應用程式」或「加入主畫面」 | 安裝後可獨立全螢幕開啟；捷徑不保證全螢幕 | 螢幕逾時設永不；沒有此選項時使用插電保持喚醒 |
 | [Windows](#windows) | 桌面捷徑，或 Edge 安裝為應用程式 | 瀏覽器按 `F11` | 插電時關閉螢幕、睡眠都設永不 |
 | [Mac](#mac) | Safari 加入 Dock（macOS 14 起）或建立書籤 | 綠色視窗按鈕 → 進入全螢幕 | 關閉顯示器設永不，停用插電自動睡眠 |
 | [Linux／Chromebook](#other-computers) | 瀏覽器捷徑 | `F11`／Chromebook 全螢幕鍵 | 電源設定關閉螢幕逾時與自動睡眠 |
@@ -109,7 +109,7 @@ Android 的選單主要取決於廠牌與瀏覽器版本；舊系統也不一定
 
 Chrome 開啟時鐘 → 右上 `⋮` →「加入主畫面」，或新版「安裝並建立捷徑 → 建立捷徑」→ 名稱 `WebClock` → 新增。之後從主畫面圖示開啟。[Google：Android 網站捷徑](https://support.google.com/chrome/answer/15085120?hl=zh-Hant&co=GENIE.Platform%3DAndroid)
 
-**Android Chrome 的捷徑可能仍開在一般分頁。** WebClock 目前沒有提供保證可安裝成 Android 獨立 App 的網頁 manifest，也沒有網頁內的全螢幕按鈕。若瀏覽器提供「安裝應用程式」或「全螢幕」，可使用並確認結果；不要把滑動後暫時縮起的網址列當作固定全螢幕。
+**Android Chrome 的捷徑可能仍開在一般分頁。** WebClock 已提供網頁 manifest 與 192／512 圖示，支援的 Chrome 會提供「安裝應用程式」，安裝後以獨立視窗全螢幕開啟；不支援安裝的瀏覽器仍只能建立捷徑。管理頁側欄也有「安裝 App」說明。沒有網頁內的全螢幕按鈕，不要把滑動後暫時縮起的網址列當作固定全螢幕。
 
 專用時鐘平板若需要確實隱藏工具列，可選用第三方 **Fully Kiosk Browser**。其目前官方列出的系統範圍為 Android 6–16；其他版本先確認相容性。本專案未做該 App 實機驗收。
 

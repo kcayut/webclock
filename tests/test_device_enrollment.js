@@ -12,7 +12,8 @@ function browser(mode = 'managed', storageWorks = true) {
     const requests = [], timers = [], changes = [], stored = {}, handlers = {}, nodes = {};
     const node = id => nodes[id] || (nodes[id] = {style: {}, value: '', textContent: '', disabled: false, focus() { this.focused = true; }});
     const listen = (name, callback) => (handlers[name] || (handlers[name] = [])).push(callback);
-    const window = {location: {origin: 'https://clock.example'}, performance: {now: () => elapsed}, addEventListener: listen, confirm: () => true,
+    const window = {location: {origin: 'https://clock.example', hash: '', pathname: '/', search: ''}, performance: {now: () => elapsed}, addEventListener: listen, confirm: () => true,
+        history: {replaceState(state, title, url) { window.location.hash = ''; window.location.replaced = url; }},
         localStorage: {getItem(key) { if (!storageWorks) throw Error('storage unavailable'); return stored[key] || null; },
             setItem(key, value) { if (!storageWorks) throw Error('storage unavailable'); stored[key] = value; }},
         WebClockEnrollmentTranslations: {'zh-TW': {}}, currentLanguage: 'zh-TW'};
@@ -84,6 +85,24 @@ assert.equal(page.node('device-group-name').textContent, 'Living room');
 assert.equal(page.node('device-group-leave').style.display, '');
 assert.ok(!JSON.stringify(page.stored).includes('ABC234'));
 assert.ok(!JSON.stringify(page.stored).includes('attempt-a'));
+
+// A scanned join link opens the panel, fills the code, and keeps submission explicit.
+const linked = browser();
+linked.window.location.hash = '#join=abc234';
+linked.panel();
+linked.csrf();
+linked.respond('/join/prepare', {attempt_id: 'linked-attempt', expires_at: linked.now() + 600000});
+linked.respond('/identity', {status: 'pending', attempt_id: 'linked-attempt', expires_at: linked.now() + 600000});
+assert.equal(linked.node('device-join-code').value, 'ABC234');
+assert.equal(linked.node('device-join-status').textContent, 'join_code_prefilled');
+assert.equal(linked.window.location.hash, '', 'the join code is removed from the address after it is read');
+assert.equal(linked.window.location.replaced, '/');
+assert.ok(!linked.requests.some(request => /\/join$/.test(request.url)), 'a scanned link never joins without a tap');
+linked.node('device-join-form').onsubmit({preventDefault() {}});
+linked.respond('/identity', {status: 'pending', attempt_id: 'linked-attempt', expires_at: linked.now() + 600000});
+linked.csrf();
+assert.deepEqual(JSON.parse(linked.pending('/join').body), {attempt_id: 'linked-attempt', code: 'ABC234'});
+assert.ok(!JSON.stringify(linked.stored).includes('ABC234'));
 let applied = [];
 page.session.fetchDisplay(data => { applied.push(data.events[0].text); return true; });
 page.respond('/display', page.snapshot(), 200, {ETag: '"display-a"'});

@@ -444,10 +444,12 @@ async function main() {
     const invitation = {id: 'invite1', group_id: 'a', status: 'active', remaining: 2, capacity: 2, expires_at: '2030-01-01T00:00:00Z'};
     respond('/a/invite', {...invitation, code: 'ABC234'}, 'POST'); await flush();
     assert.equal($('group-code').textContent, 'ABC234'); assert.equal($('group-code-box').hidden, false);
+    assert.equal($('group-code-url').value, '/#join=ABC234');
     document.documentElement.lang = 'zh-TW'; window.WebClockGroups.applyLanguage();
     assert.equal($('group-code').textContent, 'ABC234');
     await trigger('group-select', 'change', 'b'); await access('b');
     assert.equal($('group-code').textContent, '');
+    assert.equal($('group-code-url').value, '');
     await trigger('group-select', 'change', 'a'); await access('a', invitation, [{id: 'device', status: 'active', enabled: true, online: null}]);
     assert.equal($('group-code').textContent, '', 'List reload must not reveal a previous code');
     assert.equal($('group-invite-capacity').value, '2');
