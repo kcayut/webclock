@@ -105,6 +105,47 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(self.admin.post('/api/v1/control-clients', json=dict(
             name='Bad', scopes=self.scopes, group_ids=['missing'])).status_code, 400)
 
+    def test_targeted_creation_requires_read_scope_and_binds_the_requested_room(self):
+        self.issue()
+        with clock.app.test_request_context('/'):
+            owner = clock.auth_service().owner_id()
+            group = clock.group_service().create_group(owner, {'name': 'Bedroom'})
+            other = clock.group_service().create_group(owner, {'name': 'Kitchen'})
+        rooms = [group['id'], other['id']]
+        write_only = self.admin.post('/api/v1/control-clients', json=dict(name='Write only',
+            scopes=['schedules:write', 'assignments:write'], group_ids=rooms)).json['client']['token']
+        body = dict(request_id='targeted-morning', assignment_target='group:' + rooms[0],
+                    schedule=dict(name='Morning', time='07:30'))
+        self.assertEqual(self.call(write_only, 'POST', 'schedules', body).status_code, 403)
+        self.assertEqual(load_json(self.root / 'schedules.json', []), [])
+        token = self.issue(group_ids=rooms)['token']
+        saved = self.call(token, 'POST', 'schedules', body)
+        self.assertEqual(saved.status_code, 201, saved.json)
+        self.assertTrue(saved.json['assigned'])
+        conflict = self.call(token, 'POST', 'schedules', dict(body, assignment_target='group:' + rooms[1]))
+        self.assertEqual(conflict.json['code'], 'idempotency_conflict')
+        self.assertEqual(len(self.call(token, 'GET', 'schedules').json['schedules']), 1)
+
+    def test_device_needing_rejoin_is_hidden_and_cannot_leave_a_new_alarm(self):
+        self.issue()
+        with clock.app.test_request_context('/'):
+            owner, access = clock.auth_service().owner_id(), clock.group_service()
+            group = access.create_group(owner, {'name': 'Bedroom'})
+            invite = access.create_invite(owner, group['id'])
+            attempt = access.prepare(owner, 'fixture')
+            joined = access.join(owner, attempt['token'], attempt['attempt_id'], invite['code'], 'fixture')
+            device_id = joined['identity']['device_id']
+        token = self.issue(device_ids=[device_id])['token']
+        target = 'device:' + device_id
+        self.assertEqual(self.call(token, 'GET', 'targets').json['targets'][0]['target'], target)
+        state = load_json(access.path, {})
+        state['devices'][device_id].update(enabled=False, status='revoked', credential_digest=None, rejoin_required=True)
+        save_json(access.path, state)
+        self.assertEqual(self.call(token, 'GET', 'targets').json['targets'], [])
+        body = dict(request_id='rejoin-new-alarm', assignment_target=target, schedule=dict(name='Wake', time='07:30'))
+        self.assertEqual(self.call(token, 'POST', 'schedules', body).status_code, 403)
+        self.assertEqual(self.call(token, 'GET', 'schedules').json['schedules'], [])
+
     def test_events_linked_alarms_and_group_device_assignment_boundaries(self):
         self.issue()  # Initialize self owner before creating targets.
         with clock.app.test_request_context('/'):

@@ -39,6 +39,7 @@ Home Assistant、ESP 或 AI agent 可用同一套 HTTP API 建立、修改、刪
 | 操作 | 路徑 | JSON 內容 |
 |---|---|---|
 | 憑證範圍 | `GET /identity` | 無 |
+| 可指派目標與台北時間 | `GET /targets` | 需 `assignments:write`，只列出已授權目標的名稱與識別值 |
 | 外部事件目錄 | `GET /calendar-events?source_id=<授權來源>` | 無；可重複 source_id |
 | 列出 | `GET /schedules`、`GET /events` | 無 |
 | 讀取 | `GET /schedules/<id>`、`GET /events/<id>` | 無 |
@@ -120,6 +121,16 @@ response_variable: saved_alarm
 
 ## AI agent／一般程式
 
+<a id="webclock-mcp"></a>
+
+### 用 MCP 設鬧鐘與新增行程
+
+助理端安裝、憑證設定、可直接複製的 Codex 指令與連線測試，請見 [MCP 安裝與使用指南](../guides/mcp.md)。
+
+MCP 呼叫沿用建立路由，額外帶入 `assignment_target`（例如 `group:<id>`，只建立事件可用 `null`）。此模式同時需要內容的讀、寫權限。回傳 `item_id`、`saved`、`replayed`，有目標時也回傳指派狀態；相同請求 ID 更換目標會產生衝突。重送時若內容已刪除，`saved` 為 `null` 並附 `current_error`。
+
+### 使用命令列
+
 標準庫工具 `scripts/control_clock.py` 可直接供受控 agent 或自動化使用。伺服器來源及憑證由環境預先設定；模型操作不接受任意 URL、額外標頭或憑證參數，不跟隨 HTTP redirect。不要把 token 寫進提示詞或提交的檔案。
 
 ```bash
@@ -137,7 +148,7 @@ python3 scripts/control_clock.py events target REPLACE_EVENT_ID --target-kind gr
 python3 scripts/control_clock.py events assign REPLACE_EVENT_ID --target-kind group --target-id REPLACE_GROUP_ID < assignment.json
 ```
 
-`event-request.json` 包含 `request_id` 與上方 `event` 內容；修改包含 `revision` 與 `event`，指派包含 `revision` 與布林 `assigned`。成功輸出伺服器實際 JSON，失敗以非零結束碼及不含憑證的錯誤 JSON 回報。若 agent 需要工具介面，可將這些固定操作包成其宿主工具；目前未另外提供 MCP server。
+`event-request.json` 包含 `request_id` 與上方 `event` 內容；修改包含 `revision` 與 `event`，指派包含 `revision` 與布林 `assigned`。成功輸出伺服器實際 JSON，失敗以非零結束碼及不含憑證的錯誤 JSON 回報。
 
 ESP 可用同一契約送 JSON 與 Bearer 標頭；需要保存未完成建立操作的 `request_id`，恢復網路後重送原內容。此 API 提供伺服器與通用客戶端契約；ESP 本機輸入介面尚未實作，也未完成實機驗收。
 

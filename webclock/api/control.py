@@ -10,7 +10,7 @@ from webclock.services.auth_service import AuthStateError
 from webclock.services.control_access_service import (
     ControlAccessService, ControlAccessError, ControlAccessStateError, GRANT_FIELDS, SCOPES,
 )
-from webclock.services.control_service import ControlError, ControlService
+from webclock.services.control_service import ControlError, ControlService, assignment_targets
 from webclock.services.device_access_service import AccessError
 from webclock.services.event_service import read_events
 from webclock.services.schedule_service import TAIPEI, read_schedules
@@ -108,6 +108,13 @@ def register_control(app, directory, auth, groups, owner, context, calendar_sour
             client = authenticate()
             return jsonify(client=client, mode=auth().mode())
 
+    @api.get('/targets')
+    def targets():
+        with storage_lock:
+            client = authenticate()
+            result = assignment_targets(client, groups())
+            return jsonify(targets=result, now=datetime.now(TAIPEI).isoformat(), timezone='Asia/Taipei')
+
     @api.route('/<any(schedules,events):kind>', methods=['GET', 'POST'])
     def collection(kind):
         with storage_lock:
@@ -117,7 +124,11 @@ def register_control(app, directory, auth, groups, owner, context, calendar_sour
             if kind == 'events' and any(row['id'] == 'webclock' and row.get('provider') != 'native'
                                         for row in calendar_sources()):
                 raise ControlError('source_id_conflict', 409)
-            result, status = controller.create(kind, request.get_json())
+            body = request.get_json()
+            if isinstance(body, dict) and 'assignment_target' in body:
+                result, status = controller.create_for_target(kind, body)
+            else:
+                result, status = controller.create(kind, body)
             return jsonify(result), status
 
     @api.route('/<any(schedules,events):kind>/<item_id>', methods=['GET', 'PATCH', 'DELETE'])

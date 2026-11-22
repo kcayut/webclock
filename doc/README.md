@@ -8,6 +8,7 @@
 | --- | --- |
 | [`installation.md`](installation.md) | Linux／Docker／HA 安裝指令、首次設定與排錯 |
 | [`guides/`](guides/guide.md) | [繁中](guides/guide.md)、[English](guides/guide_en.md)、[日本語](guides/guide_jp.md)使用指南、[HA 整合與卡片](home-assistant.md)、[顯示裝置](guides/display-devices.md)、[ESPHome](guides/esp-home.md) |
+| [MCP 安裝與使用指南](guides/mcp.md) | 設定 Codex 或桌面 AI 助理、授權時鐘與測試文字指令 |
 | [`api/`](api/server-api.md) | Server／裝置 API、[程式寫入 API](api/control-api.md)與多語參考 |
 | [`operations/`](operations/update-operations.md) | [更新與復原](operations/update-operations.md)、[HTTPS 與帳號管理](operations/accounts-and-https.md) |
 | [`development/`](development/repository-layout.md) | [原始碼與本機安裝](development/source-installation.md)、[目錄分工](development/repository-layout.md)、[Proxmox 測試主機](development/proxmox-lab.md)、[發行流程](ha-release.md)、[儲存與授權契約](development/b0-b1-contract.md)、[Docker／HA 更新設計](development/docker-ha-update-plan.md) |

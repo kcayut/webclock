@@ -72,6 +72,8 @@ WEBCLOCK_HTTP_PORT=8080 bash /tmp/webclock-install.sh --docker
 3. 依[裝置指南](guides/display-devices.md)設定主畫面入口、全螢幕與恆亮。網頁鬧鐘需保持前景，並在實際裝置測試聲音。
 4. 在「備份與還原」下載完整 `.webclock` 備份，妥善保存備份密碼；TLS、DNS 與主機設定須另行備份。
 
+需要用 AI 設鬧鐘或新增行程時，請接著在助理電腦完成 [MCP 安裝與使用指南](guides/mcp.md)。
+
 <a id="install-options"></a>
 ## 自訂安裝
 

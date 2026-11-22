@@ -16,6 +16,21 @@ class ControlError(ValueError):
         self.code, self.status = code, status
 
 
+def assignment_targets(client, access):
+    """Project only granted targets currently able to receive program assignments."""
+    if 'assignments:write' not in client['scopes']:
+        raise ControlError('permission_denied', 403)
+    result = []
+    for kind, listing in (('group', access.list_groups), ('device', access.list_devices)):
+        allowed = set(client[kind + '_ids'])
+        if allowed:
+            for row in listing(client['owner_id']):
+                if (row['id'] in allowed and row['enabled'] and row.get('group_enabled', True)
+                        and not row.get('rejoin_required')):
+                    result.append(dict(target=kind + ':' + row['id'], name=row.get('name') or row['id']))
+    return result
+
+
 def read_control_requests(directory):
     """Validate receipts shared by program ownership and legacy display isolation."""
     try:
@@ -165,7 +180,37 @@ class ControlService:
     def save(self, kind, rows):
         (save_schedules if kind == 'schedules' else save_events)(self.directory, rows)
 
-    def create(self, kind, body):
+    def create_for_target(self, kind, body):
+        """Create once and attempt the requested assignment under the caller's storage lock."""
+        body = dict(body)
+        target = body.pop('assignment_target')
+        if target is not None and (not isinstance(target, str)
+                or not re.fullmatch(r'(group|device):[A-Za-z0-9_-]{1,128}', target)):
+            raise ControlError('invalid_request')
+        self.require(kind + ':read')
+        receipt, status = self.create(kind, body, target=target)
+        item_id = receipt['schedule' if kind == 'schedules' else 'event']['id']
+        replayed = receipt.get('replayed', False)
+        result = dict(item_id=item_id, replayed=replayed, saved=None)
+        try:
+            result['saved'] = self.get(kind, item_id) if replayed else receipt
+        except (ValueError, OSError) as error:
+            result['current_error'] = getattr(error, 'code', 'read_failed')
+            return result, status
+        if target is not None:
+            result.update(target=target, assigned=None)
+            target_kind, target_id = target.split(':')
+            try:
+                state = self.target(kind, item_id, target_kind, target_id)
+                if not replayed and not state['assigned']:
+                    state = self.target(kind, item_id, target_kind, target_id,
+                                        dict(assigned=True, revision=state['revision']))
+                result['assigned'] = state['assigned']
+            except (ValueError, OSError) as error:
+                result['assignment_error'] = getattr(error, 'code', 'assignment_failed')
+        return result, status
+
+    def create(self, kind, body, *, target=None):
         self.require(kind + ':write')
         key = 'schedule' if kind == 'schedules' else 'event'
         if (not isinstance(body, dict) or set(body) != {'request_id', key}
@@ -173,7 +218,10 @@ class ControlService:
                 or not re.fullmatch(r'[A-Za-z0-9_-]{8,128}', body['request_id'])):
             raise ControlError('invalid_request')
         request_key = revision([self.client['owner_id'], self.client['id'], body['request_id']])
-        fingerprint = revision([kind, body[key]])
+        fields = [kind, body[key]]
+        if target is not None:
+            fields.append(target)
+        fingerprint = revision(fields)
         records = self.requests()
         prior = records.get(request_key)
         if prior:
@@ -187,6 +235,8 @@ class ControlService:
                 prior['response'] = self.result(kind, current)
                 save_json(self.path, records)
             return dict(deepcopy(prior['response']), replayed=True), 200
+        if target is not None and not any(row['target'] == target for row in assignment_targets(self.client, self.access)):
+            raise ControlError('permission_denied', 403)
         item_id = 'ctl_' + request_key[:48]
         rows = self.rows(kind)
         if any(row['id'] == item_id for row in rows):
@@ -202,6 +252,7 @@ class ControlService:
         result = self.result(kind, row)
         records[request_key]['response'] = result
         save_json(self.path, records)
+        self._owned = None
         return result, 201
 
     def change(self, kind, item_id, body, delete=False):

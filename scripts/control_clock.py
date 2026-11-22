@@ -36,7 +36,7 @@ def build_request(args, environ, stream):
     if not re.fullmatch(r"[\x21-\x7e]{1,512}", token):
         raise ValueError("missing_or_invalid_write_token")
     path = "/api/v1/control/" + args.resource
-    read_only = args.resource in ("identity", "calendar-events")
+    read_only = args.resource in ("identity", "calendar-events", "targets")
     if read_only:
         if args.action != "list" or args.id or args.target_kind or args.target_id:
             raise ValueError("invalid_request")
@@ -75,6 +75,8 @@ def build_request(args, environ, stream):
         field = "schedule" if args.resource == "schedules" else "event"
         allowed = {"create": {"request_id", field}, "update": {"revision", field},
                    "delete": {"revision"}, "assign": {"revision", "assigned"}}[args.action]
+        if args.action == "create" and "assignment_target" in payload:
+            allowed.add("assignment_target")
         if set(payload) != allowed:
             raise ValueError("invalid_request_fields")
         if method == "POST" and (not isinstance(payload["request_id"], str)
@@ -90,7 +92,7 @@ def build_request(args, environ, stream):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("resource", choices=("schedules", "events", "identity", "calendar-events"))
+    parser.add_argument("resource", choices=("schedules", "events", "identity", "calendar-events", "targets"))
     parser.add_argument("action", choices=("list", "get", "create", "update", "delete", "target", "assign"))
     parser.add_argument("id", nargs="?")
     parser.add_argument("--target-kind", choices=("group", "device"))
