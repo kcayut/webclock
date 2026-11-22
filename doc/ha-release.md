@@ -4,9 +4,17 @@
 
 ## 目前狀態
 
-- **[v1.5.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.5.0)**。功能變更見[發行紀錄](releases/v1.5.0.md)。
+- **[v1.6.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.6.0)**。功能變更見[發行紀錄](releases/v1.6.0.md)。
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
+
+<a id="release-1-6-0"></a>
+## 1.6.0 發行驗證（2026-11-23）
+
+- GitHub 與 Gitea 的正式標籤 `v1.6.0` 已各自回讀，均指向提交 `65d9abd9bfa48126994e76fc3b1ef72a5792700d`。標籤發行 CI 全部通過。[GitHub Actions 紀錄](https://github.com/kcayut/webclock/actions/runs/45050399779)
+- 五個公開資產均可匿名下載。`SHA256SUMS` 的四筆校驗通過。Server 壓縮檔版號為 `1.6.0`，包含 `webclock_mcp.py`、`control_clock.py` 與 WebClock Skill。離線時鐘 ZIP 完整性檢查通過。[公開 Release](https://github.com/kcayut/webclock/releases/tag/v1.6.0)
+- Linux systemd 新安裝與 Docker `1.5.1 → 1.6.0` 升級均通過。Docker 升級保留既有資料，兩種安裝均通過重啟後的版本與設定檢查。[公開安裝與升級驗證](https://github.com/kcayut/webclock/actions/runs/45051495140)
+- HA OS 與 EE04 實機尚待驗收。
 
 <a id="release-1-5-0"></a>
 ## 1.5.0 發行驗證（2026-11-15）
