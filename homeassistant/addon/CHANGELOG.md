@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- Server、App、HACS 整合與卡片同步至 1.6.0。
+- Server 新增供 WebClock MCP 查詢已授權目標的 API。AI 助理可透過 MCP 新增本地行程、一次性鬧鐘或行程聯動提醒。
+- App 維持 experimental，繼續透過 Home Assistant Supervisor 更新。
+
 ## 1.5.0
 
 - Server、App、HACS 整合與卡片同步至 1.5.0。

@@ -68,7 +68,9 @@ sudo python3 /usr/local/lib/webclock-docker-updater/update_settings.py --kind do
 sudo python3 /usr/local/lib/webclock-docker-updater/update_settings.py --kind docker
 ```
 
-在自用模式，啟用主機更新服務後可在 `/updates` 檢查 GitHub Release。若要從網頁安裝，在主機執行以下指令產生隨機金鑰與 SHA-256 設定。將第一行存入密碼管理器，第二行寫入安裝目錄的 `.env`（已有同名設定時替換）。請勿將金鑰寫入 Git 或分享給顯示裝置。
+**為什麼需要「自用更新金鑰」？** 自用模式免登入，能開啟 `/updates` 的人都可以檢查新版。從網頁安裝新版可能會暫時中斷時鐘服務，因此「立即升級」只開放給持有金鑰的人。若平常都在主機終端機執行更新，可以略過金鑰設定。
+
+若要啟用網頁安裝，請先啟用主機更新服務，再於主機執行以下指令。第一行是網頁要輸入的金鑰原文，請存入密碼管理器。第二行是供主機驗證的 SHA-256 設定，請整行寫入安裝目錄的 `.env`（已有同名設定時替換）。請勿將金鑰寫入 Git 或分享給顯示裝置。
 
 ```sh
 python3 -c 'import hashlib, secrets; key = secrets.token_urlsafe(32); print(key); print("WEBCLOCK_SELF_UPDATE_KEY_SHA256=" + hashlib.sha256(key.encode()).hexdigest())'

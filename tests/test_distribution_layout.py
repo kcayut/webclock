@@ -69,9 +69,13 @@ class DistributionLayoutTest(unittest.TestCase):
             for name in ('update_clock.sh', 'portable_update_clock.sh', 'scripts/enable_updates.sh',
                          'scripts/enable_docker_updates.sh', 'repository.yaml', 'hacs.json',
                          'custom_components/webclock/manifest.json', 'doc/README.md',
-                         'doc/installation.md', 'doc/operations/update-operations.md'):
+                         'doc/installation.md', 'doc/operations/update-operations.md',
+                         'doc/guides/mcp.md', f'doc/releases/v{version}.md',
+                         'scripts/webclock_mcp.py', 'scripts/control_clock.py',
+                         'scripts/skills/webclock/SKILL.md'):
                 self.assertTrue((installed / name).is_file(), name)
-            for name in ('tools', 'tests', 'homeassistant/tests', '.env', 'webclock_state', 'tls'):
+            for name in ('tools', 'tests', 'homeassistant/tests', 'firmware', 'hardware',
+                         'AGENTS.md', '.env', 'webclock_state', 'tls'):
                 self.assertFalse((installed / name).exists(), name)
             local_app = work / 'local-app'
             run('bash', str(installed / 'homeassistant/prepare_local_app.sh'), str(local_app))

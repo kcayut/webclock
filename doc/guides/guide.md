@@ -239,7 +239,9 @@ docker compose pull
 docker compose up -d --no-build
 ```
 
-啟用更新服務後，可在「版本更新」（`/updates`）檢查 GitHub Release。自用模式可使用[主機更新金鑰](../operations/update-operations.md#self-模式與宿主機設定)安裝，受管模式由已登入的管理員安裝。Linux 主機也可執行：
+啟用更新服務後，可在「版本更新」（`/updates`）檢查新版。自用模式免登入，檢查時可留空「自用更新金鑰」欄位。按「立即升級」時才需要金鑰，以免其他能開啟更新頁的人誤觸升級。受管模式則由已登入的管理員安裝。[自用更新金鑰設定方式](../operations/update-operations.md#self-模式與宿主機設定)
+
+若要從 Linux 主機的終端機更新，可執行以下指令。
 
 ```bash
 sudo bash update_clock.sh && [ -f scripts/enable_updates.sh ] && sudo bash scripts/enable_updates.sh
