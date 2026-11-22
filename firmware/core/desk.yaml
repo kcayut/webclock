@@ -79,7 +79,8 @@ time:
 
 globals:
   - {id: alarm_value, type: int, restore_value: yes, initial_value: '420'}
-  - {id: daily, type: webclock::DeskAlarm, restore_value: yes}
+  - {id: daily, type: webclock::LegacyDeskAlarm, restore_value: yes}
+  - {id: daily_alarm, type: webclock::DeskAlarm, restore_value: yes}
   - {id: last_minute, type: int, restore_value: yes, initial_value: '0'}
   - {id: remote_level, type: float, initial_value: '0'}
   - {id: ring_start, type: uint32_t}
@@ -199,11 +200,11 @@ binary_sensor:
               clock.field = static_cast<deskclock::ManualClock::Field>(clock.field + 1);
             }
           } else if (deskclock::editor.field != deskclock::Editor::Clock) {
-            int value = id(daily).value;
-            const bool save = deskclock::editor.field == deskclock::Editor::Units;
-            deskclock::editor.confirm(value);
-            if (save) {
-              id(daily).save(value);
+            int value = id(daily_alarm).value;
+            int skip = id(daily_alarm).skip;
+            const auto now = id(wall).now();
+            if (deskclock::editor.confirm(value, skip, now.is_valid() ? now.timestamp / 60 : 0)) {
+              id(daily_alarm).save(value, skip);
               deskclock::menu.close();
             }
           } else if (deskclock::menu.active()) {
@@ -214,8 +215,8 @@ binary_sensor:
                 clock.field = deskclock::ManualClock::Year;
                 break;
               case deskclock::Menu::Alarm: {
-                int value = id(daily).value;
-                deskclock::editor.confirm(value);
+                const auto now = id(wall).now();
+                deskclock::editor.begin(id(daily_alarm).value, id(daily_alarm).skip, now.is_valid() ? now.timestamp / 60 : 0);
                 break;
               }
               case deskclock::Menu::Usb:
@@ -264,12 +265,13 @@ interval:
   - interval: 250ms
     then:
       - lambda: |-
-          if (id(service_clock).desk_tick(id(daily), id(alarm_value))) id(dirty) = true;
+          if (id(daily_alarm).value < 0) static_cast<webclock::LegacyDeskAlarm &>(id(daily_alarm)) = id(daily);
+          if (id(service_clock).desk_tick(id(daily_alarm), id(alarm_value), id(last_minute))) id(dirty) = true;
           auto now = id(wall).now();
           const bool valid = now.is_valid();
           const int stamp = valid ? now.timestamp / 60 : 0;
           if (valid && id(last_minute) > stamp) id(last_minute) = 0;
-          if (valid && deskclock::due(id(daily).value, now.hour, now.minute, now.second, stamp, id(last_minute))) {
+          if (valid && deskclock::due(id(daily_alarm).value, now.hour, now.minute, now.second, stamp, id(last_minute), id(daily_alarm).skip)) {
             id(last_minute) = stamp;
             id(ring_start) = millis();
             id(ringing) = true;

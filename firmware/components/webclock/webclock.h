@@ -42,7 +42,7 @@ class WebClock : public Component {
     set_desk_tokens(control, display);
     usb_desk_only_ = true;
   }
-  bool desk_tick(DeskAlarm &state, int legacy_value);
+  bool desk_tick(DeskAlarm &state, int legacy_value, int &last_minute);
   const std::string &ticker() const { return ticker_; }
 #endif
  protected:

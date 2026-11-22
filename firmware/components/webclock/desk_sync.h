@@ -2,6 +2,7 @@
 
 #include "sync_codec.h"
 #include <cstdio>
+#include <ctime>
 #include <string>
 
 namespace esphome::webclock {
@@ -14,34 +15,62 @@ inline bool subscribe_legacy_schedules(bool usb_paired, bool group_display) {
 
 // Persist the local value and its last acknowledged ancestor together.
 // -1 = new daily slot, -2 = deleted or converted into a server-managed rule.
-struct DeskAlarm {
+// The original "daily" preference retains this layout for firmware upgrades.
+struct LegacyDeskAlarm {
   int value{-1}, base{-1};
   uint32_t generation{0};
   uint64_t binding{0};
-  void save(int next) {
+};
+
+struct DeskAlarm : LegacyDeskAlarm {
+  int skip{0}, base_skip{0};  // Exact epoch minutes, zero means no skip.
+  void save(int next, int next_skip = 0) {
     if (base == -2) { ++generation; base = -1; }
+    skip = next_skip;
     value = next;
   }
 };
-struct DeskAck { DeskAlarm sent; int remote; };
 
-inline void apply_ack(DeskAlarm &state, const DeskAck &ack) {
+struct DailySetting {
+  int value, skip;
+  bool operator==(const DailySetting &other) const { return value == other.value && skip == other.skip; }
+};
+struct DeskAck { DeskAlarm sent; DailySetting remote; int consumed_minute{0}; };
+
+inline void apply_ack(DeskAlarm &state, const DeskAck &ack, int &last_minute) {
   if (state.binding != ack.sent.binding || state.generation != ack.sent.generation ||
-      state.base != ack.sent.base) return;
-  if (ack.remote == -2) {
-    if (state.value != ack.sent.value) { ++state.generation; state.base = -1; }
-    else { state.value %= 1440; state.base = -2; }
-  } else {
-    if (state.value == ack.sent.value) state.value = ack.remote;
-    state.base = ack.remote;
+      state.base != ack.sent.base || state.base_skip != ack.sent.base_skip) return;
+  last_minute = std::max(last_minute, ack.consumed_minute);
+  const bool unedited = state.value == ack.sent.value && state.skip == ack.sent.skip;
+  if (ack.remote.value == -2 && !unedited) {
+    ++state.generation;
+    state.base = -1;
+    state.base_skip = 0;
+    return;
   }
+  if (unedited) {
+    state.value = ack.remote.value == -2 ? state.value % 1440 : ack.remote.value;
+    state.skip = ack.remote.skip;
+  }
+  state.base = ack.remote.value;
+  state.base_skip = ack.remote.skip;
+}
+
+inline std::string skip_time(int minute) {
+  time_t taipei = int64_t(minute) * 60 + 8 * 3600;
+  struct tm civil{};
+  char stamp[32];
+  if (!gmtime_r(&taipei, &civil) || !strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:00+08:00", &civil))
+    return {};
+  return stamp;
 }
 
 // Returns false on transport/validation/revision failure: keep pending state for retry.
 template<class Call>
-bool sync_daily(const DeskAlarm &state, const std::string &device, std::string &item_id,
-                Call call, int &result) {
+bool sync_daily(DeskAck &ack, const std::string &device, std::string &item_id, int now_minute, Call call) {
+  const auto &state = ack.sent;
   if (state.base == -2 || state.value < 0 || state.value >= 2880) return false;
+  auto &result = ack.remote;
   JsonDocument body, doc;
   if (item_id.empty()) {
     // The initial request body must stay identical across edits, restarts and OTA.
@@ -56,7 +85,7 @@ bool sync_daily(const DeskAlarm &state, const std::string &device, std::string &
   }
   const auto path = "/schedules/" + item_id;
   int status = call("GET", path, JsonDocument{}, doc);
-  if (status == 404 && doc["code"] == "not_found") { result = -2; return true; }
+  if (status == 404 && doc["code"] == "not_found") { result = {-2, 0}; return true; }
   auto row = doc["schedule"].as<JsonObjectConst>();
   if (status != 200 || !revision(doc["revision"]) || row["id"] != item_id ||
       !row["enabled"].is<bool>() || !row["time"].is<const char *>() ||
@@ -68,16 +97,46 @@ bool sync_daily(const DeskAlarm &state, const std::string &device, std::string &
   if (when.size() != 5 || when[2] != ':' || !alarm_detail::digits(when,0,2,hour) ||
       !alarm_detail::digits(when,3,2,minute) || hour >= 24 || minute >= 60) return false;
   if (row["rule"].size() || !row["calendar_link"].isNull() || row["skip_holidays"] == true ||
-      row["skipped_occurrences"].size() || !row["targets"].isNull() ||
+      !row["targets"].isNull() ||
       row["browser_sound"] == "silent" || row["browser_volume"] == 0) {
-    result = -2;  // Never turn a restricted or silent web rule into an audible daily alarm.
+    result = {-2, 0};  // Never turn a restricted or silent web rule into an audible daily alarm.
     return true;
   }
-  result = hour * 60 + minute + (row["enabled"].as<bool>() ? 1440 : 0);
-  const int ancestor = state.base == -1 ? 420 : state.base;
-  if (result != ancestor || result == state.value) return true;
+  const auto skips = row["skipped_occurrences"].as<JsonArrayConst>();
+  if (now_minute <= 0 && (skips.size() || state.skip || state.base_skip)) return false;
+  result = {hour * 60 + minute + (row["enabled"].as<bool>() ? 1440 : 0), 0};
+  for (JsonVariantConst entry : skips) {
+    int64_t stamp;
+    if (!entry.is<const char *>() || !parse_skip(entry.as<std::string>(), stamp)) return false;
+    if (stamp < int64_t(now_minute) * 60) continue;
+    if (stamp % 60 != 0 || (stamp / 60 + 480) % 1440 != hour * 60 + minute ||
+        stamp / 60 > std::numeric_limits<int>::max()) { result = {-2, 0}; return true; }
+    // Web can already skip tomorrow during today's skipped minute.
+    if (result.skip == now_minute) ack.consumed_minute = now_minute;
+    else if (result.skip) { result = {-2, 0}; return true; }
+    result.skip = stamp / 60;
+  }
+  auto active = [now_minute](int skip) { return skip >= now_minute ? skip : 0; };
+  const DailySetting ancestor{state.base == -1 ? 420 : state.base, active(state.base_skip)};
+  const DailySetting local{state.value, active(state.skip)};
+  if (!(result == ancestor) || result == local) return true;
   body.clear();
   body["revision"] = doc["revision"].as<std::string>();
+  if (local.skip != result.skip) {
+    auto list = body["schedule"]["skipped_occurrences"].to<JsonArray>();
+    const auto previous = skip_time(result.skip);
+    for (JsonVariantConst entry : skips) {
+      // Resume keeps history. A new skip prunes past dates like the web UI.
+      if ((!local.skip && entry != previous) ||
+          (ack.consumed_minute && entry == skip_time(ack.consumed_minute)))
+        list.add(entry);
+    }
+    if (local.skip) {
+      const auto stamp = skip_time(local.skip);
+      if (stamp.empty()) return false;
+      list.add(stamp);
+    }
+  }
   char time[6];
   snprintf(time, sizeof(time), "%02u:%02u", unsigned(state.value / 60 % 24), unsigned(state.value % 60));
   body["schedule"]["time"] = time;
@@ -85,7 +144,9 @@ bool sync_daily(const DeskAlarm &state, const std::string &device, std::string &
   status = call("PATCH", path, body, doc);
   if (status != 200 || !revision(doc["revision"]) || doc["schedule"]["id"] != item_id ||
       doc["schedule"]["time"] != time || doc["schedule"]["enabled"] != (state.value >= 1440)) return false;
-  result = state.value;
+  if (body["schedule"]["skipped_occurrences"].is<JsonArrayConst>() &&
+      doc["schedule"]["skipped_occurrences"] != body["schedule"]["skipped_occurrences"]) return false;
+  result = local;
   return true;
 }
 

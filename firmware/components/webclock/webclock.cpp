@@ -225,17 +225,18 @@ void WebClock::loop() {
 }
 
 #ifdef USE_WEBCLOCK_DESK
-bool WebClock::desk_tick(DeskAlarm &state, int legacy_value) {
+bool WebClock::desk_tick(DeskAlarm &state, int legacy_value, int &last_minute) {
   if (state.value < 0 || state.value >= 2880)
     state.value = legacy_value >= 0 && legacy_value < 2880 ? legacy_value : 420;
   if (!control_token_.empty() && binding_ && state.binding != binding_) {
     state.binding = binding_;
     state.base = -1;
     state.generation = 0;
+    state.base_skip = 0;
   }
-  const int before = state.value, previous_base = state.base;
+  const int before = state.value, previous_base = state.base, previous_skip = state.skip;
   DeskAck ack;
-  if (desk_in_ && xQueueReceive(desk_in_, &ack, 0)) apply_ack(state, ack);
+  if (desk_in_ && xQueueReceive(desk_in_, &ack, 0)) apply_ack(state, ack, last_minute);
   if (desk_out_) xQueueOverwrite(desk_out_, &state);
   TickerUpdate incoming;
   if (ticker_in_ && xQueueReceive(ticker_in_, &incoming, 0)) {
@@ -248,7 +249,7 @@ bool WebClock::desk_tick(DeskAlarm &state, int legacy_value) {
     ticker_.clear();
     return true;
   }
-  return before != state.value || previous_base != state.base;
+  return before != state.value || previous_base != state.base || previous_skip != state.skip;
 }
 
 void WebClock::sync_desk_() {
@@ -266,8 +267,9 @@ void WebClock::sync_desk_() {
       doc = parse(response);
       return response.status;
     };
-    DeskAck ack{state, 0};
-    if (sync_daily(state, device_id_, mirror_id_, call, ack.remote)) xQueueOverwrite(desk_in_, &ack);
+    DeskAck ack{state, {}};
+    const auto now = clock_->utcnow();
+    if (sync_daily(ack, device_id_, mirror_id_, now.is_valid() ? now.timestamp / 60 : 0, call)) xQueueOverwrite(desk_in_, &ack);
   }
   if (!ticker_in_) return;
   const bool managed = !display_token_.empty();

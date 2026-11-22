@@ -8,18 +8,19 @@ int main() {
   using namespace deskclock;
   int saved = 1439;
   Editor edit;
-  edit.confirm(saved);
+  edit.begin(saved, 0, 0);
+  int skip = 0;
   edit.select();            // enable, retain 23:59 until saved
-  edit.confirm(saved);
+  edit.confirm(saved, skip, 0);
   edit.select();            // 23 -> 0
-  edit.confirm(saved);
+  edit.confirm(saved, skip, 0);
   edit.select();            // 5 -> 0 tens
-  edit.confirm(saved);
+  edit.confirm(saved, skip, 0);
   edit.select();            // 9 -> 0 units
   assert(saved == 1439);
-  edit.confirm(saved);
+  edit.confirm(saved, skip, 0);
   assert(saved == 1440 && edit.field == Editor::Clock);
-  edit.confirm(saved);
+  edit.begin(saved, skip, 0);
   edit.select();
   edit.cancel();
   assert(saved == 1440 && edit.field == Editor::Clock);
@@ -28,6 +29,28 @@ int main() {
   assert(!due(saved, 0, 0, 1, 100, 100));
   assert(!due(0, 0, 0, 1, 101, 100));
   assert(due(1441, 0, 1, 0, 101, 100)); // same day, reprogrammed for a later time
+  saved = 1440; // midnight Taipei
+  const int midnight = 1440 * 20000 - 480;
+  edit.begin(saved, skip, midnight - 1);
+  edit.select();
+  assert(edit.action == Editor::Skip && edit.target == midnight);
+  assert(edit.confirm(saved, skip, midnight - 1) && skip == midnight && saved == 1440);
+  assert(!due(saved, 0, 0, 0, midnight, 0, skip));
+  assert(due(saved, 0, 0, 0, midnight + 1440, 0, skip));
+  edit.begin(saved, skip, midnight - 1);
+  edit.select();
+  assert(edit.action == Editor::Resume && edit.confirm(saved, skip, midnight - 1) && skip == 0);
+  edit.begin(saved, skip, midnight - 1);
+  edit.select();
+  assert(!edit.confirm(saved, skip, midnight) && skip == 0); // expired preview
+  edit.select();
+  assert(edit.target == midnight + 1440);
+  edit.select();
+  assert(edit.action == Editor::Disable && edit.confirm(saved, skip, midnight) && saved == 0);
+  saved = 1500;
+  edit.begin(saved, 0, 0); // no clock: can cancel, cannot choose a date
+  edit.select();
+  assert(edit.action == Editor::Disable && edit.confirm(saved, skip, 0) && saved == 60);
   uint8_t date[] = {0, 0, 0, bcd(22), 0, bcd(11), bcd(26)};
   assert(rtc_epoch(date) == 1795305600); // Sunday, UTC
   date[0] = 0x80;                         // oscillator-stop flag
@@ -87,6 +110,8 @@ int main() {
   ring.reset();
   assert(!ring.open && ring.choice == RingCancel::Cancel);
 
+  assert(line_width("跳過下一次 11/23 07:30") < 560);
+  assert(line_width("恢復響鈴 11/23 07:30") < 560);
   assert(line_width("選單") == 2 * 28);
   assert(line_width("USB 配對") == 6 * 28);
 }

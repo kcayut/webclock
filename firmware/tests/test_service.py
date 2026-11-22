@@ -1,4 +1,5 @@
 """Run the desk firmware's C++ sync logic against a temporary real WebClock service."""
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import shutil
@@ -101,6 +102,66 @@ class DeskServiceTest(unittest.TestCase):
         api.admin.put(admin_url + "/" + state["id"], json={"rule": {"weekdays": [1]}})
         self.assertEqual(sync(state)["base"], -2)
         self.assertEqual(rows()[0]["rule"], {"weekdays": [1]})
+
+    def test_daily_skip_resume_cancel_and_offline_expiry(self):
+        api = self.fixture(control.ControlApiTest)
+        token = api.issue()["token"]
+
+        def http(req):
+            resp = api.call(token, req["method"], req["path"][1:], req["body"])
+            return {"status": resp.status_code, "body": resp.json}
+
+        def sync(state, **changes):
+            result = self.firmware(dict(state, **changes), http)
+            self.assertTrue(result["ok"], result)
+            return result
+
+        value = 1440 + 450
+        state = sync({"value": value, "base": -1})
+        resource = "/api/v1/schedules/" + state["id"]
+        def schedule():
+            return api.call(token, "GET", "schedules/" + state["id"]).json["schedule"]
+
+        web = api.admin.post(resource + "/skip-next", json={})
+        self.assertEqual(web.status_code, 200, web.json)
+        when = web.json["skipped"]["datetime"]
+        target = int(datetime.fromisoformat(when).timestamp()) // 60
+        now = target - 1
+        state = sync(state, now=now)
+        self.assertEqual((state["value"], state["skip"], state["base_skip"]), (value, target, target))
+
+        # Restore on the desk while a previous poll is still in flight.
+        yesterday = (datetime.fromisoformat(when) - timedelta(days=1)).isoformat()
+        self.assertEqual(api.admin.put(resource, json={"skipped_occurrences": [yesterday, when]}).status_code, 200)
+        state = sync(state, now=now, skip_while_waiting=0)
+        self.assertEqual((state["skip"], state["base_skip"]), (0, target))
+        state = sync(state, now=now)
+        self.assertEqual(schedule()["skipped_occurrences"], [yesterday])
+
+        # Skip on the desk, replay after reboot, then resume on the web.
+        state = sync(state, now=now, skip=target)
+        state = sync(state, now=now, id="")
+        row = schedule()
+        self.assertEqual((row["enabled"], row["skipped_occurrences"]), (True, [when]))
+        self.assertEqual(api.admin.put(resource, json={"skipped_occurrences": []}).status_code, 200)
+        state = sync(state, now=now)
+        self.assertEqual((state["skip"], state["base_skip"]), (0, 0))
+
+        # The web UI can retain today's skipped minute and already skip tomorrow.
+        tomorrow = (datetime.fromisoformat(when) + timedelta(days=1)).isoformat()
+        self.assertEqual(api.admin.put(resource, json={"skipped_occurrences": [when, tomorrow]}).status_code, 200)
+        state = sync(state, now=target)
+        self.assertEqual((state["last_minute"], state["skip"]), (target, target + 1440))
+        self.assertEqual(api.admin.put(resource, json={"skipped_occurrences": []}).status_code, 200)
+        state = sync(state, now=target + 1)
+
+        # Reconnect after an offline skip: the following day remains enabled.
+        state = sync(state, now=target + 1, skip=target)
+        self.assertEqual((state["value"], state["skip"]), (value, 0))
+        state = sync(state, now=target + 1, skip=target + 1440)
+        state = sync(state, now=target + 1, value=450, skip=0)
+        row = schedule()
+        self.assertEqual((row["enabled"], row["time"], row["skipped_occurrences"]), (False, "07:30", []))
 
     def test_ticker_on_public_display(self):
         api = self.fixture(control.ControlApiTest)

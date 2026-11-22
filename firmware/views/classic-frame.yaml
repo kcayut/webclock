@@ -4,7 +4,7 @@
   const auto field = deskclock::editor.field;
   const bool sounding = id(ringing) || id(service_clock).is_ringing();
   const bool edit = !sounding && field != deskclock::Editor::Clock;
-  const int alarm = edit ? deskclock::editor.draft : id(daily).value;
+  const int alarm = edit ? deskclock::editor.draft : id(daily_alarm).value;
   const int hh = alarm % 1440 / 60, mm = alarm % 60;
   const auto ink = Color::BLACK;
   auto button = [&](int x, int y, int w, const char *text, bool selected) {
@@ -49,6 +49,22 @@
                          (800 - deskclock::line_width(hint)) / 2);
     return;
   }
+  const auto &editor = deskclock::editor;
+  if (edit && field == deskclock::Editor::Enabled && editor.original >= 1440) {
+    it.printf(400, 65, id(label), ink, TextAlign::CENTER, "鬧鐘  %02d:%02d", hh, mm);
+    button(120, 145, 560, "設定鬧鐘時間", editor.action == deskclock::Editor::EditTime);
+    if (editor.target) {
+      auto when = ESPTime::from_epoch_local(int64_t(editor.target) * 60);
+      const auto text = std::string(editor.target == editor.original_skip ? "恢復響鈴 " : "跳過下一次 ") +
+                        when.strftime("%m/%d %H:%M");
+      button(120, 220, 560, text.c_str(), editor.action == deskclock::Editor::Skip || editor.action == deskclock::Editor::Resume);
+    } else {
+      deskclock::draw_line(it, *id(ticker_atlas), now.is_valid() ? "本次已跳過" : "等待校時", 0, 224, ink, 260);
+    }
+    button(120, 295, 560, "取消鬧鈴", editor.action == deskclock::Editor::Disable);
+    it.print(400, 444, id(label), ink, TextAlign::CENTER, "＋ 選擇   ● 確定   × 取消");
+    return;
+  }
   if (edit) {
     const char *fields[] = {"", "鬧鐘開關", "小時", "分鐘十位", "分鐘個位"};
     it.print(400, 42, id(label), ink, TextAlign::CENTER, fields[field]);
@@ -70,8 +86,12 @@
       button(270, 355, 120, "取消", deskclock::ring_cancel.choice == deskclock::RingCancel::Cancel);
       button(410, 355, 120, "確認", deskclock::ring_cancel.choice == deskclock::RingCancel::Confirm);
     }
-  } else if (!edit && id(daily).base == -2) {
+  } else if (!edit && id(daily_alarm).base == -2) {
     deskclock::draw_line(it, *id(ticker_atlas), "遠端已刪除或變更規則 / 本機已停用", 0, 360, ink);
+  } else if (!edit && alarm >= 1440 && now.is_valid() && id(daily_alarm).skip >= now.timestamp / 60) {
+    auto when = ESPTime::from_epoch_local(int64_t(id(daily_alarm).skip) * 60);
+    const auto text = std::string("已跳過 ") + when.strftime("%m/%d %H:%M");
+    deskclock::draw_line(it, *id(ticker_atlas), text, 0, 355, ink, (800 - deskclock::line_width(text)) / 2);
   } else {
     it.printf(400, 372, id(label), ink, TextAlign::CENTER, "鬧鐘%s  %02d:%02d",
               alarm >= 1440 ? "已啟用" : "已停用", hh, mm);
