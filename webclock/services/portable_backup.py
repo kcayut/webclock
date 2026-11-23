@@ -15,6 +15,7 @@ import tempfile
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from . import ringtones
 from .auth_service import AuthService
 from .control_access_service import ControlAccessService
 from .control_service import read_control_requests
@@ -34,9 +35,10 @@ MAX_FILE_SIZE = MAX_PLAINTEXT + len(MAGIC) + 16 + 12 + 16
 PENDING_DIR = '.portable-restore-pending'
 PREVIOUS_DIR = '.portable-restore-previous'
 SCOPED_FILES = frozenset(('settings.json', 'manual_notes.json', 'calendar.json',
-                          'schedules.json', 'events.json', 'control-requests.json'))
+                          'schedules.json', 'events.json', 'control-requests.json', 'ringtones.json'))
 ROOT_FILES = SCOPED_FILES | {'auth.json', 'auth-required', 'device-access.json',
                              'devices.json', 'control-clients.json'}
+MAX_INVENTORY_FILES = len(ROOT_FILES) + 100 * len(SCOPED_FILES)
 OWNER_PATTERN = r'[A-Za-z0-9_-]{1,128}'
 
 
@@ -164,7 +166,7 @@ def validate(payload, validate_content=None):
     if (not isinstance(payload, dict) or set(payload) != {'format', 'version', 'created_at', 'files'}
             or payload['format'] != FORMAT or type(payload['version']) is not int
             or payload['version'] != 1 or not isinstance(payload['created_at'], str)
-            or not isinstance(payload['files'], dict) or len(payload['files']) > 611):
+            or not isinstance(payload['files'], dict) or len(payload['files']) > MAX_INVENTORY_FILES):
         raise BackupError()
     try:
         stamp = datetime.fromisoformat(payload['created_at'])
@@ -175,6 +177,9 @@ def validate(payload, validate_content=None):
             raise BackupError('invalid_backup_path')
         if len(_dump(payload)) > MAX_PLAINTEXT:
             raise BackupError('backup_too_large', 413)
+        if sum(len(_dump(value)) for name, value in files.items()
+               if name.split('/')[-1] == 'ringtones.json') > ringtones.MAX_LIBRARY_BYTES:
+            raise BackupError('ringtone_storage_full', 413)
         auth = AuthService._validate(files['auth.json'])
         protected = bool(auth['accounts']) or auth['mode'] == 'managed'
         if ('auth-required' in files and files['auth-required'] != {'version': 1, 'mode': 'managed'}) or (
@@ -194,7 +199,10 @@ def validate(payload, validate_content=None):
                 owner = auth['data_owner_id'] if directory == root else directory.name
                 settings = files.get((directory.relative_to(root).as_posix() + '/' if directory != root else '') + 'settings.json', {})
                 validate_settings(migrate_clock_style(settings))
-                read_schedules(directory)
+                clips = ringtones.library(directory)
+                ringtones.validate_library(clips)
+                if any(row.get('custom_sound') and row['custom_sound'] not in clips for row in read_schedules(directory)):
+                    raise BackupError('invalid_ringtone_reference')
                 if any(row['owner_id'] != owner for row in read_events(directory)):
                     raise BackupError('invalid_owner_data')
                 if any(row['owner_id'] != owner for row in read_control_requests(directory).values()):
@@ -409,7 +417,7 @@ def recover(state_dir, notes_file):
             if (not isinstance(journal, dict) or set(journal) != {'version', 'notes_file', 'files', 'committed'}
                     or journal['version'] != 1 or journal['notes_file'] != str(notes)
                     or type(journal['committed']) is not bool or not isinstance(journal['files'], dict)
-                    or len(journal['files']) > 1211):
+                    or len(journal['files']) > 2 * MAX_INVENTORY_FILES):
                 raise ValueError()
             raw_files = {}
             for name, value in journal['files'].items():

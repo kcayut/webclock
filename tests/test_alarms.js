@@ -16,7 +16,7 @@ assert.doesNotMatch(script, /alarm-status|alarm_sync_error|alarm_unknown_holiday
 function browser(storage = {}, usePerformance = false, managed = false) {
     let instant = Date.parse('2026-09-30T00:00:00Z');
     let elapsed = 0;
-    const nodes = {}, handlers = {}, requests = [], timers = [];
+    const nodes = {}, handlers = {}, requests = [], timers = [], clips = [];
     const node = id => nodes[id] || (nodes[id] = {
         textContent: '', style: {}, attrs: {}, checked: true,
         classList: {items: new Set(), add(x) { this.items.add(x); }, remove(x) { this.items.delete(x); },
@@ -26,8 +26,24 @@ function browser(storage = {}, usePerformance = false, managed = false) {
     });
     const addEventListener = (name, handler) => (handlers[name] || (handlers[name] = [])).push(handler);
     const sound = {ready: false, played: [], volumes: [], stopped: 0, unlocked: 0,
+        vibrations: [], vibrate(value) { this.vibrations.push(value); return true; },
         isReady() { return this.ready; }, unlock() { this.ready = true; ++this.unlocked; },
-        play(value, volume) { if (this.ready) { this.played.push(value); this.volumes.push(volume); } return this.ready; }, stop() { ++this.stopped; }};
+        play(value, volume) { if (this.ready) { this.played.push(value); this.volumes.push(volume); } return this.ready; },
+        stop() { ++this.stopped; this.clipPlaying = false; },
+        isRingtoneId: id => typeof id === 'string' && /^[a-f0-9]{32}$/.test(id),
+        isRingtonePlaying() { return this.clipPlaying; },
+        loadRingtone(id, audience, callback, allowed) {
+            assert.ok(allowed(), 'starts requests under the current scope and lease');
+            const clip = {id, audience, reply(buffer) { if (allowed()) callback(buffer); }, cancelled: false};
+            clips.push(clip);
+            return () => { clip.cancelled = true; };
+        },
+        playRingtone(buffer, volume) {
+            this.played.push(buffer);
+            this.volumes.push(volume);
+            this.clipPlaying = true;
+            return true;
+        }};
     const window = {serverUrl: 'http://clock.example', location: {origin: 'http://clock.example'},
         AlarmAudio: sound, addEventListener};
     if (usePerformance) window.performance = {now: () => elapsed};
@@ -77,7 +93,7 @@ function browser(storage = {}, usePerformance = false, managed = false) {
         if (request.accept) request.accept(JSON.parse(request.responseText), true);
         else request.onload();
     }
-    return {node, window, sound, requests, tick, poll, dispatch, reply, session,
+    return {node, window, sound, requests, clips, tick, poll, dispatch, reply, session,
         advance(ms) { instant += ms; elapsed += ms; }, adjustClock(ms) { instant += ms; }, now: () => instant,
         ringing: () => node('body').classList.items.has('alarm-ringing')};
 }
@@ -147,6 +163,15 @@ assert.ok(!silent.node('body').classList.items.has('alarm-steady'),
     'a saved flash-off preference must not suppress the default visual alarm');
 silent.reply([]);
 assert.ok(!silent.ringing(), 'management disable/delete stops the active alarm');
+
+assert.deepEqual(silent.sound.vibrations, []);
+const haptic = browser();
+haptic.window.activeSettings = {alarm_vibration: true};
+haptic.reply([alarm(haptic, 'Quiet', 'silent'), alarm(haptic, 'Also quiet', 'silent')]);
+haptic.advance(1000); haptic.tick(); haptic.advance(2000); haptic.tick();
+assert.deepEqual(haptic.sound.vibrations, [undefined], 'simultaneous silent alarms vibrate once');
+haptic.dispatch('click'); haptic.dispatch('click');
+assert.deepEqual(haptic.sound.vibrations, [undefined, 0], 'dismissal cancels vibration');
 
 const volumes = browser();
 volumes.reply([{...alarm(volumes, 'Muted'), volume: 0}, {...alarm(volumes, 'Soft', 'chime'), volume: 25}]);
@@ -272,6 +297,12 @@ for (const sound of ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'son
 assert.equal(signatures.size, 7, 'each audible style has a distinct pattern');
 const unsupported = {};
 vm.runInNewContext(audioScript, {window: unsupported});
+assert.equal(unsupported.AlarmAudio.vibrate(), false);
+const patterns = [];
+unsupported.navigator = {vibrate(pattern) { patterns.push(JSON.stringify(pattern)); return true; }};
+assert.equal(unsupported.AlarmAudio.vibrate(), true);
+unsupported.AlarmAudio.vibrate(0);
+assert.deepEqual(patterns, ['[160,100,160]', '0']);
 assert.equal(unsupported.AlarmAudio.unlock('bell'), false);
 console.log('Alarm checks passed: ES5/webkit audio, unlock, scheduling, holidays via server, touch deduplication, dismissal, stale/offline data and default visual alarms.');
 
@@ -302,3 +333,94 @@ assert.equal(privateDismissal.ringing(), true, 'dismissals from another identity
 privateDismissal.session.clear('expired');
 assert.equal(privateDismissal.ringing(), false, 'lease expiry stops an active private ring');
 console.log('Managed alarm checks passed: scope partition, memory-only dismissals, active/queued revocation and lease expiry.');
+
+const ringtoneId = 'a'.repeat(32);
+const custom = browser({}, true);
+const mutedCustom = {...alarm(custom, 'Muted custom'), custom_sound: 'b'.repeat(32), volume: 0};
+const quiet = {...alarm(custom, 'Silent custom', 'silent'), custom_sound: 'c'.repeat(32)};
+const audibleCustom = {...alarm(custom, 'Custom ringtone'), custom_sound: ringtoneId, volume: 20};
+custom.reply([mutedCustom, quiet, audibleCustom]);
+assert.equal(custom.clips.length, 0, 'a locked clock has no audio decoder yet');
+custom.node('alarm-bell').onclick();
+assert.deepEqual(custom.clips.map(clip => [clip.id, clip.audience]), [[ringtoneId, 'self']]);
+custom.clips[0].reply('decoded clip');
+custom.advance(1000); custom.tick();
+assert.deepEqual(custom.sound.played, ['decoded clip']);
+assert.deepEqual(custom.sound.volumes, [20]);
+custom.advance(2000); custom.tick();
+assert.deepEqual(custom.sound.played, ['decoded clip'], 'long custom clips finish before repeating');
+custom.reply([], undefined, [audibleCustom.id]);
+assert.ok(custom.sound.clipPlaying, 'removing silent simultaneous alarms preserves the full playback');
+custom.sound.clipPlaying = false;
+custom.advance(2000); custom.tick();
+assert.deepEqual(custom.sound.played, ['decoded clip', 'decoded clip']);
+custom.dispatch('click'); custom.dispatch('click');
+assert.equal(custom.sound.clipPlaying, false, 'dismissing the alarm stops custom playback too');
+assert.ok(custom.clips[0].cancelled);
+
+const privateClip = browser({}, true, true);
+privateClip.node('alarm-bell').onclick();
+privateClip.reply([{...alarm(privateClip, 'Private clip'), custom_sound: ringtoneId}]);
+assert.equal(privateClip.clips[0].audience, 'device');
+privateClip.advance(1000); privateClip.tick();
+assert.deepEqual(privateClip.sound.played, ['bell'], 'a slow custom download falls back to the built-in sound');
+privateClip.clips[0].reply('private clip');
+privateClip.advance(2000); privateClip.tick();
+assert.deepEqual(privateClip.sound.played, ['bell', 'private clip']);
+privateClip.session.clear('expired');
+assert.equal(privateClip.sound.clipPlaying, false);
+assert.ok(privateClip.clips[0].cancelled);
+privateClip.session.changeScope('different-device');
+privateClip.poll();
+privateClip.reply([{...alarm(privateClip, 'New private clip'), custom_sound: ringtoneId}]);
+assert.equal(privateClip.clips.length, 2, 'the same ID must be fetched anew in another scope');
+privateClip.session.clear();
+privateClip.clips[1].reply('late clip after revocation');
+privateClip.advance(2000); privateClip.tick();
+assert.deepEqual(privateClip.sound.played, ['bell', 'private clip']);
+
+const remoteClip = browser({}, true, true);
+remoteClip.window.serverUrl = 'https://another-clock.example';
+remoteClip.node('alarm-bell').onclick();
+remoteClip.reply([{...alarm(remoteClip), custom_sound: ringtoneId}]);
+assert.equal(remoteClip.clips.length, 0, 'external clock sources cannot trigger custom-audio requests');
+
+const audioRequests = [], decodedClips = [];
+const clipWindow = {webkitAudioContext: LegacyAudioContext, webclockBase: 'https://clock.example/sub'};
+vm.runInNewContext(audioScript, {window: clipWindow, XMLHttpRequest: function () {
+    this.open = (method, url) => { this.url = url; };
+    this.setRequestHeader = () => {};
+    this.send = () => audioRequests.push(this);
+    this.abort = () => { this.aborted = true; };
+}});
+const clipAudio = clipWindow.AlarmAudio;
+clipAudio.unlock('silent');
+context.decodeAudioData = (bytes, decode) => { decodedClips.push(decode); };
+const playback = {connect() {}, disconnect() {}, start() { this.started = true; }, stop() { this.stopped = true; }};
+context.createBufferSource = () => playback;
+let decoded, allowed = true;
+const cancelClip = clipAudio.loadRingtone(ringtoneId, 'device', buffer => { decoded = buffer; }, () => allowed);
+const request = audioRequests[0];
+assert.equal(request.url, 'https://clock.example/sub/api/v2/device/ringtones/' + ringtoneId);
+assert.equal(request.withCredentials, false);
+request.status = 200; request.response = new ArrayBuffer(44); request.onload();
+allowed = false;
+cancelClip();
+decodedClips[0]({duration: 15});
+assert.equal(decoded, undefined, 'decode callbacks must be discarded after revocation');
+assert.ok(request.aborted);
+clipAudio.loadRingtone(ringtoneId, 'management', buffer => { decoded = buffer; });
+audioRequests[1].status = 200; audioRequests[1].response = new ArrayBuffer(44); audioRequests[1].onload();
+decodedClips[1]({duration: 300});
+assert.equal(decoded.duration, 300);
+let ended = false;
+assert.equal(clipAudio.playRingtone(decoded, 0), false);
+assert.ok(clipAudio.playRingtone(decoded, 50, () => { ended = true; }));
+assert.ok(playback.started && clipAudio.isRingtonePlaying());
+clipAudio.stop();
+assert.ok(playback.stopped && !clipAudio.isRingtonePlaying());
+playback.onended();
+assert.equal(ended, false, 'canceled playback cannot start a repeat');
+clipAudio.loadRingtone('../custom.wav', 'management', buffer => assert.equal(buffer, null));
+assert.equal(audioRequests.length, 2, 'only validated IDs may reach the audio endpoints');
+console.log('Custom alarm checks passed: scoped preloading, full-length playback, fallback, volume, dismissal and revocation.');

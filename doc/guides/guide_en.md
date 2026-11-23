@@ -125,9 +125,11 @@ After selecting sources, you can target one event and choose an occurrence or th
 3. On the iPad clock page, tap the bell to enable audio and confirm the short sound. Enable it again after every reload or reopen.
 4. When an alarm fires, tap twice to dismiss only this occurrence on the current page. The schedule and other devices remain active. If left unattended, a ring stops automatically after one hour.
 
-Keep Safari in the foreground with the screen on, and check volume and mute settings. iOS may interrupt web audio and timers after screen lock, app switching, or tab switching, so background and locked-screen alarms are not guaranteed. Silent alarms still show the red-border alert.
+Keep Safari in the foreground with the screen on, and check volume and mute settings. iOS may interrupt web audio and timers after screen lock, app switching, or tab switching, so background and locked-screen alarms are not guaranteed. Silent alarms still show the alarm message. Under **System → Sound settings**, preview every tone. Under **System → Flash and vibration**, configure the screen border and vibration for web clocks.
 
 The page refreshes each alarm's next occurrence about every 15 seconds. A loaded next occurrence can fire during a short disconnection, but reopening the page or loading later occurrences requires a connection. Alarms processed more than 60 seconds late are not replayed. Dates outside holiday-data coverage remain unknown rather than guessed.
+
+Under **System → Sound settings**, choose an MP3, WAV, M4A, M4R, or OGG (up to 8 MiB and five minutes). The full track is selected and named after the file. You can rename it, drag either end of the same timeline or enter seconds, then preview and save the selection. The server receives only the selected WAV and checks its format, length, and size. Each account can keep eight clips. Choose the clip in the alarm editor. In Sound settings, select its name to rename, duplicate, trim a copy, or delete it. Use the checkboxes below to delete multiple clips. Use unprotected AAC for M4A/M4R. OGG imports depend on the codec support in the uploading browser.
 
 ## Next event, pause, and resume
 

@@ -129,7 +129,10 @@
                             <div class="field setting-row"><label for="schedule-name" data-schedule-i18n="name_optional">{{ t.name_optional }}</label><input id="schedule-name" maxlength="120" data-schedule-placeholder="name_placeholder" placeholder="{{ t.name_placeholder }}" autocomplete="off"></div>
                             <div id="schedule-sound-field" class="field setting-row">
                                 <label for="schedule-sound" data-schedule-i18n="browser_sound">{{ t.browser_sound }}</label>
-                                <div class="sound-choice"><select id="schedule-sound">{% for sound in ['bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'] %}<option value="{{ sound }}" data-schedule-i18n="sound_{{ sound }}">{{ t['sound_' + sound] }}</option>{% endfor %}</select><button id="preview-sound" type="button" data-schedule-i18n="preview_sound">{{ t.preview_sound }}</button></div>
+                                <div class="sound-choice"><select id="schedule-sound">
+                                    {% for sound in browser_sounds %}<option value="{{ sound }}" data-schedule-i18n="sound_{{ sound }}">{{ t['sound_' + sound] }}</option>{% endfor %}
+                                    {% for ringtone in ringtones %}<option value="{{ ringtone.id }}" data-ringtone>{{ ringtone.name }}</option>{% endfor %}
+                                </select><button id="preview-sound" type="button" data-schedule-i18n="preview_sound" aria-pressed="false">{{ t.preview_sound }}</button></div>
                             </div>
                             <div id="schedule-volume-field" class="field setting-row">
                                 <label for="schedule-volume" data-schedule-i18n="browser_volume">{{ t.browser_volume }}</label>

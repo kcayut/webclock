@@ -240,7 +240,7 @@ SETTINGS_DEFAULTS = {
     'mode': 'normal', 'brightness': 100, 'timezone_offset': 8, 'time_format': '24h',
     'show_seconds': False, 'show_date': True, 'date_format': 'm/d', 'show_weekday': True,
     'message_duration': 5, 'message_transition': 'fade', 'clock_style': 'classic',
-    'clock_theme': 'auto',
+    'clock_theme': 'auto', 'alarm_flash': 'pulse', 'alarm_vibration': False,
 }
 CLOCK_STYLES = ('classic', 'flip', 'segment')
 RETIRED_CLOCK_STYLES = ('glass', 'orbit', 'paper')
@@ -255,6 +255,9 @@ def migrated_settings(settings):
         raise RuntimeError('Invalid clock style')
     if 'clock_theme' in settings and settings['clock_theme'] not in CLOCK_THEMES:
         raise RuntimeError('Invalid clock theme')
+    if (settings.get('alarm_flash', 'pulse') not in ('pulse', 'steady', 'off')
+            or type(settings.get('alarm_vibration', False)) is not bool):
+        raise RuntimeError('Invalid alarm effects')
     migrated = dict(SETTINGS_DEFAULTS, **settings)
     if migrated.get('clock_style') in RETIRED_CLOCK_STYLES:
         migrated['clock_style'] = 'classic'
@@ -322,7 +325,7 @@ def protected_paths(project, *layouts):
         reserved = [state / name for name in (
             'settings.json', 'auth.json', 'auth-required', 'device-access.json', 'devices.json',
             'control-clients.json', 'control-requests.json', 'calendar.json', 'schedules.json',
-            'events.json', 'owners', '.portable-restore-pending', '.portable-restore-previous')]
+            'events.json', 'ringtones.json', 'owners', '.portable-restore-pending', '.portable-restore-previous')]
         if (notes == state or notes in state.parents
                 or any(notes == path or path in notes.parents for path in reserved)):
             raise RuntimeError('Settings directory and notes file overlap.')
@@ -551,7 +554,8 @@ def check_saved_data(current, target, snapshot):
     current, target = active_data_layout(current), active_data_layout(target)
     required = {'mode', 'brightness', 'timezone_offset', 'language'}
     optional = {'night', 'time_format', 'show_seconds', 'show_date', 'date_format',
-                'show_weekday', 'message_duration', 'message_transition', 'clock_style', 'clock_theme'}
+                'show_weekday', 'message_duration', 'message_transition', 'clock_style', 'clock_theme',
+                'alarm_flash', 'alarm_vibration'}
     if (not isinstance(snapshot, dict) or not required <= set(snapshot)
             or set(snapshot) - (required | optional)
             or snapshot.get('time_format', '24h') not in ('24h', '12h')

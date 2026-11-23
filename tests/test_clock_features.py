@@ -53,6 +53,27 @@ class ClockFeaturesTest(unittest.TestCase):
         # Existing maintenance/updater clients remain compatible.
         self.assertEqual(self.client.post('/api/control', json={'brightness': 40}).status_code, 200)
 
+    def test_alarm_effects_and_preview_library(self):
+        page = self.client.get('/admin').text
+        self.assertEqual(tuple(re.findall(r'data-preview-tone="([^"]+)"', page)), clock.BROWSER_SOUNDS)
+        for field, default in [('alarm_flash', 'pulse'), ('alarm_vibration', False)]:
+            self.assertEqual(clock.load_display_settings()[field], default)
+            self.assertNotIn(field, self.status_at('2026-10-01T10:30')['settings'])
+            self.assertEqual(self.client.get('/api/control').json['settings'][field], default)
+        effects = {'alarm_flash': 'off', 'alarm_vibration': True}
+        self.assertEqual(self.client.post('/api/control', json=effects).status_code, 200)
+        status = self.status_at('2026-10-01T10:30')['settings']
+        for key, value in effects.items():
+            self.assertEqual(status[key], value)
+            self.assertEqual(clock.load_display_settings()[key], value)
+        for invalid in [{'alarm_flash': 'strobe'}, {'alarm_vibration': 1}]:
+            self.assertEqual(self.client.post('/api/control', json=invalid).status_code, 400)
+        self.assertEqual(self.client.post('/api/control', json={'alarm_flash': 'pulse'}).status_code, 200)
+        status = self.status_at('2026-10-01T10:30')['settings']
+        self.assertNotIn('alarm_flash', status)
+        self.assertIs(status['alarm_vibration'], True)
+        self.assertEqual(clock.load_display_settings()['alarm_flash'], 'pulse')
+
     def test_clock_keeps_language_switching_without_management_labels(self):
         page = self.client.get('/').text
         labels = json.loads(re.search(r'var I18N = (.*);', page).group(1))

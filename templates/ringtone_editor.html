@@ -1,0 +1,53 @@
+{% set labels = translations[language] %}
+<section class="panel" aria-labelledby="ringtone-editor-heading">
+    <h2 id="ringtone-editor-heading"><button type="button" class="ringtone-add-toggle" id="ringtone-add" aria-controls="ringtone-editor" aria-expanded="false"><span aria-hidden="true">＋</span> <span data-i18n="ringtone_editor">{{ labels.ringtone_editor }}</span></button></h2>
+    <form hidden id="ringtone-editor" data-return-url="{{ url_for('admin') }}#sounds">
+        <div class="field">
+            <label for="ringtone-file" data-i18n="ringtone_file">{{ labels.ringtone_file }}</label>
+            <input id="ringtone-file" type="file" accept=".mp3,.wav,.m4a,.m4r,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/ogg" aria-describedby="ringtone-import-hint ringtone-upload-hint">
+            <p id="ringtone-import-hint" class="help" data-i18n="ringtone_import_hint">{{ labels.ringtone_import_hint }}</p>
+            <p id="ringtone-upload-hint" class="help" data-i18n="ringtone_upload_hint">{{ labels.ringtone_upload_hint }}</p>
+        </div>
+        <fieldset id="ringtone-clip" hidden disabled>
+            <div class="field">
+                <label for="ringtone-name" data-i18n="ringtone_name">{{ labels.ringtone_name }}</label>
+                <input id="ringtone-name" type="text" required autocomplete="off">
+            </div>
+            <p class="help"><span data-i18n="ringtone_source_duration">{{ labels.ringtone_source_duration }}</span> <output id="ringtone-source-duration" for="ringtone-file"></output></p>
+            <div class="ringtone-timeline" id="ringtone-timeline">
+                <div class="ringtone-track" aria-hidden="true"><i id="ringtone-playhead" hidden></i></div>
+                <input id="ringtone-start-slider" type="range" min="0" step="any" data-i18n-aria-label="ringtone_start_slider" aria-label="{{ labels.ringtone_start_slider }}">
+                <input id="ringtone-end-slider" type="range" min="0" step="any" data-i18n-aria-label="ringtone_end_slider" aria-label="{{ labels.ringtone_end_slider }}">
+            </div>
+            <div class="fields ringtone-times">
+                <div class="field">
+                    <label for="ringtone-start" data-i18n="ringtone_start">{{ labels.ringtone_start }}</label>
+                    <input id="ringtone-start" type="number" min="0" step="any" required aria-describedby="ringtone-range-result">
+                </div>
+                <div class="field">
+                    <label for="ringtone-end" data-i18n="ringtone_end">{{ labels.ringtone_end }}</label>
+                    <input id="ringtone-end" type="number" min="0" step="any" required aria-describedby="ringtone-range-result">
+                </div>
+            </div>
+            <p class="help" id="ringtone-range-result"><span id="ringtone-range-label" data-i18n="ringtone_clip_duration">{{ labels.ringtone_clip_duration }}</span> <output id="ringtone-clip-duration" for="ringtone-start ringtone-end"></output></p>
+        </fieldset>
+        <div class="actions">
+            <button id="ringtone-preview" type="button" aria-pressed="false" data-i18n="ringtone_preview">{{ labels.ringtone_preview }}</button>
+            <button id="ringtone-save" type="submit" class="primary" data-i18n="ringtone_save">{{ labels.ringtone_save }}</button>
+            <button id="ringtone-cancel-edit" type="button" data-i18n="ringtone_cancel_edit">{{ labels.ringtone_cancel_edit }}</button>
+        </div>
+    </form>
+    <p id="ringtone-editor-result" role="status" class="help"></p>
+    {% if ringtones %}
+    <section aria-labelledby="ringtone-manage-heading">
+        <h3 id="ringtone-manage-heading" data-i18n="ringtone_manage">{{ labels.ringtone_manage }}</h3>
+        <div class="ringtone-checklist">
+            {% for ringtone in ringtones %}
+            <label class="check"><input type="checkbox" data-select-ringtone value="{{ ringtone.id }}"> <span>{{ ringtone.name }}</span></label>
+            {% endfor %}
+        </div>
+        <button type="button" class="danger" id="ringtone-delete-selected" disabled><span data-i18n="ringtone_delete_selected">{{ labels.ringtone_delete_selected }}</span> (<span id="ringtone-selected-count">0</span>)</button>
+        <p id="ringtone-manage-result" role="status" class="help"></p>
+    </section>
+    {% endif %}
+</section>

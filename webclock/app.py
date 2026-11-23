@@ -19,9 +19,11 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 from webclock import __version__
+from webclock.api.ringtones import assigned_audio, register_ringtones
+from webclock.services import portable_backup, ringtones
 from webclock.services.storage import load_json, save_json, revision, storage_lock
 from webclock.services.holiday_service import HolidayService
-from webclock.services.schedule_service import TAIPEI, next_event, read_schedules, read_legacy_schedules, calendar_target_matches
+from webclock.services.schedule_service import BROWSER_SOUNDS, TAIPEI, next_event, read_schedules, read_legacy_schedules, calendar_target_matches
 from webclock.services.display_service import browser_alarm_payload, parse_display_window
 from webclock.services.calendar_display_service import (
     validate_display_targets, display_rule, display_bounds, display_item_id,
@@ -45,6 +47,7 @@ from webclock.api.groups import groups_api
 from webclock.api.managed_device import managed_device_api
 from webclock.ingress import IngressPathMiddleware
 from webclock.translations.clock_enrollment import DEVICE_ENROLLMENT_TRANSLATIONS
+from webclock.translations.schedules import SCHEDULE_TRANSLATIONS
 from webclock.translations.common import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, UI_TRANSLATIONS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,8 +59,13 @@ NOTES_FILE = os.getenv('NOTES_FILE', str(STATE_DIR / 'manual_notes.json'))
 SETTINGS_FILE = str(STATE_DIR / 'settings.json')
 CACHE_DURATION = 300
 
+_notes_path = Path(NOTES_FILE).resolve()
+_ringtones_path = STATE_DIR.resolve() / 'ringtones.json'
+if any(_notes_path == path or _notes_path in path.parents or path in _notes_path.parents
+       for path in (_ringtones_path, _ringtones_path.resolve())):
+    raise RuntimeError('NOTES_FILE overlaps the reserved ringtones.json path. Configure a separate notes file, such as manual_notes.json.')
+
 # Finish an interrupted portable restore before reading authorization or data.
-from webclock.services import portable_backup
 portable_backup.recover(STATE_DIR, Path(NOTES_FILE))
 
 app = Flask(__name__, root_path=str(ROOT))
@@ -76,7 +84,8 @@ def auth_service():
 # Host initialization/reset takes effect after restart; every authenticated
 # request also checks the server-side session record for immediate revocation.
 app.secret_key = auth_service().session_secret()
-register_access_control(app, auth_service)
+upload_window = register_access_control(app, auth_service)
+register_ringtones(app, lambda: content_directory(), lambda: Path(SETTINGS_FILE).parent, upload_window)
 register_csrf(app)
 register_auth(app, auth_service)
 holiday_service = HolidayService()
@@ -96,6 +105,7 @@ DISPLAY_ASSET_FILES = (
     'time-inputs.js',
     'offline.js',
     'device-enrollment.js',
+    'alarm-effects.css',
     'alarm-audio.js',
     'alarms.js',
 )
@@ -164,6 +174,8 @@ DEFAULT_SETTINGS = {
     'message_transition': 'fade',
     'clock_style': 'classic',
     'clock_theme': 'auto',
+    'alarm_flash': 'pulse',
+    'alarm_vibration': False,
 }
 # ponytail: single-process file storage; use a database before adding writer processes.
 settings_lock = RLock()
@@ -906,8 +918,14 @@ def admin(error=None, editing_id=None):
     notes = load_notes()
     access = group_service(read_only=True)
     owner = getattr(g, 'owner_id', None) or auth_service().owner_id()
+    context = template_context()
+    preview_keys = ['sound_' + sound for sound in BROWSER_SOUNDS] + ['audio_unavailable']
+    context['translations'] = {
+        code: {**labels, **{key: SCHEDULE_TRANSLATIONS[code][key] for key in preview_keys}}
+        for code, labels in context['translations'].items()
+    }
     return render_template(
-        'admin.html',
+        'admin.html', browser_sounds=BROWSER_SOUNDS, ringtones=ringtones.catalog(content_directory()),
         notes=notes,
         target_groups=[{key: row[key] for key in ('id', 'name', 'enabled')} for row in access.list_groups(owner)],
         target_devices=[{key: row[key] for key in ('id', 'name', 'group_id', 'group_name')}
@@ -916,7 +934,7 @@ def admin(error=None, editing_id=None):
         settings_revision=settings_revision,
         error=error,
         editing_id=editing_id,
-        **template_context()
+        **context
     )
 
 
@@ -1387,8 +1405,13 @@ def status():
         calendar_settings = {'sources': [], 'local_display_enabled': True}
     payload = display_snapshot(now, load_notes() if show_local else [],
                                read_legacy_schedules(content_directory()), calendar_display_events(now, calendar_settings), get_calendar_events)
+    settings = dict(active_settings())
+    # The 1.6.0 updater compares the whole settings object during health checks.
+    for key in ('alarm_flash', 'alarm_vibration'):
+        if settings.get(key) == DEFAULT_SETTINGS[key]:
+            del settings[key]
     # Calendar I/O may take time; send a fresh timestamp after projection.
-    return jsonify(dict(payload, settings=active_settings(), server_timestamp=int(get_local_now().timestamp() * 1000)))
+    return jsonify(dict(payload, settings=settings, server_timestamp=int(get_local_now().timestamp() * 1000)))
 
 
 @app.route('/api/time')
@@ -1560,12 +1583,18 @@ def managed_alarms(identity):
     return managed_response(identity, group, notes, schedules, source_revision, payload)
 
 
+def managed_ringtone(identity, key):
+    _, _, schedules, _ = managed_content(identity)
+    return assigned_audio(content_directory(), schedules, key)
+
+
 register_api(app, lambda: content_directory(), holiday_service, template_context,
              calendar_events=lambda **query: get_calendar_events(**query),
              calendar_sources=lambda: get_calendar_sources(), device_access=group_service, owner_id=group_owner,
              scope_started=lambda: auth_service().state().get('scope_changed_at', 0))
 app.register_blueprint(groups_api(group_service, group_owner, group_ui_catalog, lambda: device_service().list()))
 app.register_blueprint(managed_device_api(group_service, device_service, auth_service, managed_display, managed_alarms,
+                                          ringtone_provider=managed_ringtone,
                                           display_revision_provider=display_asset_revision))
 
 from webclock.api.mode import register_mode

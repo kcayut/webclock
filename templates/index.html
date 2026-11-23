@@ -9,6 +9,7 @@
     {% include 'brand_head.html' %}
     <link rel="stylesheet" href="{{ static_url('clock.css') }}">
     <link rel="stylesheet" href="{{ static_url('time-inputs.css') }}">
+    <link rel="stylesheet" href="{{ static_url('alarm-effects.css') }}">
     <style>
         #alarm-bell {
             display: none; position: fixed; top: 8px; right: 8px; z-index: 140;
@@ -18,21 +19,12 @@
         #alarm-bell.sound-ready { color: #fff; border-color: #bbb; }
         #alarm-flash {
             display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 135; pointer-events: none; border: 12px solid #e00000;
-            box-shadow: inset 0 0 45px 12px #c00000;
+            z-index: 135; pointer-events: none;
         }
         .alarm-ringing { cursor: pointer; }
         .alarm-ringing #list-container { visibility: hidden; }
-        .alarm-ringing #alarm-flash {
-            display: block;
-            -webkit-animation: alarm-edge 2s ease-in-out infinite;
-            animation: alarm-edge 2s ease-in-out infinite;
-        }
-        @-webkit-keyframes alarm-edge { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
-        @keyframes alarm-edge { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
-        @media (prefers-reduced-motion: reduce) {
-            .alarm-ringing #alarm-flash { -webkit-animation: none; animation: none; opacity: 0.8; }
-        }
+        .alarm-ringing #alarm-flash { display: block; }
+        .alarm-ringing #alarm-flash[data-alarm-flash="off"] { display: none; }
         #alarm-message {
             display: none; position: fixed; left: 8%; right: 8%; bottom: 12%; z-index: 140;
             color: #fff; background: #300; border: 1px solid #ef5350; border-radius: 8px;
@@ -315,7 +307,7 @@
     <button id="alarm-bell" type="button" aria-label="{{ translations[language].alarm_set }}">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4M12 2v2"/></svg>
     </button>
-    <div id="alarm-flash" aria-hidden="true"></div>
+    <div id="alarm-flash" class="alarm-edge" data-alarm-flash="pulse" aria-hidden="true"></div>
     <div id="alarm-message" role="alert"><div id="alarm-name"></div><div id="alarm-prompt"></div></div>
     <div id="clock-container">
         <div id="time-period"></div>
@@ -521,6 +513,7 @@
                 language: currentLanguage,
                 time_format: '24h',
                 show_seconds: false, show_date: true, date_format: 'm/d', show_weekday: true,
+                alarm_flash: 'pulse', alarm_vibration: false,
                 message_duration: 5, message_transition: 'fade', clock_style: 'classic', clock_theme: 'auto',
                 night: {enabled: false, start: '22:00', end: '07:00', brightness: 15, black: false}
             };
@@ -536,6 +529,7 @@
                 show_seconds: settings.show_seconds, show_date: settings.show_date,
                 date_format: settings.date_format, show_weekday: settings.show_weekday,
                 message_duration: settings.message_duration, message_transition: settings.message_transition,
+                alarm_flash: settings.alarm_flash, alarm_vibration: settings.alarm_vibration,
                 clock_style: settings.clock_style,
                 clock_theme: settings.clock_theme || 'auto',
                 night: {
@@ -572,13 +566,19 @@
             return !!match;
         }
 
-        function normalizeDisplaySettings(candidate, fallback) {
+        function normalizeDisplaySettings(candidate, fallback, serverSnapshot) {
             if (!isSettingsObject(candidate)) return null;
             var base = fallback && fallback.night ? copyDisplaySettings(fallback) : defaultDisplaySettings();
+            if (serverSnapshot) {
+                var defaults = defaultDisplaySettings();
+                base.alarm_flash = defaults.alarm_flash;
+                base.alarm_vibration = defaults.alarm_vibration;
+            }
             var allowed = {
                 mode: true, brightness: true, timezone_offset: true,
                 language: true, time_format: true, night: true,
                 show_seconds: true, show_date: true, date_format: true, show_weekday: true,
+                alarm_flash: true, alarm_vibration: true,
                 message_duration: true, message_transition: true, clock_style: true, clock_theme: true
             };
             var key;
@@ -608,7 +608,11 @@
                 if (candidate.time_format !== '24h' && candidate.time_format !== '12h') return null;
                 base.time_format = candidate.time_format;
             }
-            var switches = ['show_seconds', 'show_date', 'show_weekday'];
+            if (owns(candidate, 'alarm_flash')) {
+                if (['pulse', 'steady', 'off'].indexOf(candidate.alarm_flash) < 0) return null;
+                base.alarm_flash = candidate.alarm_flash;
+            }
+            var switches = ['show_seconds', 'show_date', 'show_weekday', 'alarm_vibration'];
             for (var i = 0; i < switches.length; i++) {
                 key = switches[i];
                 if (owns(candidate, key)) {
@@ -688,13 +692,14 @@
             return writeStoredJson(settingsStorageKey(), normalized);
         }
 
-        function applySettings(settings) {
+        function applySettings(settings, serverSnapshot) {
             var normalized = normalizeDisplaySettings(settings,
-                activeSettings && activeSettings.night ? activeSettings : defaultDisplaySettings());
+                activeSettings, serverSnapshot);
             if (!normalized) return false;
             var formatChanged = activeSettings.time_format !== normalized.time_format ||
                 normalized.language !== currentLanguage;
             activeSettings = normalized;
+            document.getElementById('alarm-flash').setAttribute('data-alarm-flash', normalized.alarm_flash);
             document.body.classList.toggle('uses-12-hour', normalized.time_format === '12h');
             document.body.classList.toggle('shows-seconds', normalized.show_seconds);
             document.body.classList.toggle('long-date', normalized.date_format.indexOf('yyyy') === 0);
@@ -799,7 +804,7 @@
             }))) return false;
             if (privateSnapshot && data.settings && !normalizeDisplaySettings(data.settings, activeSettings)) return false;
             connectionMode = 'server';
-            if (data.settings && applySettings(data.settings)) {
+            if (data.settings && applySettings(data.settings, true)) {
                 saveSettings(activeSettings);
             }
             setClockBase(data.server_timestamp);

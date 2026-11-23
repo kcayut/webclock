@@ -1,0 +1,92 @@
+{% set labels = translations[language] %}
+<section class="management-panel" data-management-panel="sounds" aria-labelledby="sounds-title">
+    <div class="page-heading">
+        <div>
+            <h1 id="sounds-title" class="page-title" data-i18n="management_sounds">{{ labels.management_sounds }}</h1>
+            <p class="page-description" data-i18n="sounds_hint">{{ labels.sounds_hint }}</p>
+        </div>
+    </div>
+    <section class="panel" aria-labelledby="tones-heading">
+        <div class="sound-player-heading">
+            <h2 id="tones-heading" data-i18n="sounds_library">{{ labels.sounds_library }}</h2>
+            <button type="button" id="stop-tone" disabled><span aria-hidden="true">■</span> <span data-i18n="sounds_stop">{{ labels.sounds_stop }}</span></button>
+        </div>
+        <div class="field">
+            <label for="preview-volume"><span data-i18n="sounds_volume">{{ labels.sounds_volume }}</span> <output id="preview-volume-value" for="preview-volume">70%</output></label>
+            <input id="preview-volume" type="range" min="0" max="100" value="70">
+        </div>
+        <div class="sound-library">
+            {% for sound in browser_sounds %}
+            <button type="button" data-preview-tone="{{ sound }}"{% if sound != 'silent' %} aria-pressed="false"{% endif %}>
+                <span data-i18n="sound_{{ sound }}">{{ labels['sound_' + sound] }}</span>
+                <span class="tone-icon" aria-hidden="true">{{ '▶' if sound != 'silent' else '–' }}</span>
+            </button>
+            {% endfor %}
+            {% for tone in ringtones %}
+            <div class="ringtone-row">
+                <div class="ringtone-row-heading">
+                    <button type="button" class="ringtone-disclosure" aria-expanded="false" aria-controls="tone-settings-{{ tone.id }}">
+                        <span id="tone-label-{{ tone.id }}">{{ tone.name }}</span><span class="ringtone-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    <button type="button" data-preview-tone="{{ tone.id }}" aria-pressed="false" aria-describedby="tone-label-{{ tone.id }}">
+                        <span data-i18n="ringtone_listen">{{ labels.ringtone_listen }}</span><span class="tone-icon" aria-hidden="true">▶</span>
+                    </button>
+                </div>
+                <div class="ringtone-options" id="tone-settings-{{ tone.id }}" hidden>
+                    <div class="ringtone-options-body">
+                        <form data-rename-ringtone="{{ tone.id }}">
+                            <label for="rename-{{ tone.id }}" data-i18n="ringtone_name">{{ labels.ringtone_name }}</label>
+                            <div class="ringtone-rename"><input type="text" id="rename-{{ tone.id }}" value="{{ tone.name }}" required>
+                                <button type="submit" data-i18n="ringtone_rename">{{ labels.ringtone_rename }}</button></div>
+                        </form>
+                        <div class="actions">
+                            <button type="button" data-duplicate-ringtone="{{ tone.id }}" data-ringtone-name="{{ tone.name }}" data-i18n="ringtone_duplicate">{{ labels.ringtone_duplicate }}</button>
+                            <button type="button" data-copy-ringtone="{{ tone.id }}" data-ringtone-name="{{ tone.name }}" data-i18n="ringtone_copy">{{ labels.ringtone_copy }}</button>
+                            <button type="button" class="danger" data-delete-ringtone="{{ tone.id }}" data-ringtone-name="{{ tone.name }}" data-i18n="delete">{{ labels.delete }}</button>
+                        </div>
+                        <form data-duplicate-draft="{{ tone.id }}" hidden>
+                            <label for="duplicate-name-{{ tone.id }}" data-i18n="ringtone_copy_name">{{ labels.ringtone_copy_name }}</label>
+                            <input id="duplicate-name-{{ tone.id }}" type="text" required>
+                            <div class="actions">
+                                <button type="submit" class="primary" data-i18n="ringtone_save_copy">{{ labels.ringtone_save_copy }}</button>
+                                <button type="button" data-cancel-duplicate data-i18n="ringtone_cancel_edit">{{ labels.ringtone_cancel_edit }}</button>
+                            </div>
+                        </form>
+                        <p class="help ringtone-action-result" role="status"></p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p role="status" id="tone-result" class="help"></p>
+    </section>
+    {% include 'ringtone_editor.html' %}
+</section>
+<section class="management-panel" data-management-panel="effects" aria-labelledby="effects-title">
+    <div class="page-heading">
+        <div>
+            <h1 id="effects-title" class="page-title" data-i18n="sounds_effects">{{ labels.sounds_effects }}</h1>
+            <p class="page-description" data-i18n="sounds_effects_hint">{{ labels.sounds_effects_hint }}</p>
+        </div>
+    </div>
+    <form id="alarm-effects" class="panel">
+        <div class="field">
+            <label for="alarm_flash" data-i18n="sounds_edge">{{ labels.sounds_edge }}</label>
+            <select id="alarm_flash" data-display-setting="alarm_flash">
+                {% for mode in ['pulse', 'steady', 'off'] %}
+                <option value="{{ mode }}" data-i18n="sounds_{{ mode }}"{% if settings.alarm_flash == mode %} selected{% endif %}>{{ labels['sounds_' + mode] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <label class="check"><input id="alarm_vibration" type="checkbox" data-display-setting="alarm_vibration"{% if settings.alarm_vibration %} checked{% endif %}> <span data-i18n="sounds_vibration">{{ labels.sounds_vibration }}</span></label>
+        <div class="actions">
+            <button type="button" id="preview-effects" data-i18n="sounds_test">{{ labels.sounds_test }}</button>
+            <button type="submit" class="primary" data-i18n="save">{{ labels.save }}</button>
+        </div>
+        <div id="effects-sample" hidden aria-hidden="true">
+            <span id="sample-edge" class="alarm-edge"></span>
+            <span data-i18n="alarm_ringing">{{ labels.alarm_ringing }}</span>
+        </div>
+        <p role="status" id="effects-result" class="help"></p>
+    </form>
+</section>

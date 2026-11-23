@@ -1,7 +1,8 @@
 """Deny private legacy and management entry points in protected installations."""
+from contextlib import contextmanager
 import os
 
-from flask import g, jsonify, redirect, request, session, url_for
+from flask import abort, g, jsonify, redirect, request, session, url_for
 from flask.sessions import SecureCookieSessionInterface
 from werkzeug.exceptions import HTTPException
 
@@ -127,3 +128,19 @@ def register_access_control(app, service_getter):
                 'mode_switch_available': not ha_app,
                 'mode_management_available': (mode == 'self' and not ha_app) or
                 (mode == 'managed' and service_getter().is_admin(owner))}
+
+    @contextmanager
+    def upload_window():
+        """Read the upload outside the scope lock, then recheck authorization."""
+        scope = (g.deployment_mode, g.auth_generation, g.owner_id, app.secret_key)
+        storage_lock.release()
+        try:
+            yield
+        finally:
+            storage_lock.acquire()
+        if authorize() is not None:
+            abort(403)
+        if scope != (g.deployment_mode, g.auth_generation, g.owner_id, app.secret_key):
+            abort(409)
+
+    return upload_window

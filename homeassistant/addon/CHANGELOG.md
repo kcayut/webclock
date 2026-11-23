@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0
+
+- Server、App、HACS 整合與卡片同步至 1.7.0。
+- 網頁鬧鐘新增自訂音色、原檔本機裁切、定時響鈴與帳號內鈴聲管理。完整備份包含自訂鈴聲。
+- 網頁時鐘可預覽與設定閃光和震動。App 仍為 experimental，透過 Home Assistant Supervisor 更新。
+
 ## 1.6.0
 
 - Server、App、HACS 整合與卡片同步至 1.6.0。

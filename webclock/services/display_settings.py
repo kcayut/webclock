@@ -38,7 +38,8 @@ def effective_clock_theme(settings):
 
 SETTING_FIELDS = {'mode', 'brightness', 'timezone_offset', 'language', 'time_format', 'night',
                   'show_seconds', 'show_date', 'date_format', 'show_weekday',
-                  'message_duration', 'message_transition', 'clock_style', 'clock_theme'}
+                  'message_duration', 'message_transition', 'clock_style', 'clock_theme',
+                  'alarm_flash', 'alarm_vibration'}
 
 
 def validate_time(value):
@@ -71,7 +72,9 @@ def validate_settings(data):
     if 'clock_theme' in result and (not isinstance(result['clock_theme'], str)
                                     or result['clock_theme'] not in CLOCK_THEMES):
         raise ValueError('Invalid clock theme')
-    for key in ('show_seconds', 'show_date', 'show_weekday'):
+    if 'alarm_flash' in result and result['alarm_flash'] not in ('pulse', 'steady', 'off'):
+        raise ValueError('Invalid alarm flash')
+    for key in ('show_seconds', 'show_date', 'show_weekday', 'alarm_vibration'):
         if key in result and type(result[key]) is not bool:
             raise ValueError('Invalid ' + key)
     if 'date_format' in result and result['date_format'] not in ('m/d', 'd/m', 'yyyy/m/d', 'yyyy-mm-dd'):

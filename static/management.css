@@ -690,3 +690,71 @@ details[open] > summary { margin-bottom: 10px; }
     .clock-style-options { grid-template-columns: minmax(0, 1fr); }
     .clock-style-preview-controls { align-items: flex-start; }
 }
+
+[data-management-panel="sounds"] > .panel, #alarm-effects { max-width: 44rem; }
+.sound-player-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.sound-player-heading h2 { margin: 0; }
+#stop-tone:disabled { cursor: default; }
+.sound-library { display: grid; border-block: 1px solid var(--line); }
+.sound-library > button, .ringtone-row-heading button {
+    justify-content: space-between; padding: 8px 12px; border: 0;
+    border-radius: 0; background: transparent; font-weight: 500;
+}
+.sound-library > button + button, .ringtone-row { border-top: 1px solid var(--line); }
+.sound-library > button:hover, .ringtone-row-heading button:hover { background: var(--hover); }
+.sound-library button[aria-pressed="true"] { background: var(--tint); color: var(--tint-ink); font-weight: 700; }
+.ringtone-row-heading { display: flex; align-items: stretch; }
+.ringtone-row-heading .ringtone-disclosure { flex: 1; min-width: 0; gap: 8px; text-align: start; overflow-wrap: anywhere; }
+.ringtone-row-heading [data-preview-tone] { flex: none; gap: 8px; color: var(--accent); }
+.ringtone-chevron { color: var(--accent); }
+.ringtone-disclosure[aria-expanded="true"] .ringtone-chevron { transform: rotate(180deg); }
+.ringtone-options { background: var(--tint); padding: 12px; }
+.ringtone-options:not([hidden]) { display: grid; grid-template-rows: 1fr; }
+.ringtone-options-body { min-height: 0; overflow: hidden; padding: 3px; }
+.ringtone-options label { font-weight: 600; }
+.ringtone-rename { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.ringtone-rename button { flex: none; }
+.ringtone-options .actions { margin-top: 12px; }
+.ringtone-action-result:empty { display: none; }
+.ringtone-checklist { display: grid; margin-bottom: 12px; }
+.ringtone-checklist .check { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+    .ringtone-options:not([hidden]) { animation: tone-options-in .16s ease-out; }
+    @keyframes tone-options-in { from { opacity: 0; grid-template-rows: 0fr; padding-block: 0; } to { opacity: 1; grid-template-rows: 1fr; } }
+}
+.tone-icon { font-size: .8rem; color: var(--accent); }
+#tone-result:empty { display: none; }
+#effects-sample {
+    position: relative;
+    max-width: 24rem;
+    margin-top: 1rem;
+    padding: 2rem 1rem;
+    text-align: center;
+    background: #161616;
+    color: #fff;
+}
+#sample-edge { position: absolute; inset: 0; pointer-events: none; }
+
+/* Both native range inputs follow the same rail. The grips sit outside the
+   selection so even the shortest clip has two distinct drag targets. */
+.ringtone-timeline { position: relative; height: 48px; --grip: 24px; }
+.ringtone-track { position: absolute; inset: 19px var(--grip); border-radius: 5px;
+    background: linear-gradient(to right, var(--line) var(--clip-start), var(--accent) var(--clip-start) var(--clip-end), var(--line) var(--clip-end)); }
+#ringtone-playhead { position: absolute; top: -4px; height: 18px; width: 3px; background: var(--ink); border: 1px solid var(--surface); }
+.ringtone-timeline input[type="range"] { appearance: none; -webkit-appearance: none; position: absolute; top: 0; left: 0;
+    width: calc(100% - var(--grip)); height: 48px; margin: 0; padding: 0; border: 0; background: transparent; pointer-events: none; }
+.ringtone-timeline #ringtone-end-slider { left: var(--grip); }
+.ringtone-timeline input::-webkit-slider-runnable-track { background: transparent; }
+.ringtone-timeline input::-moz-range-track { background: transparent; }
+.ringtone-timeline input::-moz-range-progress { background: transparent; }
+.ringtone-timeline input::-webkit-slider-thumb { -webkit-appearance: none; box-sizing: border-box; width: var(--grip); height: 36px;
+    background: linear-gradient(var(--accent), var(--accent)) center / 2px 14px no-repeat var(--surface);
+    border: 3px solid var(--accent); border-radius: 8px; pointer-events: auto; touch-action: pan-y; cursor: ew-resize; }
+.ringtone-timeline input::-moz-range-thumb { box-sizing: border-box; width: var(--grip); height: 36px;
+    background: linear-gradient(var(--accent), var(--accent)) center / 2px 14px no-repeat var(--surface);
+    border: 3px solid var(--accent); border-radius: 8px; pointer-events: auto; touch-action: pan-y; cursor: ew-resize; }
+.ringtone-timeline input:focus-visible { outline: none; }
+.ringtone-timeline input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--ink); outline-offset: 2px; }
+.ringtone-timeline input:focus-visible::-moz-range-thumb { outline: 2px solid var(--ink); outline-offset: 2px; }
+#ringtone-clip .ringtone-times { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; }
+#ringtone-clip[hidden] + .actions :is(#ringtone-save, #ringtone-preview) { display: none; }

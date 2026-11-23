@@ -21,6 +21,8 @@ def register_backup(app, auth, notes_file, legacy_calendar, validate_content, re
         if request.blueprint == api.name and (request.content_length is None
                 or request.content_length > 32 * 1024 * 1024):
             return jsonify(code='backup_too_large'), 413
+        if request.endpoint in ('complete_backup.preview', 'complete_backup.restore'):
+            request.max_content_length = 32 * 1024 * 1024
     app.before_request_funcs[None].insert(0, app.before_request_funcs[None].pop())
 
     def authorize(values):
@@ -100,24 +102,24 @@ def register_backup(app, auth, notes_file, legacy_calendar, validate_content, re
 
     @api.route('/api/backup/complete/restore', methods=['POST'])
     def restore():
-        with storage_lock:
-            state = authorize(request.form)
-            reviewed = session.get('backup_preview', {})
-            if (request.form.get('confirm') != 'yes' or not reviewed
-                    or not secrets.compare_digest(str(request.form.get('ticket', '')), reviewed['ticket'])
-                    or reviewed['expires'] < time.time()):
-                raise AuthError('preview_changed', 'Preview the backup again.', 409)
-            raw, payload = uploaded()
-            if (reviewed['file'] != hashlib.sha256(raw).hexdigest()
-                    or reviewed['target'] != target_revision()):
-                session.pop('backup_preview', None)
-                raise AuthError('preview_changed', 'Data changed. Preview the backup again.', 409)
-            result = portable_backup.restore(payload, state, Path(notes_file()), validate_content=validate_content,
-                                              target_calendar=legacy_calendar())
-            refreshed()
-            session.clear()
-            destination = url_for('auth.login') if auth().mode() == 'managed' else url_for('admin') + '#backup'
-            return jsonify(ok=True, summary=result, redirect=destination)
+        state = authorize(request.form)
+        reviewed = session.get('backup_preview', {})
+        if (request.form.get('confirm') != 'yes' or not reviewed
+                or not secrets.compare_digest(str(request.form.get('ticket', '')), reviewed['ticket'])
+                or reviewed['expires'] < time.time()):
+            raise AuthError('preview_changed', 'Preview the backup again.', 409)
+        raw, payload = uploaded()
+        if (reviewed['file'] != hashlib.sha256(raw).hexdigest()
+                or reviewed['target'] != target_revision()):
+            session.pop('backup_preview', None)
+            raise AuthError('preview_changed', 'Data changed. Preview the backup again.', 409)
+
+        result = portable_backup.restore(payload, state, Path(notes_file()), validate_content=validate_content,
+                                         target_calendar=legacy_calendar())
+        refreshed()
+        session.clear()
+        destination = url_for('auth.login') if auth().mode() == 'managed' else url_for('admin') + '#backup'
+        return jsonify(ok=True, summary=result, redirect=destination)
 
     @api.errorhandler(AuthError)
     def auth_error(error):

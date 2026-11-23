@@ -8,12 +8,14 @@ from datetime import date, datetime, time, timedelta, timezone
 from uuid import uuid4
 from pathlib import Path
 
+from . import ringtones
 from .holiday_service import parse_date
 from .storage import load_json, save_json, storage_lock
 
 TAIPEI = timezone(timedelta(hours=8), 'Asia/Taipei')
+BROWSER_SOUNDS = ('bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent')
 FIELDS = {'id', 'name', 'type', 'time', 'rule', 'enabled', 'skipped_occurrences',
-          'browser_sound', 'browser_volume', 'skip_holidays', 'calendar_link', 'targets'}
+          'browser_sound', 'browser_volume', 'custom_sound', 'skip_holidays', 'calendar_link', 'targets'}
 # Retain old prototype settings on disk, outside the management/API contract.
 LEGACY_DEVICE_FIELDS = {'sound', 'volume', 'repeat', 'snooze_minutes'}
 
@@ -74,8 +76,12 @@ def validate_schedule(data):
         raise ValueError('Time must use HH:MM')
     if type(result['enabled']) is not bool:
         raise ValueError('Invalid enabled setting')
-    if result['browser_sound'] not in ('bell', 'beep', 'digital', 'chime', 'melody', 'pulse', 'sonar', 'silent'):
+    if result['browser_sound'] not in BROWSER_SOUNDS:
         raise ValueError('Invalid browser sound')
+    if result.get('custom_sound') is None:
+        result.pop('custom_sound', None)
+    elif not isinstance(result['custom_sound'], str) or not ringtones.ID.fullmatch(result['custom_sound']):
+        raise ValueError('Invalid custom ringtone')
     if type(result['browser_volume']) is not int or not 0 <= result['browser_volume'] <= 100:
         raise ValueError('Browser volume must be an integer from 0 to 100')
     if type(result['skip_holidays']) is not bool:

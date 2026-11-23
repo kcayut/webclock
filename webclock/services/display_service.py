@@ -47,6 +47,8 @@ def browser_alarm_payload(schedules, holidays, now, calendar_events=None, not_be
                 alarms.append(dict(occurrence_id=event['occurrence_id'], id=event['id'],
                                name=event['name'], sound=event['browser_sound'],
                                volume=event['browser_volume'], starts_at=int(stamp.timestamp() * 1000)))
+                if event.get('custom_sound'):
+                    alarms[-1]['custom_sound'] = event['custom_sound']
             if not row.get('calendar_link') or stamp > now:
                 break
             cursor = stamp + timedelta(microseconds=1)

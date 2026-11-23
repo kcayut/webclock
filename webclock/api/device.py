@@ -25,7 +25,7 @@ def device_api(state_directory, holidays, device_directory=None):
     def device_schedules():
         # Schema 2 clients cannot evaluate calendar links; never send a rule they
         # could mistake for an unconditional daily alarm.
-        return [{key: value for key, value in row.items() if key != 'calendar_link'}
+        return [{key: value for key, value in row.items() if key not in ('calendar_link', 'custom_sound')}
                 for row in read_legacy_schedules(state_directory()) if not row.get('calendar_link')]
 
     def devices():

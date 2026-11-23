@@ -46,7 +46,8 @@ class SettingsTest(unittest.TestCase):
     def test_save_reload_and_invalid_inputs(self):
         expected = {'mode': 'black', 'brightness': 35, 'timezone_offset': 9, 'language': 'en', 'time_format': '24h',
                     'show_seconds': False, 'show_date': True, 'date_format': 'm/d', 'show_weekday': True,
-                    'message_duration': 5, 'message_transition': 'fade', 'clock_style': 'classic', 'clock_theme': 'auto'}
+                    'message_duration': 5, 'message_transition': 'fade', 'clock_style': 'classic', 'clock_theme': 'auto',
+                    'alarm_flash': 'pulse', 'alarm_vibration': False}
         self.assertEqual(self.client.post('/api/control', json=expected).status_code, 200)
         self.assertEqual(clock.load_display_settings(), expected)
         previous = self.path.read_bytes()
@@ -173,6 +174,30 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), raw)
         self.assertEqual(clock.display_settings, previous)
         self.assertEqual(json.loads(notes.read_text()), original_notes)
+
+    def test_cold_start_rejects_ringtone_path_overlap_before_restore(self):
+        state = self.path.parent
+        state.mkdir(parents=True, exist_ok=True)
+        saved_notes = state / 'ringtones.json'
+        raw = b'[{"id":1,"text":"keep"}]\n'
+        saved_notes.write_bytes(raw)
+        alias = state / 'notes-link.json'
+        alias.symlink_to(saved_notes)
+        environment = dict(os.environ, WEBCLOCK_STATE_DIR=str(state), ICAL_URL='')
+        script = '''
+from unittest.mock import patch
+with patch('webclock.services.portable_backup.recover', side_effect=AssertionError('restore ran')):
+    import app
+'''
+        for notes in (saved_notes, saved_notes / 'notes.json', state, alias):
+            with self.subTest(notes=notes):
+                result = subprocess.run([sys.executable, '-c', script],
+                                        cwd=Path(__file__).resolve().parents[1],
+                                        env=dict(environment, NOTES_FILE=str(notes)),
+                                        capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('NOTES_FILE overlaps the reserved ringtones.json path', result.stderr)
+                self.assertEqual(saved_notes.read_bytes(), raw)
 
     def test_cold_start_recovers_display_without_downgrading_authorization(self):
         from webclock.services.auth_service import AuthService
@@ -422,7 +447,7 @@ class UpdaterTest(unittest.TestCase):
         updater.check_saved_data(layout, layout, dict(self.settings, time_format='24h'))
         new_defaults = dict(self.settings, time_format='24h', show_seconds=False, show_date=True,
                             date_format='m/d', show_weekday=True, message_duration=5,
-                            message_transition='fade', clock_style='classic')
+                            message_transition='fade', clock_style='classic', alarm_flash='pulse', alarm_vibration=False)
         updater.check_saved_data(layout, layout, new_defaults)
         self.assertEqual(settings.read_bytes(), before)
         for value in ('12h', 'invalid', None):
@@ -475,6 +500,8 @@ class UpdaterTest(unittest.TestCase):
         self.assertTrue(updater.settings_match(dict(new, brightness=40), dict(old, brightness=40)))
         self.assertFalse(updater.settings_match(dict(new, brightness=40), old))
         self.assertFalse(updater.settings_match(dict(new, show_date=False), new))
+        self.assertFalse(updater.settings_match(dict(new, alarm_vibration=True), old))
+        self.assertFalse(updater.settings_match(dict(new, alarm_flash='off'), old))
 
     def test_unhealthy_service_rolls_back(self):
         with patch.object(updater, 'wait_healthy', side_effect=[RuntimeError('crash'), None]):

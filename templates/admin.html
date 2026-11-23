@@ -7,6 +7,7 @@
     <meta id="csrf-token" name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ translations[language].admin_title }}</title>
     {% include 'brand_head.html' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='alarm-effects.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='management.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='range-picker.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='time-inputs.css') }}">
@@ -531,6 +532,7 @@
     </div>
     </section>
 
+    {% include 'sound_settings.html' %}
     <section class="management-panel" data-management-panel="backup" aria-labelledby="backup-title">
         <div class="page-heading">
             <div>
@@ -1104,6 +1106,9 @@
     <script defer src="{{ url_for('static', filename='calendar-settings.js') }}"></script>
     {% if complete_backup_available %}<script defer src="{{ url_for('static', filename='portable-backup.js') }}"></script>{% endif %}
     <script defer src="{{ url_for('static', filename='management.js') }}"></script>
+    <script src="{{ url_for('static', filename='alarm-audio.js') }}"></script>
+    <script src="{{ url_for('static', filename='sound-settings.js') }}"></script>
+    <script src="{{ url_for('static', filename='ringtone-editor.js') }}"></script>
 </body>
 
 </html>

@@ -10,6 +10,8 @@ Administrator sessions, owner-scoped groups, invitations, atomic enrollment, aut
 
 Public `GET /api/time` returns only time. Managed `/api/status` returns time and empty events; old `/api/v1/device/*` returns 403 and `/api/v1/browser-alarms` returns 401. An admin session cannot grant device access. Non-private `/api/health` reports `managed_device_schema: 3` and `managed_devices_ready: true`: the endpoints exist; this flag does not certify deployment-mode migration or physical hardware acceptance. The legacy schema 2 descriptions below assume self mode. Existing ESP codecs do not automatically support schema 3.
 
+In self mode, `GET /api/status` returns alarm effects that differ from their defaults. When absent, `settings.alarm_flash` defaults to `pulse` and `settings.alarm_vibration` defaults to `false`.
+
 ### Group management API
 
 Managed requests require the admin session; writes in both modes require CSRF. `/schedules#devices` provides these operations.
@@ -137,6 +139,7 @@ The minimum schedule fields are `name` and `time`. The server creates an `id` an
 - `rule`: one of `{}` for daily, `{"weekdays":[1,3,5]}`, `{"workday_only":true}`, `{"holiday_only":true}`, or `{"dates":["2026-10-03"]}`.
 - `skip_holidays`: filters holidays for daily, weekday, or explicit-date rules. Make-up workdays remain workdays. Combining it with `holiday_only=true` returns 400.
 - `browser_sound`: `bell`, `beep`, `digital`, `chime`, `melody`, `pulse`, `sonar`, or `silent`. It is independent from old hardware sound fields.
+- Management can set the optional `custom_sound` to the ID of a saved clip. The browser fetches it with alarm-scoped access and uses `browser_sound` as a fallback.
 - `browser_volume`: per-alarm integer from 0 to 100, defaulting to 100 for new and existing schedules. Preview and ringing use the same level; 0 keeps visual alerts only. Device volume still affects loudness. Legacy hardware `volume` is not reused.
 - Weekdays use ISO values Monday `1` through Sunday `7`; the legacy reminder API uses `0–6`.
 - Schedules always use `Asia/Taipei`, independently from the large clock's display timezone.
@@ -227,7 +230,7 @@ The query starts at the current minute so API latency does not skip an alarm tha
 
 The page synthesizes seven tones with native Web Audio and also provides `silent` mode. Users must tap the bell and hear a confirmation after every page load. iOS may interrupt audio and timers when switching apps or tabs or locking the screen; keep the page visible and the screen on. Background or locked-screen alarms are not guaranteed.
 
-The visual alert pulses the red border every two seconds. Users may disable flashing for a steady border, and browsers with `prefers-reduced-motion` also use a steady border. Two separate taps dismiss only the current occurrence on the current page; schedules and other devices are unchanged.
+The visual alert pulses the red border every two seconds. Under System → Flash and vibration, users can choose a steady border, turn it off, or enable two short vibrations when ringing starts, and browsers with `prefers-reduced-motion` also use a steady border. Two separate taps dismiss only the current occurrence on the current page; schedules and other devices are unchanged.
 
 ## Device API
 

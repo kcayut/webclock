@@ -74,6 +74,7 @@
             unsafe_data_path: 'invalid_backup', invalid_data_file: 'invalid_backup', invalid_owner_data: 'invalid_backup', invalid_authorization: 'invalid_backup'};
         var code = aliases[error.message] || error.message;
         var known = ['bad_password_or_file', 'invalid_backup', 'backup_too_large', 'preview_changed',
+            'ringtone_storage_full',
             'admin_required', 'invalid_credentials', 'https_required', 'restore_failed', 'restore_recovery_required', 'downgrade_forbidden', 'invalid_backup_password'];
         status(kind, known.indexOf(code) >= 0 ? code : 'error', true);
     }

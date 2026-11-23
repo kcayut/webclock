@@ -1,0 +1,15 @@
+.alarm-edge {
+    box-sizing: border-box;
+    border: 12px solid #e00000;
+    box-shadow: inset 0 0 45px 12px #c00000;
+    opacity: .8;
+}
+.alarm-edge[data-alarm-flash="pulse"] {
+    -webkit-animation: alarm-edge 2s ease-in-out infinite;
+    animation: alarm-edge 2s ease-in-out infinite;
+}
+@-webkit-keyframes alarm-edge { 0%, 100% { opacity: .2; } 50% { opacity: .9; } }
+@keyframes alarm-edge { 0%, 100% { opacity: .2; } 50% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) {
+    .alarm-edge[data-alarm-flash="pulse"] { -webkit-animation: none; animation: none; }
+}

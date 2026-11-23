@@ -6,6 +6,10 @@
     let labels = languages[document.documentElement.lang];
     const $ = id => document.getElementById(id);
     const t = key => labels[key] || key;
+    const soundField = $("schedule-sound");
+    const isRingtone = value => typeof value === "string" && value.length === 32 && /^[a-f0-9]+$/.test(value);
+    let ringtoneNames = new Map(Array.from(soundField.querySelectorAll("[data-ringtone]"), option => [option.value, option.textContent]));
+    let soundPreview = null;
     const format = (key, values) => t(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
     const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
     let schedules = [], devices = [], calendarSources = [], refreshing = false, scheduleRequest = 0, deviceRequest = 0, editorPanel = "alarms", serverTime = null;
@@ -319,8 +323,9 @@
             const row = node("li", undefined, "schedule-row" + (enabled ? "" : " disabled"));
             const details = node("div", undefined, "schedule-details");
             const repeat = schedule.calendar_link ? calendarText(schedule.calendar_link) : ruleText(schedule.rule, schedule.skip_holidays);
-            const description = repeat + " · " +
-                t("sound_" + (schedule.browser_sound || "bell")) + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%";
+            const soundName = schedule.custom_sound ? ringtoneNames.get(schedule.custom_sound) || t("custom_sound_missing") :
+                t("sound_" + (schedule.browser_sound || "bell"));
+            const description = repeat + " · " + soundName + " · " + (schedule.browser_volume == null ? 100 : schedule.browser_volume) + "%";
             details.append(node("h3", schedule.name), node("p", description));
             if (schedule.targets) {
                 const groups = assignments ? assignments.groups() || [] : [];
@@ -395,6 +400,7 @@
         renderEditorActions();
     }
     function closeEditor() {
+        stopSoundPreview();
         clearTimeout(previewTimer);
         ++previewRequest;
         ++calendarRequest;
@@ -438,6 +444,7 @@
             renderDevices();
         }
         syncServerTime(data.server_time);
+        updateRingtoneOptions(data.ringtones);
         calendarSources = data.calendar_sources || [];
         if (!$("editor").hidden) renderCalendarSources(selectedCalendarSources());
         schedules = data.schedules;
@@ -776,7 +783,36 @@
         loadCalendarTargets();
         refreshTimeInputs();
     }
+    function selectScheduleSound(sound) {
+        const missing = soundField.querySelector("[data-ringtone-missing]");
+        if (missing) missing.remove();
+        if (isRingtone(sound) && !ringtoneNames.has(sound)) {
+            const option = node("option", t("custom_sound_missing"));
+            option.value = sound;
+            option.setAttribute("data-ringtone-missing", "");
+            option.setAttribute("data-schedule-i18n", "custom_sound_missing");
+            soundField.append(option);
+        }
+        soundField.value = sound;
+    }
+    function updateRingtoneOptions(rows) {
+        if (!Array.isArray(rows)) return;
+        const entries = rows.filter(row => row && isRingtone(row.id) && typeof row.name === "string")
+            .map(row => [row.id, row.name]);
+        if (JSON.stringify(entries) === JSON.stringify(Array.from(ringtoneNames))) return;
+        ringtoneNames = new Map(entries);
+        const current = soundField.value;
+        soundField.querySelectorAll("[data-ringtone]").forEach(option => option.remove());
+        ringtoneNames.forEach((name, id) => {
+            const option = node("option", name);
+            option.value = id;
+            option.setAttribute("data-ringtone", "");
+            soundField.append(option);
+        });
+        selectScheduleSound(current);
+    }
     function edit(schedule) {
+        stopSoundPreview();
         $("schedule-form").reset();
         editorPausedUntil = null;
         previewTime = null;
@@ -796,7 +832,7 @@
         scheduleTargetDeviceSignature = "";
         renderScheduleTargets(true);
         $("schedule-id").value = schedule ? schedule.id : "";
-        $("schedule-sound").value = schedule && schedule.browser_sound || "bell";
+        selectScheduleSound(schedule && (schedule.custom_sound || schedule.browser_sound) || "bell");
         $("schedule-volume").value = String(schedule && schedule.browser_volume != null ? schedule.browser_volume : 100);
         $("schedule-volume-value").textContent = $("schedule-volume").value + "%";
         const link = schedule && schedule.calendar_link;
@@ -934,13 +970,41 @@
     ["input", "change"].forEach(event => $("schedule-form").addEventListener(event, queuePreview));
     $("schedule-volume").addEventListener("input", function () {
         $("schedule-volume-value").textContent = this.value + "%";
+        if (Number(this.value) === 0) stopSoundPreview();
     });
+    function stopSoundPreview() {
+        const previous = soundPreview;
+        soundPreview = null;
+        if (previous && previous.cancel) previous.cancel();
+        if (window.AlarmAudio) window.AlarmAudio.stop();
+        $("preview-sound").setAttribute("aria-pressed", "false");
+    }
+    soundField.addEventListener("change", stopSoundPreview);
+    window.addEventListener("hashchange", stopSoundPreview);
+    window.addEventListener("pagehide", stopSoundPreview);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stopSoundPreview(); });
     $("preview-sound").addEventListener("click", function () {
-        const sound = $("schedule-sound").value;
+        const wasPlaying = !!soundPreview;
+        stopSoundPreview();
+        if (wasPlaying) return;
+        const sound = soundField.value;
         const volume = Number($("schedule-volume").value);
         if (sound === "silent" || volume === 0) { notice(t("sound_silent")); return; }
-        const played = window.AlarmAudio && window.AlarmAudio.unlock(sound, volume);
-        notice(t(played ? "sound_previewed" : "audio_unavailable"), !played);
+        const audio = window.AlarmAudio, custom = isRingtone(sound);
+        const unlocked = audio && audio.unlock(custom ? "silent" : sound, volume);
+        if (!custom || !unlocked) {
+            notice(t(unlocked ? "sound_previewed" : custom ? "ringtone_preview_unavailable" : "audio_unavailable"), !unlocked);
+            return;
+        }
+        this.setAttribute("aria-pressed", "true");
+        const preview = {};
+        soundPreview = preview;
+        notice(t("loading"));
+        preview.cancel = audio.loadRingtone(sound, "management", buffer => {
+            const played = audio.playRingtone(buffer, Number($("schedule-volume").value), stopSoundPreview);
+            if (!played) stopSoundPreview();
+            notice(t(played ? "sound_previewed" : "ringtone_preview_unavailable"), !played);
+        }, () => soundPreview === preview);
     });
     function scheduleData() {
         const id = $("schedule-id").value, mode = repeatMode();
@@ -971,7 +1035,9 @@
         ["name", "time"].forEach(key => data[key] = $("schedule-" + key).value);
         data.type = "alarm";
         data.name = data.name.trim() || t("alarm");
-        data.browser_sound = $("schedule-sound").value;
+        const customSound = isRingtone(soundField.value) ? soundField.value : null;
+        if (customSound || schedules.some(schedule => schedule.id === id && schedule.custom_sound)) data.custom_sound = customSound;
+        data.browser_sound = customSound ? "bell" : soundField.value;
         data.browser_volume = Number($("schedule-volume").value);
         const targetDeviceIds = Array.from(scheduleTargetIds).sort();
         const targetGroupIds = Array.from(scheduleTargetGroupIds).sort();

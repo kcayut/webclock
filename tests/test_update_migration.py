@@ -215,7 +215,7 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
                 continue
             self.assertEqual((self.project / name).read_bytes(), content, name)
         self.assertEqual(json.loads((self.project / 'webclock_state/settings.json').read_text()),
-                         migrated(self.settings))
+                         dict(migrated(self.settings), alarm_flash='pulse', alarm_vibration=False))
         self.assertEqual(json.loads((self.project / 'webclock_state/manual_notes.json').read_text()), self.notes)
         self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], migrated(self.settings))
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
@@ -234,7 +234,8 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
 
         def fail_after_writing(project, url, layout, expected_notes, configuration, tls_handler=None):
             real_verify(project, url, layout, expected_notes, configuration, tls_handler=tls_handler)
-            changed_settings = migrated(dict(self.settings, brightness=72, time_format='12h'))
+            changed_settings = migrated(dict(self.settings, brightness=72, time_format='12h',
+                                             alarm_flash='off', alarm_vibration=True))
             changed_notes = [dict(self.notes[0], text='新版已改寫提醒')]
             self.assertEqual(updater.http_json(url + '/api/backup', {
                 'version': 1, 'settings': changed_settings, 'notes': changed_notes,
@@ -290,7 +291,8 @@ AuthService('webclock_state/auth.json').setup('admin', 'test-only-password-long'
         for name, content in self.before.items():
             self.assertEqual((self.project / name).read_bytes(), content, name)
         self.assertEqual(notes.read_bytes(), self.before['manual_notes.json'])
-        self.assertEqual(json.loads((state / 'settings.json').read_text()), migrated(self.settings))
+        self.assertEqual(json.loads((state / 'settings.json').read_text()),
+                         dict(migrated(self.settings), alarm_flash='pulse', alarm_vibration=False))
         self.assertEqual(updater.http_json(self.url + '/api/status')['settings'], migrated(self.settings))
         self.assertEqual(updater.http_json(self.url + '/api/backup')['notes'], self.notes)
         schedule = updater.http_json(self.url + '/api/v1/schedules', {

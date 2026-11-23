@@ -243,15 +243,17 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
     if (!failOptionalEditor) {
         const original = legacy.copyDisplaySettings(legacy.activeSettings);
         const timerCount = ticks.length;
-        for (const invalid of [{show_seconds: 1}, {show_date: 'false'}, {show_weekday: null},
+        for (const invalid of [{alarm_flash: 'bad'}, {alarm_vibration: 1}, {show_seconds: 1}, {show_date: 'false'}, {show_weekday: null},
             {date_format: 'invalid'}, {message_duration: 0}, {message_duration: 301},
             {message_duration: 1.5}, {message_duration: '5'}, {message_transition: 'invalid'}]) {
             assert.equal(legacy.normalizeDisplaySettings(invalid), null);
         }
         assert.equal(legacy.applySettings({show_seconds: true, show_date: false, show_weekday: false,
-            date_format: 'yyyy-mm-dd', message_duration: 9, message_transition: 'left'}), true);
+            alarm_flash: 'off', alarm_vibration: true, date_format: 'yyyy-mm-dd', message_duration: 9, message_transition: 'left'}), true);
         legacy.updateClock();
         assert.match(node('time').textContent, /^\d\d:\d\d:\d\d$/);
+        assert.equal(node('alarm-flash').getAttribute('data-alarm-flash'), 'off');
+        assert.equal(legacy.activeSettings.alarm_vibration, true);
         assert.equal(node('date-info').style.display, 'none');
         assert.equal(node('list-container').getAttribute('data-transition'), 'left');
         legacy.renderList([{text: 'A'}, {text: 'B'}]);
@@ -472,8 +474,11 @@ function checkLegacyPage(failOptionalEditor, bootSettings) {
             legacy.enterServerMode({events: [], server_timestamp: invalid});
             assert.equal(legacy.getClockUtcMs(), serverNow, 'invalid timestamps must not replace the corrected time base');
         }
+        legacy.applySettings({alarm_flash: 'off', alarm_vibration: true});
         legacy.enterServerMode({events: [], settings: {brightness: 35},
             next_event: {text: 'Meeting', starts_at: now + 300000}});
+        assert.equal(node('alarm-flash').getAttribute('data-alarm-flash'), 'pulse');
+        assert.equal(legacy.activeSettings.alarm_vibration, false);
         assert.equal(node('clock-container').style.opacity, 0.35);
         assert.equal(node('clock-backdrop').style.opacity, 0.35);
         assert.equal(node('list-container').style.opacity, 0.35);

@@ -7,7 +7,8 @@ from flask import Blueprint, abort, g, jsonify, render_template, request
 
 from webclock.services.device_service import DeviceService
 from webclock.services.display_service import browser_alarm_payload
-from webclock.services.schedule_service import TAIPEI, read_schedules, read_legacy_schedules, save_schedules, validate_schedule, next_occurrence, prefetch_calendar_sources
+from webclock.services.schedule_service import BROWSER_SOUNDS, TAIPEI, read_schedules, read_legacy_schedules, save_schedules, validate_schedule, next_occurrence, prefetch_calendar_sources
+from webclock.services import ringtones
 from webclock.services.storage import storage_lock
 from webclock.translations.schedules import SCHEDULE_TRANSLATIONS
 
@@ -40,6 +41,10 @@ def management_api(state_directory, holidays, template_context, calendar_events=
         sources = calendar_sources() if calendar_sources else []
         return [dict(id='local', name='本地提醒', provider='local')] + [
             {key: row[key] for key in ('id', 'name', 'provider')} for row in sources]
+
+    def check_sound(row):
+        if row.get('custom_sound') and row['custom_sound'] not in {tone['id'] for tone in ringtones.catalog(state_directory())}:
+            raise ValueError('Unknown ringtone')
 
     def check_sources(row):
         link = row.get('calendar_link')
@@ -76,7 +81,8 @@ def management_api(state_directory, holidays, template_context, calendar_events=
     def management():
         context = template_context()
         return render_template('schedules.html', schedule_translations=SCHEDULE_TRANSLATIONS[context['language']],
-                               schedule_languages=SCHEDULE_TRANSLATIONS, **context)
+                               schedule_languages=SCHEDULE_TRANSLATIONS, browser_sounds=BROWSER_SOUNDS,
+                               ringtones=ringtones.catalog(state_directory()), **context)
 
     @api.route('/api/v1/calendar-events')
     def calendar_event_catalog():
@@ -101,6 +107,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
                 if not isinstance(data, dict):
                     raise ValueError('Expected a schedule object')
                 row = validate_schedule(dict(data, id=data.get('id', uuid.uuid4().hex)))
+                check_sound(row)
                 check_sources(row)
                 check_targets(row)
                 if len(rows) >= 1000 or any(item['id'] == row['id'] for item in rows):
@@ -117,7 +124,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             enriched.append(dict(row, next_occurrence=event['datetime'] if event else None))
             if event:
                 upcoming.append(event)
-        return jsonify(schedules=enriched,
+        return jsonify(schedules=enriched, ringtones=ringtones.catalog(state_directory()),
                        next_event=min(upcoming, key=lambda event: (event['datetime'], event['id']), default=None),
                        calendar_sources=source_catalog(),
                        day=holidays.get_day_type(now.date()), server_time=now.isoformat(),
@@ -134,6 +141,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             raise ValueError('Invalid skip preview setting')
         old = next((row for row in schedules() if row['id'] == data['id']), {}) if 'id' in data else {}
         row = validate_schedule(dict(old, **data))
+        check_sound(row)
         if not old or 'calendar_link' in data:
             check_sources(row)
         if 'targets' in data:
@@ -167,6 +175,7 @@ def management_api(state_directory, holidays, template_context, calendar_events=
             if skip and not isinstance(expected, str):
                 raise ValueError('Expected the occurrence to skip')
             row = validate_schedule(dict(old, **data))
+            check_sound(row)
             if 'calendar_link' in data:
                 check_sources(row)
             if 'targets' in data:

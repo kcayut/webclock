@@ -44,6 +44,7 @@ function element(tag = "div") {
             });
         },
         replaceChildren(...children) { this.children = children; },
+        remove() { this.parentNode.children = this.parentNode.children.filter(child => child !== this); },
         setAttribute(key, value) { this.attributes[key] = value; },
         getAttribute(key) { return this.attributes[key]; },
         addEventListener(type, listener) { this.listeners[type] = listener; },
@@ -59,8 +60,12 @@ const $ = id => {
     return elements.get(id);
 };
 $("csrf-token").content = "schedules-csrf-token";
+const soundField = $("schedule-sound");
+soundField.querySelectorAll = selector => soundField.children.filter(option => option.getAttribute(selector.slice(1, -1)) !== undefined);
+soundField.querySelector = selector => soundField.querySelectorAll(selector)[0];
 const englishLabels = {
     alarm: "Alarm",
+    custom_sound_missing: "Unavailable custom ringtone",
     ring_time_section: "Ring time", repeat_section: "Repeat", alarm_section: "Alarm settings",
     ring_trigger: "Ring based on", repeat_mode: "Repeat", once_date: "Date (optional)",
     repeat_weekly: "Weekly", repeat_every_day_hint: "Rings every day, without weekday limits.",
@@ -188,7 +193,10 @@ const context = vm.createContext({
             assert.equal(root, $("schedule-form"));
             inputRefreshes.push({format, language, required: $("schedule-time").required, disabled: $("schedule-time").disabled});
         }},
-        addEventListener(type, handler) { navigation[type] = handler; }},
+        addEventListener(type, handler) {
+            const previous = navigation[type];
+            navigation[type] = () => { if (previous) previous(); handler(); };
+        }},
     fetch(url, options) {
         if (url === '/api/v2/device/identity') {
             assert.equal(options.credentials, 'same-origin');
@@ -239,8 +247,8 @@ function runPreview() {
     return timer.callback();
 }
 const catalog = [{id: 'local', name: 'Local', provider: 'local'}, {id: 'work', name: 'Work calendar', provider: 'apple'}];
-function scheduleReply(request, schedules, serverTime = '2026-09-30T10:00:00+08:00', calendarSources = catalog, timeFormat = "24h") {
-    reply(request, {schedules, calendar_sources: calendarSources, time_format: timeFormat, server_time: serverTime, day: {date: "2026-09-30", type: "workday"}, holiday_coverage: {start: "2023-01-01", end: "2027-12-31"}});
+function scheduleReply(request, schedules, serverTime = '2026-09-30T10:00:00+08:00', calendarSources = catalog, timeFormat = "24h", ringtones) {
+    reply(request, {schedules, calendar_sources: calendarSources, ringtones, time_format: timeFormat, server_time: serverTime, day: {date: "2026-09-30", type: "workday"}, holiday_coverage: {start: "2023-01-01", end: "2027-12-31"}});
 }
 function pauseReply(request, skipped = row.next_occurrence, next = nextDate) {
     reply(request, {skipped_occurrence: skipped, next_occurrence: next, server_time: "2026-09-30T10:00:00+08:00"});
@@ -793,7 +801,7 @@ const completionTimeout = setTimeout(() => {
     const previewed = [];
     assert.equal($("schedule-repeat-mode").value, "every_day", "Seven-day rules open as every day");
     assert.equal($("weekday-field").hidden, true, "Existing daily alarms hide weekday controls");
-    context.window.AlarmAudio = {unlock(sound, volume) { previewed.push({sound, volume}); return true; }};
+    context.window.AlarmAudio = {stop() {}, unlock(sound, volume) { previewed.push({sound, volume}); return true; }};
     $("schedule-volume").value = "25";
     await $("schedule-volume").trigger("input");
     assert.equal($("schedule-volume-value").textContent, "25%");
@@ -1469,6 +1477,47 @@ const completionTimeout = setTimeout(() => {
     operatingIdentityPending.resolve({ok: false}); operatingIdentityPending = null; await flush();
     await target('');
     assert.equal($('group-select').hidden, false); assert.equal($('device-list').hidden, false);
+    context.document.documentElement.lang = "en";
+    context.window.applyManagementLanguage("en");
+    showPanel("alarms");
+    const ringtone = {id: "a".repeat(32), name: "<Morning birds>"};
+    const customSchedule = {...row, custom_sound: ringtone.id};
+    const loadCustom = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [customSchedule], undefined, undefined, undefined, [ringtone]);
+    await loadCustom;
+    assert.match(content($("schedule-list")), /<Morning birds>/);
+    await button("schedule-list", "edit").trigger("click");
+    assert.equal(soundField.value, ringtone.id);
+    assert.equal(qa.scheduleData().browser_sound, "bell");
+    assert.equal(qa.scheduleData().custom_sound, ringtone.id);
+    let resolveAudio, playing, canceled = 0;
+    Object.assign(context.window.AlarmAudio, {
+        loadRingtone(id, audience, loaded, allowed) {
+            assert.equal(id, ringtone.id);
+            assert.equal(audience, "management");
+            resolveAudio = buffer => { if (allowed()) loaded(buffer); };
+            return () => { canceled++; };
+        },
+        playRingtone(buffer, volume) { playing = {buffer, volume}; return true; }
+    });
+    await $("preview-sound").trigger("click");
+    assert.equal($("preview-sound").getAttribute("aria-pressed"), "true");
+    resolveAudio("track");
+    assert.deepEqual(playing, {buffer: "track", volume: 100});
+    showPanel("devices");
+    assert.equal($("preview-sound").getAttribute("aria-pressed"), "false");
+    assert.equal(canceled, 1);
+    resolveAudio("late result");
+    assert.equal(playing.buffer, "track");
+    const loadMissing = qa.loadSchedules();
+    scheduleReply(take("/schedules"), [customSchedule], undefined, undefined, undefined, []);
+    await loadMissing;
+    assert.match(content($("schedule-list")), /Unavailable custom ringtone/);
+    assert.equal(soundField.value, ringtone.id, "Refreshing the catalog must preserve an existing selection");
+    assert.equal(qa.scheduleData().custom_sound, ringtone.id);
+    soundField.value = "digital";
+    assert.equal(qa.scheduleData().custom_sound, null, "Choosing a built-in tone explicitly clears the custom ID");
+    assert.equal(qa.scheduleData().browser_sound, "digital");
     assert.ok(requests.every(request => !/sound|audio|snooze|restart/.test(request.url)));
     console.log("Schedule management forms, commands and freshness checks passed");
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => clearTimeout(completionTimeout));

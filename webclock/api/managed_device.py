@@ -18,7 +18,7 @@ NATIVE_ENDPOINTS = {'managed_device.token_prepare', 'managed_device.token_join',
 
 
 def managed_device_api(access_provider, device_provider, auth_provider, display_provider, alarms_provider,
-                       display_revision_provider=None):
+                       display_revision_provider=None, ringtone_provider=None):
     api = Blueprint('managed_device', __name__, url_prefix='/api/v2/device')
 
     def failure(error):
@@ -214,6 +214,12 @@ def managed_device_api(access_provider, device_provider, auth_provider, display_
     @api.route('/browser-alarms')
     def browser_alarms():
         return scoped_response(alarms_provider)
+
+    @api.get('/ringtones/<key>')
+    def ringtone(key):
+        if ringtone_provider is None:
+            return jsonify(code='not_found'), 404
+        return scoped_response(lambda identity: ringtone_provider(identity, key))
 
     @api.route('/status', methods=['POST'])
     def status():

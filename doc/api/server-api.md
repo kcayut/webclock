@@ -8,6 +8,8 @@
 
 `GET /api/time` 永遠只回校時；managed 的 `/api/status` 只回時間及空事件，舊 `/api/v1/device/*` 回 403，`/api/v1/browser-alarms` 回 401。管理登入不能替代裝置憑證。非私人 `/api/health` 提供 `managed_device_schema: 3`、`managed_devices_ready: true`，表示新端點已實作，不表示正式模式切換或實機驗收已完成。以下舊 schema 2 裝置 API 均以 self 模式為前提，現有 ESP codec 不會自動支援 schema 3。
 
+self 模式的 `GET /api/status` 只回傳非預設的鬧鐘效果設定。未回傳 `settings.alarm_flash` 時使用 `pulse`，未回傳 `settings.alarm_vibration` 時使用 `false`。
+
 ### 群組管理 API
 
 managed 要管理 session；兩種模式的寫入都要 CSRF。`/schedules#devices` 提供相同操作。
@@ -162,6 +164,7 @@ webclock_state/              私人執行資料，不進 Git
 - `rule` 擇一：`{}` 每天、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}`。
 - `skip_holidays`：可在每天、星期或指定日期規則上過濾假日。補班日仍是工作日；`holiday_only=true` 同時 `skip_holidays=true` 會回 400。
 - `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar` 或 `silent`。這是網頁專用音色，和舊硬體 `sound` 欄位分開；`silent` 保留視覺提示。
+- 管理端可用選填的 `custom_sound` 指定已儲存的自訂片段 ID。瀏覽器依排程授權讀取片段，無法播放時使用 `browser_sound`。
 - `browser_volume`：每個鬧鐘獨立的網頁音量，整數 0–100；新舊排程未提供時均預設 100。0 只顯示提醒，試聽與實際響鈴共用此設定；實際音量仍受裝置音量影響，不沿用舊硬體 `volume`。
 - 星期採 ISO：星期一 `1` 至星期日 `7`。與舊手動提醒 API 的 `0–6` 不同。
 - 排程固定採 `Asia/Taipei`，與大字時鐘的顯示時區分開。
@@ -295,9 +298,9 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 
 查詢從當分鐘起算，避免剛到時刻的鬧鐘因 API 延遲就直接跳至下一次；同一分鐘內不同秒的聯動行程會保留。這份回應不是完整離線排程快照。時鐘頁約每 15 秒更新一次；已載入的下次時間可在暫時斷線時觸發，重新開頁與取得後續週期仍需連線。超過 60 秒才恢復處理的過期鬧鐘不補響。
 
-頁面使用原生 Web Audio 合成 7 種音色，另提供 `silent` 靜音模式，不下載音檔或載入音訊框架。每次開頁需點小鈴鐺「啟用聲音」並聽到短音；相容舊 Safari 的 `webkitAudioContext`。iOS 需要使用者操作啟用音訊，切換 App、分頁或鎖屏也可能中斷音訊與計時，因此須保持時鐘頁在前景、螢幕開啟，不保證背景或鎖屏響鈴。[Apple Web Audio 說明](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/Using_HTML5_Audio_Video/PlayingandSynthesizingSounds/PlayingandSynthesizingSounds.html)、[MDN iOS 中斷行為](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/state#resuming_interrupted_play_states_in_ios_safari)
+頁面使用原生 Web Audio 合成 7 種音色，另提供 `silent` 靜音模式，內建音色不需下載。每次開頁需點小鈴鐺「啟用聲音」並聽到短音；相容舊 Safari 的 `webkitAudioContext`。iOS 需要使用者操作啟用音訊，切換 App、分頁或鎖屏也可能中斷音訊與計時，因此須保持時鐘頁在前景、螢幕開啟，不保證背景或鎖屏響鈴。[Apple Web Audio 說明](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/Using_HTML5_Audio_Video/PlayingandSynthesizingSounds/PlayingandSynthesizingSounds.html)、[MDN iOS 中斷行為](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/state#resuming_interrupted_play_states_in_ios_safari)
 
-視覺提示僅讓紅邊以每 2 秒一週期改變透明度；連線面板的「閃爍紅邊」可關閉閃爍，改為常亮。支援 `prefers-reduced-motion` 的瀏覽器也會改為常亮。使用兩次分開的點擊關閉目前顯示頁的當次鬧鐘；同一次觸控產生的 touch／click 不當成兩次操作。關閉不修改排程，也不停止其他裝置。
+視覺提示僅讓紅邊以每 2 秒一週期改變透明度；「系統 → 閃光與震動」可切換緩慢閃動、固定亮框或關閉邊框，並選擇在響鈴開始時短震兩下。支援 `prefers-reduced-motion` 的瀏覽器也會改為常亮。使用兩次分開的點擊關閉目前顯示頁的當次鬧鐘；同一次觸控產生的 touch／click 不當成兩次操作。關閉不修改排程，也不停止其他裝置。
 
 ## 裝置 API
 
@@ -365,7 +368,7 @@ POST／PUT 的本文使用 `Content-Type: application/json`，布林值與整數
 }
 ```
 
-`browser_sound`／`browser_volume` 雖在回應中，仍是網頁音色／音量，沒有承諾硬體可播放同音色或具有相同音量。硬體端需另定能力與映射；現行 API 不支援上傳音檔、控制音量、停止當次響鈴或貪睡命令。
+`browser_sound`／`browser_volume` 雖在回應中，仍是網頁音色／音量，沒有承諾硬體可播放同音色或具有相同音量。硬體端需另定能力與映射；此硬體 API 不支援上傳音檔、控制音量、停止當次響鈴或貪睡命令。
 
 `GET /api/v1/device/holidays` 的欄位：
 
@@ -548,7 +551,7 @@ ESPHome 目標中的「未來七天觸發清單」尚未提供 API，現有 `sch
 
 ## 舊原型與資料保存
 
-- 裝置指令只支援 `sync`，網頁鬧鐘由瀏覽器合成內建音色；不提供音檔播放 API、硬體聲音服務或 Python 模擬裝置。
+- 裝置指令只支援 `sync`，網頁鬧鐘由瀏覽器合成內建音色；硬體沒有音檔播放服務或 Python 模擬裝置。
 - 舊 `schedules.json` 的 `sound`、`volume`、`repeat`、`snooze_minutes` 會留存檔案，編輯其他欄位也保留，但不公開、不套用。排程 API 不接受這些欄位。
 - `browser_sound` 與 `skip_holidays` 正常透過排程管理儲存，不沿用舊音檔或舊硬體音量設定。
 - 舊裝置硬體欄位、`test_sound`／`restart` 待執行命令同樣留存，但不公開，也不交給裝置。

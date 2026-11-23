@@ -62,6 +62,23 @@ class ManagedDisplayTest(unittest.TestCase):
     def get(self, client, path='display', **kwargs):
         return client.get('/api/v2/device/' + path, base_url='https://localhost', **kwargs)
 
+    def test_audio_is_limited_to_enabled_assigned_alarm(self):
+        from webclock.services import ringtones
+        data = ringtones.HEADER.pack(b'RIFF', 38, b'WAVE', b'fmt ', 16, 1, 1, 16000, 32000, 2, 16, b'data', 2) + bytes(2)
+        key = ringtones.add(self.root, 'Private', data, self.root)['id']
+        self.schedules[0].update(custom_sound=key)
+        clock.save_json(self.root / 'schedules.json', self.schedules)
+        a, _ = self.device(self.group('A', content={'schedule_ids': ['a']}))
+        b, _ = self.device(self.group('B', content={'schedule_ids': ['b']}))
+        self.assertEqual(self.get(a, 'ringtones/' + key).data, data)
+        self.assertEqual(self.get(b, 'ringtones/' + key).status_code, 404)
+        self.assertEqual(self.get(clock.app.test_client(), 'ringtones/' + key).status_code, 401)
+        self.assertEqual(b.get('/api/ringtones/' + key, base_url='https://localhost').status_code, 401)
+        self.assertEqual(b.get('/api/v1/ringtones/' + key, base_url='https://localhost').status_code, 401)
+        self.schedules[0]['enabled'] = False
+        clock.save_json(self.root / 'schedules.json', self.schedules)
+        self.assertEqual(self.get(a, 'ringtones/' + key).status_code, 404)
+
     def test_targeted_reminder_form_persists_existing_group_targets(self):
         group = self.group('Targets')
         client = clock.app.test_client()

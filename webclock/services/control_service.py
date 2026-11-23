@@ -157,6 +157,9 @@ class ControlService:
             values.update(owner_id=self.client['owner_id'],
                           creator_client_id=(old or {}).get('creator_client_id', self.client['id']))
             return validate_event(values)
+        # Program credentials carry no grant to the owner's ringtone library.
+        if data.get('custom_sound') and data['custom_sound'] != (old or {}).get('custom_sound'):
+            raise ControlError('permission_denied', 403)
         row = validate_schedule(values)
         if row['type'] != 'alarm':
             raise ControlError('invalid_request')

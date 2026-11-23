@@ -10,6 +10,8 @@ Home Assistant のネイティブ参加: `POST /api/v2/device/token/prepare`, `t
 
 公開 `GET /api/time` は時刻のみを返します。managed の `/api/status` は時刻と空の予定、旧 `/api/v1/device/*` は 403、`/api/v1/browser-alarms` は 401 を返します。管理 session は端末認証を代替しません。非公開情報を含まない `/api/health` の `managed_device_schema: 3` と `managed_devices_ready: true` は endpoint の実装を示し、本番移行や実機検収の完了ではありません。以下の旧 schema 2 API は self が前提です。旧 ESP codec が自動的に schema 3 に対応するわけではありません。
 
+self モードの `GET /api/status` は既定値から変更されたアラーム効果を返します。省略された場合、`settings.alarm_flash` は `pulse`、`settings.alarm_vibration` は `false` として扱います。
+
 ### グループ管理 API
 
 managed は管理 session、両モードの書き込みは CSRF が必要です。`/schedules#devices` で同じ操作を行えます。
@@ -137,6 +139,7 @@ webclock_state/              非公開の実行データ。Git に追加しな�
 - `rule`：毎日の `{}`、`{"weekdays":[1,3,5]}`、`{"workday_only":true}`、`{"holiday_only":true}`、`{"dates":["2026-10-03"]}` のいずれかです。
 - `skip_holidays`：毎日・曜日・指定日の休日を除外します。振替出勤日は勤務日です。`holiday_only=true` との併用は 400 を返します。
 - `browser_sound`：`bell`、`beep`、`digital`、`chime`、`melody`、`pulse`、`sonar`、`silent`。旧ハードウェアの音声項目とは独立しています。
+- 管理画面では任意の `custom_sound` に保存済みの着信音の ID を指定できます。ブラウザーは対象アラームの権限で取得し、再生できない場合は `browser_sound` を使用します。
 - `browser_volume`：アラームごとの 0–100 の整数。新規・既存とも未設定なら 100。試聴と実際の再生に適用し、0 は画面表示のみです。端末の音量にも依存し、旧ハードウェアの `volume` は引き継ぎません。
 - 曜日は ISO の月曜 `1` から日曜 `7` です。旧リマインダー API の `0–6` とは異なります。
 - 予定は大時計の表示タイムゾーンとは別に、常に `Asia/Taipei` を使います。
@@ -227,7 +230,7 @@ API 遅延で直前のアラームを飛ばさないよう、現在の分から�
 
 時計ページは Web Audio で 7 種類の音色を合成し、`silent`（無音）も選べます。ページを開くたびにベルをタップし、確認音を聞く必要があります。iOS は App・タブの切り替えや画面ロックで音声とタイマーを中断することがあるため、時計ページを前面に表示し、画面を点灯してください。バックグラウンドやロック中のアラームは保証されません。
 
-視覚通知は赤い枠を 2 秒周期で点滅させます。設定で常時表示に変更でき、`prefers-reduced-motion` に対応するブラウザーも常時表示にします。2 回の別々のタップで、現在ページの今回分だけを停止します。予定や他の端末は変更しません。
+視覚通知は赤い枠を 2 秒周期で点滅させます。「システム → 点滅と振動」で枠を常時点灯またはオフにでき、開始時に短く2回振動する設定も選べます。`prefers-reduced-motion` に対応するブラウザーも常時表示にします。2 回の別々のタップで、現在ページの今回分だけを停止します。予定や他の端末は変更しません。
 
 ## 端末 API
 
@@ -324,7 +327,7 @@ revision は不透明な識別値として扱い、HTTP 本文全体のハッシ
 
 ## 旧データと保存
 
-- 端末指令は `sync` のみです。音声ファイル再生 API、ハードウェア音声サービス、Python 模擬端末は提供していません。
+- 端末指令は `sync` のみです。ハードウェア向けの音声ファイル再生 API、Python 模擬端末は提供していません。
 - 旧予定・端末項目は既存ファイルに残りますが、公開・適用しません。新 API は受け付けません。
 - `webclock_state/sounds/` や `webclock_state/fake-device/` の既存ユーザーデータは削除しませんが、Server は読みません。
 - 旧ルートの `manual_notes.json` は状態ディレクトリへ一度だけコピーします。`NOTES_FILE` と `WEBCLOCK_STATE_DIR` の上書きは引き続き利用できます。

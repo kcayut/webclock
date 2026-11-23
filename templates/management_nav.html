@@ -13,6 +13,8 @@
 {% elif name == 'alarms' %}<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
 {% elif name == 'devices' %}<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8m-8 5h.01m4 0h.01"/>
 {% elif name == 'system' %}<path d="M4 21v-7M4 10V3m8 18v-9M12 8V3m8 18v-5M20 13V3M1 14h6M9 8h6m2 4h6"/>
+{% elif name == 'effects' %}<rect x="8" y="5" width="8" height="14" rx="2"/><path d="m5 7-2 3 2 4-2 3m16-10 2 3-2 4 2 3"/>
+{% elif name == 'sounds' %}<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>
 {% elif name == 'backup' %}<path d="M4 8v11c0 3 16 3 16 0V8M4 13c0 3 16 3 16 0"/><ellipse cx="12" cy="6" rx="8" ry="3"/>
 {% elif name == 'updates' %}<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M18 18A8 8 0 0 1 5 15"/>
 {% elif name == 'integrations' %}<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8-8M16 6l2 2m-4 0 2 2"/>
@@ -44,6 +46,8 @@
             <summary>{{ nav_icon('system') }}<span data-i18n="management_system">{{ m.management_system }}</span><svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
             <div class="management-nav-children">
                 <a href="{{ url_for('admin', _anchor='display') }}" data-management-link="display">{{ nav_icon('display') }}<span data-i18n="management_display">{{ m.management_display }}</span></a>
+                <a href="{{ url_for('admin', _anchor='sounds') }}" data-management-link="sounds">{{ nav_icon('sounds') }}<span data-i18n="management_sounds">{{ m.management_sounds }}</span></a>
+                <a href="{{ url_for('admin', _anchor='effects') }}" data-management-link="effects">{{ nav_icon('effects') }}<span data-i18n="sounds_effects">{{ m.sounds_effects }}</span></a>
                 <a href="{{ url_for('admin', _anchor='backup') }}" data-management-link="backup">{{ nav_icon('backup') }}<span data-i18n="management_backup">{{ m.management_backup }}</span></a>
                 <a href="{{ url_for('updates.page') }}" data-management-link="updates">{{ nav_icon('updates') }}<span data-i18n="management_updates">{{ m.management_updates }}</span></a>
                 <a href="{{ url_for('control_management.integrations') }}" data-management-link="integrations">{{ nav_icon('integrations') }}<span data-i18n="management_integrations">{{ m.management_integrations }}</span></a>
