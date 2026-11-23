@@ -4,9 +4,18 @@
 
 ## 目前狀態
 
-- **[v1.6.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.6.0)**。功能變更見[發行紀錄](releases/v1.6.0.md)。
+- **[v1.7.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.7.0)**。功能變更見[發行紀錄](releases/v1.7.0.md)。
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
+
+<a id="release-1-7-0"></a>
+## 1.7.0 發行驗證（2026-11-24）
+
+- GitHub 與 Gitea 的 `v1.7.0` 均指向 `aae0d6d7323049d6a40d2b9e2d57c584fe4a18ed`。標籤測試涵蓋整合、卡片、systemd 安裝與兩種架構的容器。[發版 CI](https://github.com/kcayut/webclock/actions/runs/45229257270)
+- 五個發行資產均可匿名下載，四筆 SHA-256 校驗通過。Server 壓縮檔的 199 個檔案及離線 ZIP 的 18 個檔案均與發版候選內容一致。[公開發行包](https://github.com/kcayut/webclock/releases/tag/v1.7.0)
+- Server 與 Home Assistant App 映像均可匿名取得 `linux/amd64`、`linux/arm64`。兩者的 manifest digest 分別為 `sha256:97b2ae613d386339562502b45f8e0f86a45ce40b45e7fce1cbdb0e8fe3a946bf` 和 `sha256:34ecc65c10722cd9f612ab819600b24680be7003cc57d636a7975e8a8c59e38d`。
+- Linux 升級與還原演練通過。[演練紀錄](https://github.com/kcayut/webclock/actions/runs/45229257268)
+- 使用公開安裝器完成 systemd 新安裝，並透過公開更新入口將 Docker 從 1.6.0 升至 1.7.0。兩種安裝均通過重新啟動後的版本、模式與設定保存檢查。[公開安裝與升級驗證](https://github.com/kcayut/webclock/actions/runs/45231377987)
 
 <a id="release-1-6-0"></a>
 ## 1.6.0 發行驗證（2026-11-23）
