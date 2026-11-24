@@ -4,9 +4,17 @@
 
 ## 目前狀態
 
-- **[v1.7.0 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.7.0)**。功能變更見[發行紀錄](releases/v1.7.0.md)。
+- **[v1.7.2 已公開發布](https://github.com/kcayut/webclock/releases/tag/v1.7.2)**。前一個正式版為 1.7.0，1.7.1 僅保留 Git 標籤。[本版發行紀錄](releases/v1.7.2.md)
 - Server、Docker、HA App、HACS 整合與卡片統一版號；HA App 仍標示 `experimental`。
 - HA OS 商店／HACS 實際更新、完整備份搬家、主機斷電／重開機、實體 ARM、舊 iPad、音訊及長時間運行仍需實機驗收；詳見[更新驗證紀錄](acceptance/docker-ha-update-acceptance.md)。
+
+<a id="release-1-7-2"></a>
+## 1.7.2 發行驗證（2026-11-24）
+
+- GitHub 與 Gitea 的 `v1.7.2` 都指向 `bcc0782568d16f21895f8e153f49f25aeb4fa05f`。服務整合、systemd 安裝及兩種架構的 Server 和 Home Assistant App 容器測試均通過。[發版 CI](https://github.com/kcayut/webclock/actions/runs/45397441975)
+- 五個正式資產均可匿名下載，內容與本機固定提交產物相符。四筆 SHA-256 校驗通過，Server 壓縮檔包含 201 個檔案，離線時鐘 ZIP 包含 18 個檔案。[公開發行包](https://github.com/kcayut/webclock/releases/tag/v1.7.2)
+- Server 和 Home Assistant App 的兩個映像索引都可匿名取得，涵蓋 `linux/amd64` 與 `linux/arm64`。Server digest 為 `sha256:3ce9872a95297395ed1b8eeb4c9a6b9051195a82deb4bb442b56eabcf2942293`，App digest 為 `sha256:bd9dbd9c3bc565da33c5fafca4d6e868ac04f2d9b0e024dce503a7a67fcd6e0c`。
+- 使用正式安裝器完成 systemd 新安裝，Docker 透過公開更新入口從 1.7.0 升至 1.7.2，保留既有測試資料。兩種安裝均通過重啟後的版本、模式與設定保存檢查。[安裝與升級驗證](https://github.com/kcayut/webclock/actions/runs/45399464129)
 
 <a id="release-1-7-0"></a>
 ## 1.7.0 發行驗證（2026-11-24）
