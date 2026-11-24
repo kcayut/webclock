@@ -54,13 +54,13 @@ inline int line_width(const std::string &s) {
 }
 template<class Display, class Atlas, class Ink>
 void draw_line(Display &screen, const Atlas &atlas, const std::string &text,
-               size_t pos, int y, Ink ink, int x = 22) {
+               size_t pos, int y, Ink ink, int x = 22, int scale = 2) {
   for (int n = 0; pos < text.size() && n < Ticker::columns; ++n) {
     int tile = tile_index(next_char(text, pos));
     for (int row = 0; row < 16; ++row) {
       for (int col = 0; col < 14; ++col) {
         if (atlas.get_pixel(tile % 128 * 14 + col, tile / 128 * 16 + row).is_on())
-          screen.filled_rectangle(x + 28*n + 2*col, y + 2*row, 2, 2, ink);
+          screen.filled_rectangle(x + (14*n + col)*scale, y + row*scale, scale, scale, ink);
       }
     }
   }

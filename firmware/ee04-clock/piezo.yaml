@@ -1,0 +1,30 @@
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "piezo", &id(audio_lock)) != ESP_OK)
+              ESP_LOGW("clock", "Audio sleep lock unavailable");
+
+globals:
+  - {id: audio_lock, type: esp_pm_lock_handle_t, initial_value: 'nullptr'}
+
+output:
+  - platform: ledc
+    id: piezo
+    pin: ${piezo_pin}
+    frequency: 4000Hz
+
+script:
+  - id: mix_audio
+    then:
+      - lambda: |-
+          const bool beep = id(ringing) && (millis() - id(ring_start)) % 1000 < 500;
+          const float level = std::max(beep ? 0.25f : 0.0f, id(remote_level));
+          static bool locked = false;
+          if (id(audio_lock) && (level > 0) != locked) {
+            if (level > 0) esp_pm_lock_acquire(id(audio_lock));
+            else esp_pm_lock_release(id(audio_lock));
+            locked = level > 0;
+          }
+          id(piezo).set_level(level);

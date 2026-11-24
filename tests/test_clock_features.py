@@ -33,6 +33,28 @@ class ClockFeaturesTest(unittest.TestCase):
         with patch.object(clock, 'get_local_now', return_value=now), patch.object(clock, 'get_calendar_events', return_value=[]):
             return self.client.get('/api/status').json
 
+    def test_public_display_only_delivers_global_items_in_both_formats(self):
+        now = datetime.fromisoformat('2026-10-01T06:00:00+08:00')
+        targets = {'group_ids': ['private'], 'device_ids': []}
+        clock.save_note('public reminder', '')
+        clock.save_note('assigned reminder', '2026-10-01 07:00', targets=targets)
+        clock.save_json(self.root / 'schedules.json', [dict(id='private', name='assigned alarm',
+                        type='alarm', time='07:10', rule={}, enabled=True, targets=targets)])
+        calendar = [dict(text='public calendar', time='08:00', starts_at=int(now.timestamp() * 1000))]
+        with patch.object(clock, 'get_local_now', return_value=now), \
+                patch.object(clock, 'calendar_display_events', return_value=calendar):
+            for headers in ({}, {'X-WebClock-Event-Kinds': '1'}):
+                response = self.client.get('/api/status', headers=headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('X-WebClock-Event-Kinds', response.vary)
+                events = response.json['events']
+                self.assertEqual([e['text'] for e in events], ['public calendar', 'public reminder'])
+                if headers:
+                    self.assertEqual([e['kind'] for e in events], ['calendar', 'reminder'])
+                else:
+                    self.assertTrue(all('kind' not in e for e in events))
+                self.assertIsNone(response.json['next_event'])
+
     def test_shared_settings_version_rejects_stale_page_and_preserves_failed_write(self):
         initial = self.client.get('/api/control')
         self.assertEqual(initial.status_code, 200)

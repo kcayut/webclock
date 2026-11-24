@@ -30,7 +30,7 @@ firmware/.venv/bin/esphome run "$cfg/clock.yaml" --device 192.0.2.50
 | 共用核心 | [desk.yaml](../core/desk.yaml)、[選單狀態](../core/menu.h)、[鬧鐘狀態](../core/local_alarm.h)、[日期及 RTC](../core/rtc.h) 管理按鍵事件、選單、草稿、儲存、響鈴及取消確認、RTC 和服務同步。核心送出狀態變更，沒有繪圖、字型、螢幕尺寸或座標。 |
 | WebClock 服務 | [共用元件](../components/webclock)處理離線快取、版本衝突、程式憑證與群組範圍。群組行事曆使用顯示憑證，鬧鐘讀寫使用程式憑證。 |
 | 畫面 | [經典畫面設定](../views/classic.yaml)持有字型、跑馬燈及重繪節奏；[版面](../views/classic-frame.yaml)讀取時鐘／鬧鐘／選單／響鈴確認狀態並繪製。沿用網頁將時間置中、粗體、約 35% 畫面寬度字級的方向；800 × 480 採 280 px 粗體，全天 1,440 種時分的實際數字墨跡高度為 196–203 px（約 22.7–23.5 mm），日期、鬧鐘和行事曆分列。[網頁樣式](../../static/clock.css) |
-| 板型 | [clock.yaml](clock.yaml)選擇面板驅動、接腳、畫面 package 及 render lambda；[USB 設定](../core/usb_profile.h)使用 ESP32-S3 原生 USB。 |
+| 板型 | [clock.yaml](clock.yaml)選擇面板驅動、接腳、畫面與[蜂鳴器輸出](piezo.yaml)，兩板共用[ESP32-S3 設定](../core/esp32s3.yaml)與[分割表](../core/partitions.csv)；[USB 設定](../core/usb_profile.h)使用 ESP32-S3 原生 USB。 |
 
 開發另一款造型時，在新機型 YAML 選取自己的畫面 package 和 render lambda，維持核心使用的按鍵、RTC、音效元件 ID。若只改外型及畫面，不必複製鬧鐘與同步程式。版面應處理選單、未校時、一般時鐘、日期編輯、鬧鐘編輯、配對、響鈴與取消確認、行事曆狀態。
 

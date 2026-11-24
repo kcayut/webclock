@@ -1362,13 +1362,13 @@ def calendar_display_items():
         return jsonify(error='Calendar catalog is unavailable; retry later', code='calendar_not_ready'), 503
 
 
-def display_snapshot(now, notes, schedules, calendar, calendar_lookup):
+def display_snapshot(now, notes, schedules, calendar, calendar_lookup, *, event_kinds=False):
     events, upcoming = [], []
     for note in notes:
         try:
             if note_visible(note, now):
                 due = note.get('due_date', '')
-                events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else '',
+                events.append({'text': note['text'], 'time': due[11:] if len(due) > 10 else '', 'kind': 'reminder',
                                '_sort': (due + ' 99:99' if len(due) == 10 else due) or '9999'})
             candidate = next_note_time(note, now)
             if candidate:
@@ -1381,13 +1381,15 @@ def display_snapshot(now, notes, schedules, calendar, calendar_lookup):
     for event in calendar:
         if not event.get('all_day') and (event.get('starts_at') or 0) > int(now.timestamp() * 1000):
             upcoming.append({'text': event['text'], 'starts_at': event['starts_at']})
-    events = [{'text': event['text'], 'time': event['time'],
+    events = [{'text': event['text'], 'time': event['time'], 'kind': 'calendar',
                '_sort': datetime.fromtimestamp(event['starts_at'] / 1000, now.tzinfo).strftime(
                    '%Y-%m-%d 99:99' if event.get('all_day') else '%Y-%m-%d %H:%M')}
               for event in calendar] + events
     events.sort(key=lambda event: event['_sort'])
     for event in events:
         del event['_sort']
+        if not event_kinds:
+            del event['kind']
     return dict(events=events, next_event=min(upcoming, key=lambda event: event['starts_at'], default=None),
                 is_holiday=holiday_service.is_holiday(now.date()))
 
@@ -1403,15 +1405,19 @@ def status():
     except (OSError, ValueError, KeyError):
         show_local = True
         calendar_settings = {'sources': [], 'local_display_enabled': True}
-    payload = display_snapshot(now, load_notes() if show_local else [],
-                               read_legacy_schedules(content_directory()), calendar_display_events(now, calendar_settings), get_calendar_events)
+    notes = [note for note in load_notes() if 'targets' not in note] if show_local else []
+    payload = display_snapshot(now, notes, read_legacy_schedules(content_directory()),
+                               calendar_display_events(now, calendar_settings), get_calendar_events,
+                               event_kinds=request.headers.get('X-WebClock-Event-Kinds') == '1')
     settings = dict(active_settings())
     # The 1.6.0 updater compares the whole settings object during health checks.
     for key in ('alarm_flash', 'alarm_vibration'):
         if settings.get(key) == DEFAULT_SETTINGS[key]:
             del settings[key]
     # Calendar I/O may take time; send a fresh timestamp after projection.
-    return jsonify(dict(payload, settings=settings, server_timestamp=int(get_local_now().timestamp() * 1000)))
+    response = jsonify(dict(payload, settings=settings, server_timestamp=int(get_local_now().timestamp() * 1000)))
+    response.vary.add('X-WebClock-Event-Kinds')
+    return response
 
 
 @app.route('/api/time')
@@ -1571,9 +1577,12 @@ def managed_display(identity):
                                        group['content']['calendar_source_ids'],
                                        group['content'].get('calendar_targets', []),
                                        group['content'].get('calendar_exclusions', []))
-    payload = display_snapshot(now, notes, schedules, calendar, managed_calendar_events)
+    payload = display_snapshot(now, notes, schedules, calendar, managed_calendar_events,
+                               event_kinds=request.headers.get('X-WebClock-Event-Kinds') == '1')
     payload['settings'] = settings
-    return managed_response(identity, group, notes, schedules, source_revision, payload)
+    response = managed_response(identity, group, notes, schedules, source_revision, payload)
+    response.vary.add('X-WebClock-Event-Kinds')
+    return response
 
 
 def managed_alarms(identity):

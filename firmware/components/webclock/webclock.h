@@ -30,6 +30,7 @@ class WebClock : public Component {
   float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
   void draw(display::Display &screen);
   void stop();
+  float ring_volume() const { return ringing_ ? ring_level_ : 0.0f; }
   bool is_ringing() const { return ringing_; }
 
 #ifdef USE_WEBCLOCK_DESK
@@ -43,14 +44,16 @@ class WebClock : public Component {
     usb_desk_only_ = true;
   }
   bool desk_tick(DeskAlarm &state, int legacy_value, int &last_minute);
-  const std::string &ticker() const { return ticker_; }
+  const std::string &ticker() const { return ticker_.all; }
+  const std::string &ticker(bool reminders, bool calendar) const { return ticker_.line(reminders, calendar); }
 #endif
  protected:
 #ifdef USE_WEBCLOCK_DESK
   bool usb_desk_only_{false};
-  struct TickerUpdate { std::string *line; uint32_t deadline; };
+  struct TickerUpdate { DeskTicker *content; uint32_t deadline; };
   void sync_desk_();
-  std::string control_token_, display_token_, mirror_id_, ticker_;
+  std::string control_token_, display_token_, mirror_id_;
+  DeskTicker ticker_;
   uint64_t binding_{0};
   uint32_t mirror_generation_{0}, ticker_deadline_{0};
   QueueHandle_t desk_out_{nullptr}, desk_in_{nullptr}, ticker_in_{nullptr};

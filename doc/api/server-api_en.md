@@ -60,7 +60,7 @@ Private caches are scoped to device identity. A 401/403, identity change or expi
 
 This project manages schedules, Taiwan workday data, device registration, synchronization revisions, and device status. In self mode, the self-hosted clock page also runs browser alarms. `/schedules` edits and previews alarms, `/` plays built-in browser tones and shows a red-border alert, and `/admin` separately manages display settings, subscribed calendars, and text reminders. Enrolled schema 3 clocks receive private content from their effective device/group assignments.
 
-The EE04 e-paper desk clock supports standalone daily alarms, battery-backed timekeeping, alarm synchronization and a calendar ticker. See the [firmware guide](../../firmware/ee04-clock/README.md) for compilation, flashing and physical validation.
+The EE04 e-paper desk clock supports standalone daily alarms, battery-backed timekeeping, alarm synchronization and a calendar ticker. See the [firmware guide](../../firmware/ee04-clock/README.md) for compilation, flashing and physical validation. For the 4.2-inch reflective LCD clock, see the [RLCD firmware and screen guide](../../firmware/rlcd-clock/README.md).
 
 See the [ESPHome device guide](../guides/esp-home.md) and [detailed API examples](server-api.md#裝置-api), both in Traditional Chinese, for the current prototype workflow, limitations, and complete response examples.
 
@@ -86,6 +86,8 @@ Text reminders reuse `manual_notes.json` and the existing form routes: POST `/ad
 A stored note may include `targets: {group_ids: [], device_ids: []}`. Each ID list accepts at most 100 entries, deduplicated on save; IDs contain 1–128 ASCII `[A-Za-z0-9_-]` characters. A group or device match is sufficient, subject to current device/group authorization. Targeted reminders are excluded from the server-local calendar source and from the group content assignment catalog. Date, range/daily, weekday and enabled conditions use the management timezone, independently of alarm calculations in `Asia/Taipei`.
 
 `GET /api/v2/device/display` includes matching reminders in the normal `events` list.
+
+On this endpoint and self-mode `GET /api/status`, desk clocks can send `X-WebClock-Event-Kinds: 1` to receive `events[].kind` (`reminder` or `calendar`). Other clients keep the original event format. Reminders with explicit recipients are delivered only to matching device identities. Each desk clock chooses which received categories to display.
 
 Forms reject missing or foreign-owner targets. Version 1 `/api/backup` `notes` retains only regular reminders and `targets`. Full host backups preserve the raw data, and historical restoration still revokes device credentials.
 

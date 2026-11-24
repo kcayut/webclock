@@ -1,0 +1,144 @@
+|-
+  const auto ink = COLOR_ON;
+  const auto paper = COLOR_OFF;
+  it.fill(paper);
+  auto now = id(wall).now();
+  const auto &editor = deskclock::editor;
+  const auto &manual = deskclock::manual;
+  const auto &stop = deskclock::ring_cancel;
+  const auto &prefs = id(display_options);
+  const auto lang = id(ui_language);
+  using deskclock::Text;
+  const auto tr = [&](Text key) { return deskclock::translate(lang, key); };
+  const auto &ticker = id(service_clock).ticker(prefs.reminders, prefs.calendar);
+
+  auto text = [&](int x, int y, const char *s) {
+    it.print(x, y, id(label), ink, TextAlign::TOP_LEFT, s);
+  };
+  auto header = [&](const char *title, const char *period = "") {
+    if (*title) text(12, 5, title);
+    if (*period) text(180, 5, period);
+    const float volts = id(cell_voltage).state;
+    const bool voltage_visible = prefs.battery && std::isfinite(volts) && volts > 0.5f;
+    if (voltage_visible) {
+      it.printf(388, 5, id(label), ink, TextAlign::TOP_RIGHT, "%.2f V", volts);
+    }
+    if (*title || *period || voltage_visible) it.line(12, 37, 387, 37, ink);
+  };
+  auto keys = [&](Text hint) {
+    it.line(12, 258, 387, 258, ink);
+    it.print(200, 278, id(label), ink, TextAlign::CENTER, tr(hint));
+  };
+  auto option = [&](int top, const char *s, bool selected) {
+    if (selected) it.filled_rectangle(12, top, 376, 48, ink);
+    else it.rectangle(12, top, 376, 48, ink);
+    it.print(28, top + 24, id(label), selected ? paper : ink, TextAlign::CENTER_LEFT, s);
+  };
+  auto time_face = [&](int hour, int minute, int center_y = 117) {
+    if (hour < 0) it.print(200, center_y, id(digits), ink, TextAlign::CENTER, "--:--");
+    else it.printf(200, center_y, id(digits), ink, TextAlign::CENTER, "%02d:%02d", hour, minute);
+  };
+  auto ticker_row = [&]() {
+    deskclock::draw_line(it, *id(ticker_atlas), ticker, deskclock::ticker.start, 273, ink, 11, 1);
+  };
+
+  if (id(ringing) || id(service_clock).is_ringing()) {
+    header(tr(Text::AlarmRinging));
+    if (stop.open) {
+      text(16, 53, tr(Text::StopQuestion));
+      option(105, tr(Text::KeepRinging), stop.choice == deskclock::RingCancel::Cancel);
+      option(167, tr(Text::ConfirmStop), stop.choice == deskclock::RingCancel::Confirm);
+      keys(Text::ChooseKeys);
+    } else {
+      time_face(now.is_valid() ? now.hour : -1, now.minute);
+      option(193, tr(Text::StopRing), true);
+      if (!ticker.empty()) { it.line(12, 258, 387, 258, ink); ticker_row(); }
+    }
+    return;
+  }
+  if (deskusb::active()) {
+    header(tr(Text::UsbPair));
+    text(18, 81, tr(Text::UsbConnect));
+    text(18, 132, tr(Text::UsbRun));
+    keys(Text::BackMenu);
+    return;
+  }
+  if (manual.field != deskclock::ManualClock::Idle) {
+    const Text fields[] = {Text::Year, Text::Month, Text::Day, Text::Hour, Text::MinuteTens, Text::MinuteOnes};
+    header(tr(Text::SetTime));
+    time_face(manual.hour, manual.minute);
+    it.printf(16, 185, id(label), ink, TextAlign::TOP_LEFT, "%04d / %02d / %02d", manual.year, manual.month, manual.day);
+    it.printf(16, 218, id(label), ink, TextAlign::TOP_LEFT, "%s  %s", tr(Text::Adjust), tr(fields[manual.field - 1]));
+    keys(Text::AdjustKeys);
+    return;
+  }
+  if (editor.field != deskclock::Editor::Clock) {
+    header(tr(Text::DailyAlarm));
+    const int hour = editor.draft % 1440 / 60, minute = editor.draft % 60;
+    if (editor.field == deskclock::Editor::Enabled && editor.original >= 1440) {
+      it.printf(16, 43, id(label), ink, TextAlign::TOP_LEFT, "%s  %02d:%02d", tr(Text::AlarmTime), hour, minute);
+      option(77, tr(Text::SetAlarmTime), editor.action == deskclock::Editor::EditTime);
+      if (editor.target) {
+        auto when = ESPTime::from_epoch_local(int64_t(editor.target) * 60);
+        const auto s = std::string(tr(editor.target == editor.original_skip ? Text::Resume : Text::SkipNext)) +
+                       "  " + when.strftime("%m/%d %H:%M");
+        option(134, s.c_str(), editor.action == deskclock::Editor::Skip || editor.action == deskclock::Editor::Resume);
+      } else {
+        text(28, 143, tr(now.is_valid() ? Text::SkippedThis : Text::Waiting));
+      }
+      option(191, tr(Text::DisableAlarm), editor.action == deskclock::Editor::Disable);
+      keys(Text::ChooseKeys);
+    } else {
+      const Text fields[] = {Text::AlarmSwitch, Text::Hour, Text::MinuteTens, Text::MinuteOnes};
+      time_face(hour, minute);
+      text(16, 184, tr(editor.draft >= 1440 ? Text::AlarmOn : Text::AlarmOff));
+      it.printf(16, 218, id(label), ink, TextAlign::TOP_LEFT, "%s  %s", tr(Text::Adjust), tr(fields[editor.field - 1]));
+      keys(Text::AdjustKeys);
+    }
+    return;
+  }
+  if (deskclock::menu.active()) {
+    const auto &menu = deskclock::menu;
+    constexpr int rows_per_page = 4;
+    const int page = menu.selected() / rows_per_page;
+    const int count = menu.row_count();
+    if (menu.preferences()) {
+      const auto title = std::string(tr(Text::Display)) + " " + std::to_string(page + 1) + "/" +
+                         std::to_string((count + rows_per_page - 1) / rows_per_page);
+      header(title.c_str());
+    } else header(tr(Text::Menu));
+    for (int slot = 0, i = page * rows_per_page; slot < rows_per_page && i < count; ++slot, ++i)
+      option(44 + slot * 53, menu.row_label(i, prefs, lang).c_str(), i == menu.selected());
+    keys(menu.preferences() ? Text::ChangeKeys : Text::ChooseKeys);
+    return;
+  }
+
+  std::string date;
+  if (prefs.date_style != deskclock::DisplayPrefs::HideDate)
+    date = now.is_valid() ? now.strftime(prefs.date_pattern()) : tr(Text::Waiting);
+  const bool show_period = now.is_valid() && prefs.time_style == deskclock::DisplayPrefs::H12;
+  header(date.c_str(), show_period ? tr(now.hour < 12 ? Text::Am : Text::Pm) : "");
+  if (prefs.time_style != deskclock::DisplayPrefs::HideTime)
+    time_face(now.is_valid() ? prefs.hour(now.hour) : -1, now.minute, id(show_environment) ? 96 : 117);
+  if (id(show_environment)) {
+    char temperature[16] = "--", humidity[16] = "--";
+    if (std::isfinite(id(air_temperature).state))
+      snprintf(temperature, sizeof(temperature), "%.1f", id(air_temperature).state);
+    if (std::isfinite(id(air_humidity).state))
+      snprintf(humidity, sizeof(humidity), "%.0f", id(air_humidity).state);
+    it.printf(200, 171, id(label), ink, TextAlign::CENTER, tr(Text::ClimateFormat), temperature, humidity);
+  }
+  if (prefs.alarms) {
+    it.line(12, 188, 387, 188, ink);
+    const auto &alarm = id(daily_alarm);
+    text(12, 197, tr(Text::DailyAlarm));
+    it.printf(388, 197, id(label), ink, TextAlign::TOP_RIGHT, "%s  %02d:%02d",
+              tr(alarm.value >= 1440 ? Text::Enabled : Text::Disabled), alarm.value % 1440 / 60, alarm.value % 60);
+    if (alarm.base == -2) text(12, 228, tr(Text::RemoteChanged));
+    else if (alarm.value >= 1440 && now.is_valid() && alarm.skip >= now.timestamp / 60) {
+      auto next = ESPTime::from_epoch_local(int64_t(alarm.skip) * 60);
+      it.printf(12, 228, id(label), ink, TextAlign::TOP_LEFT, "%s  %s", tr(Text::Skipped), next.strftime("%m/%d %H:%M").c_str());
+    }
+  }
+  if (ticker.empty()) keys(Text::OpenMenu);
+  else { it.line(12, 258, 387, 258, ink); ticker_row(); }

@@ -98,9 +98,39 @@ int main() {
   assert(nav.active() && nav.item == Menu::Time);
   nav.next(); assert(nav.item == Menu::Alarm);
   nav.next(); assert(nav.item == Menu::Usb);
+  nav.next(); assert(nav.item == Menu::Display);
+  DisplayPrefs prefs;
+  assert(prefs.hour(0) == 0 && prefs.alarms && prefs.reminders && prefs.calendar);
+  static_assert(sizeof(DisplayPrefs) == 6, "Preserve existing display preferences on firmware updates");
+  Language lang{};
+  assert(lang == Language::English && nav.row_label(nav.selected(), prefs, lang) == "Display settings");
+  nav.open_preferences();
+  assert(nav.row_count() == 6 && nav.selected() == 0);
+  assert(nav.row_label(0, prefs, lang) == "Language  English");
+  nav.change(prefs, lang); assert(nav.row_label(0, prefs, lang) == "語言  繁體中文");
+  nav.change(prefs, lang); assert(nav.row_label(0, prefs, lang) == "言語  日本語");
+  nav.change(prefs, lang); assert(lang == Language::English);
+  nav.next();
+  nav.change(prefs, lang);
+  assert(prefs.hour(0) == 12 && prefs.hour(12) == 12 && prefs.hour(13) == 1);
+  nav.change(prefs, lang); assert(prefs.time_style == DisplayPrefs::HideTime);
+  nav.change(prefs, lang); assert(prefs.time_style == DisplayPrefs::H24);
+  nav.next(); nav.change(prefs, lang); assert(prefs.date_style == DisplayPrefs::Short);
+  nav.change(prefs, lang); assert(prefs.date_style == DisplayPrefs::HideDate);
+  nav.next(); nav.change(prefs, lang); assert(!prefs.alarms);
+  nav.next(); nav.change(prefs, lang); assert(!prefs.reminders && prefs.calendar);
+  nav.next(); nav.change(prefs, lang); assert(!prefs.calendar);
+  nav.next(); assert(nav.selected() == 0);
+  bool environment = false;
+  nav.environment = &environment;
+  assert(nav.row_count() == 8);
+  for (int i = 0; i < 6; ++i) nav.next();
+  nav.change(prefs, lang); assert(!prefs.battery);
+  nav.next(); assert(nav.row_label(nav.selected(), prefs, Language::TraditionalChinese) == "溫濕度  隱藏");
+  nav.change(prefs, lang); assert(environment);
+  nav.back(); assert(!nav.preferences() && nav.item == Menu::Display);
   nav.next(); assert(nav.item == Menu::Time);
-  nav.close();
-  assert(!nav.active());
+  nav.back(); assert(!nav.active());
 
   RingCancel ring;
   assert(!ring.open && ring.choice == RingCancel::Cancel);
@@ -112,6 +142,24 @@ int main() {
 
   assert(line_width("跳過下一次 11/23 07:30") < 560);
   assert(line_width("恢復響鈴 11/23 07:30") < 560);
+  // Both panels use the same 14x16 atlas, at native or double pixel size.
+  struct Atlas {
+    struct Pixel { bool is_on() const { return true; } };
+    Pixel get_pixel(int, int) const { return {}; }
+  } atlas;
+  struct Screen {
+    int scale, pixels = 0;
+    void filled_rectangle(int x, int y, int w, int h, int) {
+      assert(w == scale && h == scale);
+      assert(x >= 0 && x + w <= scale * 28 && y >= 0 && y + h <= scale * 16);
+      pixels += w * h;
+    }
+  };
+  for (int scale : {1, 2}) {
+    Screen screen{scale};
+    draw_line(screen, atlas, "鬧鐘", 0, 0, 1, 0, scale);
+    assert(screen.pixels == 2 * 14 * 16 * scale * scale);
+  }
   assert(line_width("選單") == 2 * 28);
   assert(line_width("USB 配對") == 6 * 28);
 }

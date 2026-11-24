@@ -181,7 +181,7 @@ def read_legacy_schedules(directory):
         private_ids = {row['item_id'] for row in read_control_requests(directory).values()
                        if row['kind'] == 'schedules'}
         # Keep program IDs private even if their receipt file is removed.
-        return [row for row in read_schedules(directory) if row['id'] not in private_ids
+        return [row for row in read_schedules(directory) if 'targets' not in row and row['id'] not in private_ids
                 and not re.fullmatch(r'ctl_[0-9a-f]{48}', row['id'])]
 
 

@@ -3,7 +3,10 @@ esphome:
   min_version: 2026.9.1
   includes:
     - ${core_src}/local_alarm.h
+    - ${core_src}/ui_language.h
     - ${core_src}/menu.h
+    # ESPHome declares restored globals before its local header includes.
+    - <menu.h>
     - ${core_src}/rtc.h
     - ${core_src}/usb_profile.h
     - <esp_pm.h>
@@ -31,8 +34,6 @@ esphome:
             pm.min_freq_mhz = ${min_cpu};
             pm.light_sleep_enable = true;
             if (esp_pm_configure(&pm) != ESP_OK) ESP_LOGW("clock", "Light sleep unavailable");
-            if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "piezo", &id(audio_lock)) != ESP_OK)
-              ESP_LOGW("clock", "Audio sleep lock unavailable");
 
 wifi:
   power_save_mode: LIGHT
@@ -78,6 +79,8 @@ time:
       - script.execute: write_rtc
 
 globals:
+  - {id: ui_language, type: deskclock::Language, restore_value: yes, initial_value: 'deskclock::Language::English'}
+  - {id: display_options, type: deskclock::DisplayPrefs, restore_value: yes}
   - {id: alarm_value, type: int, restore_value: yes, initial_value: '420'}
   - {id: daily, type: webclock::LegacyDeskAlarm, restore_value: yes}
   - {id: daily_alarm, type: webclock::DeskAlarm, restore_value: yes}
@@ -86,13 +89,8 @@ globals:
   - {id: ring_start, type: uint32_t}
   - {id: ringing, type: bool}
   - {id: dirty, type: bool, initial_value: 'true'}
-  - {id: audio_lock, type: esp_pm_lock_handle_t, initial_value: 'nullptr'}
 
 output:
-  - platform: ledc
-    id: piezo
-    pin: ${piezo_pin}
-    frequency: 4000Hz
   - platform: template
     id: service_audio
     type: float
@@ -128,19 +126,6 @@ script:
           uint8_t data[]{bcd(t.second), bcd(t.minute), bcd(t.hour), bcd(t.day_of_month),
                          uint8_t(t.day_of_week - 1), bcd(t.month), bcd(t.year - 2000)};
           if (!id(rtc).write_bytes(0x04, data, sizeof(data))) ESP_LOGW("clock", "RTC write failed");
-
-  - id: mix_audio
-    then:
-      - lambda: |-
-          const bool beep = id(ringing) && (millis() - id(ring_start)) % 1000 < 500;
-          const float level = std::max(beep ? 0.25f : 0.0f, id(remote_level));
-          static bool locked = false;
-          if (id(audio_lock) && (level > 0) != locked) {
-            if (level > 0) esp_pm_lock_acquire(id(audio_lock));
-            else esp_pm_lock_release(id(audio_lock));
-            locked = level > 0;
-          }
-          id(piezo).set_level(level);
 
 binary_sensor:
   - platform: gpio
@@ -207,6 +192,8 @@ binary_sensor:
               id(daily_alarm).save(value, skip);
               deskclock::menu.close();
             }
+          } else if (deskclock::menu.preferences()) {
+            deskclock::menu.change(id(display_options), id(ui_language));
           } else if (deskclock::menu.active()) {
             switch (deskclock::menu.item) {
               case deskclock::Menu::Time:
@@ -223,6 +210,9 @@ binary_sensor:
                 id(wifi_setup).disable_loop();
                 deskusb::deadline = millis() + 300000;
                 id(poll_pairing_usb).execute();
+                break;
+              case deskclock::Menu::Display:
+                deskclock::menu.open_preferences();
                 break;
               default:
                 break;
@@ -256,7 +246,7 @@ binary_sensor:
             deskclock::editor.cancel();
             id(dirty) = true;
           } else if (deskclock::menu.active()) {
-            deskclock::menu.close();
+            deskclock::menu.back();
             id(dirty) = true;
           }
       - script.execute: mix_audio
@@ -289,6 +279,7 @@ interval:
           static bool previous_service_ring = false;
           if (previous_service_ring != id(service_clock).is_ringing()) {
             previous_service_ring = id(service_clock).is_ringing();
+            id(mix_audio).execute();
             deskclock::ring_cancel.reset();
             id(dirty) = true;
           }

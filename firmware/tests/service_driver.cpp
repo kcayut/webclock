@@ -24,9 +24,15 @@ int main() {
   JsonDocument output;
   if (input["display"].is<JsonObjectConst>()) {
     JsonDocument display(input["display"]);
-    std::string line;
-    output["ttl"] = calendar_line(display, input["scoped"].as<bool>(), line);
-    output["line"] = line;
+    DeskTicker ticker;
+    const bool scoped = input["scoped"].as<bool>();
+    if (input["previous_display"].is<JsonObjectConst>())
+      ticker_lines(JsonDocument(input["previous_display"]), scoped, ticker);
+    output["ttl"] = ticker_lines(display, scoped, ticker);
+    output["line"] = ticker.line(true, true);
+    output["reminders"] = ticker.line(true, false);
+    output["calendar"] = ticker.line(false, true);
+    output["disabled"] = ticker.line(false, false);
   } else {
     DeskAlarm alarm;
     alarm.value = input["value"];

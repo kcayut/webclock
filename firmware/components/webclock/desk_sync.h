@@ -150,10 +150,26 @@ bool sync_daily(DeskAck &ack, const std::string &device, std::string &item_id, i
   return true;
 }
 
+struct DeskTicker {
+  std::string all, reminders, calendar;
+
+  const std::string &line(bool show_reminders, bool show_calendar) const {
+    if (show_reminders && show_calendar) return all;
+    if (show_reminders) return reminders;
+    if (show_calendar) return calendar;
+    static const std::string empty;
+    return empty;
+  }
+
+  bool operator==(const DeskTicker &other) const {
+    return all == other.all && reminders == other.reminders && calendar == other.calendar;
+  }
+};
+
 // Milliseconds from the start of the request, including transport and queue latency.
-inline uint32_t calendar_line(const JsonDocument &doc, bool scoped, std::string &line) {
+inline uint32_t ticker_lines(const JsonDocument &doc, bool scoped, DeskTicker &ticker) {
   uint32_t duration = 60000;
-  line.clear();
+  ticker = {};
   if (doc.overflowed() || !doc["events"].is<JsonArrayConst>()) return 0;
   if (scoped) {
     const auto issued = doc["lease"]["issued_at"], expires = doc["lease"]["expires_at"];
@@ -162,6 +178,16 @@ inline uint32_t calendar_line(const JsonDocument &doc, bool scoped, std::string 
         !expires.is<int64_t>() || issued.as<int64_t>() != stamp || expires.as<int64_t>() <= stamp) return 0;
     duration = std::min<int64_t>(duration, expires.as<int64_t>() - stamp);
   }
+  bool all_truncated = false, reminders_truncated = false, calendar_truncated = false;
+  auto append = [](std::string &line, const std::string &entry, bool &truncated) {
+    if (truncated) return;
+    if (line.size() + entry.size() + 3 > 8192) {
+      truncated = true;
+      return;
+    }
+    if (!line.empty()) line += " / ";
+    line += entry;
+  };
   for (JsonObjectConst event : doc["events"].as<JsonArrayConst>()) {
     if (!event["text"].is<const char *>()) continue;
     std::string entry = event["text"].as<std::string>();
@@ -173,9 +199,11 @@ inline uint32_t calendar_line(const JsonDocument &doc, bool scoped, std::string 
       while ((uint8_t(entry[end]) & 0xc0) == 0x80) --end;
       entry.resize(end);
     }
-    if (line.size() + entry.size() + 3 > 8192) break;
-    if (!line.empty()) line += " / ";
-    line += entry;
+    append(ticker.all, entry, all_truncated);
+    // Older servers omit the kind. Keep those entries in the combined view.
+    if (event["kind"] == "reminder") append(ticker.reminders, entry, reminders_truncated);
+    else if (event["kind"] == "calendar") append(ticker.calendar, entry, calendar_truncated);
+    if (all_truncated && reminders_truncated && calendar_truncated) break;
   }
   return duration;
 }

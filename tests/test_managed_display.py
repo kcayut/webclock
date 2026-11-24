@@ -109,6 +109,13 @@ class ManagedDisplayTest(unittest.TestCase):
         self.assertEqual([event['text'] for event in self.get(client_a).json['events']], ['group-target'])
         self.assertEqual([event['text'] for event in self.get(client_b).json['events']], ['device-target'])
         self.assertNotIn('announcements', self.get(client_a).json)
+        legacy = self.get(client_b)
+        typed = self.get(client_b, headers={'X-WebClock-Event-Kinds': '1',
+                                            'If-None-Match': legacy.headers['ETag']})
+        self.assertEqual(typed.status_code, 200)
+        self.assertIn('X-WebClock-Event-Kinds', typed.vary)
+        self.assertEqual(typed.json['events'], [dict(text='device-target', time='', kind='reminder')])
+        self.assertNotEqual(legacy.headers['ETag'], typed.headers['ETag'])
 
     def test_targeted_alarms_are_delivered_only_to_matching_devices(self):
         group_a = self.group('A')

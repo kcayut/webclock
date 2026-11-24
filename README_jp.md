@@ -51,7 +51,7 @@ Linux／Docker の既定はログイン不要の self モードです。信頼�
 - [端末の表示設定](doc/guides/display-devices.md)：ホーム画面、全画面表示、スリープ防止。初代 iPad mini／iOS 9 を含みます。
 - [日本語ガイド](doc/guides/guide_jp.md)：カレンダー、アラーム、グループ、バックアップ。
 - [更新と復元](doc/operations/update-operations.md) · [HTTPS とアカウント管理](doc/operations/accounts-and-https.md)。
-- [端末 API](doc/api/server-api_jp.md) · [EE04 電子ペーパー時計ファームウェア](firmware/ee04-clock/README.md) · [リリースと実機検証](doc/ha-release.md)。
+- [端末 API](doc/api/server-api_jp.md) · [EE04 電子ペーパー時計ファームウェア](firmware/ee04-clock/README.md) · [RLCD 反射型液晶時計ファームウェア](firmware/rlcd-clock/README.md) · [リリースと実機検証](doc/ha-release.md)。
 
 インストール・保守・ハードウェアの文書は繁体字中国語です。
 

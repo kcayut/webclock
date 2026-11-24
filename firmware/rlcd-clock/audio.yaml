@@ -1,0 +1,54 @@
+esphome:
+  includes:
+    - alarm_wav.h
+    - alarm_audio.h
+
+esp32:
+  framework:
+    advanced:
+      include_builtin_idf_components: [fatfs, esp_driver_sdmmc]
+
+i2s_audio:
+  - id: rlcd_alarm_i2s
+    i2s_bclk_pin: GPIO9
+    i2s_mclk_pin: GPIO16
+    i2s_lrclk_pin: GPIO45
+
+audio_dac:
+  - platform: es8311
+    id: rlcd_alarm_dac
+    address: 0x18
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    use_mclk: true
+
+speaker:
+  - platform: i2s_audio
+    id: rlcd_alarm_speaker
+    i2s_audio_id: rlcd_alarm_i2s
+    i2s_dout_pin: GPIO8
+    dac_type: external
+    audio_dac: rlcd_alarm_dac
+    channel: left
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    buffer_duration: 120ms
+
+switch:
+  - platform: gpio
+    id: rlcd_alarm_amp
+    pin: GPIO46
+    internal: true
+    restore_mode: ALWAYS_OFF
+
+script:
+  - id: mix_audio
+    mode: restart
+    then:
+      - while:
+          condition:
+            lambda: |-
+              const float level = std::max(id(ringing) ? 0.25f : 0.0f, id(service_clock).ring_volume());
+              return rlcd_audio::alarm.update(level, millis(), *id(rlcd_alarm_speaker), *id(rlcd_alarm_amp));
+          then:
+            - delay: 20ms

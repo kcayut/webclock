@@ -1,109 +1,128 @@
 |-
-  it.fill(Color::WHITE);
+  const auto ink = ${face_ink};
+  const auto paper = ${face_paper};
+  it.fill(paper);
+  // Layout uses 800 x 480 design coordinates; fonts and bitmap cells match the panel width.
+  const int width = it.get_width(), height = it.get_height();
+  auto x = [width](int n) { return n * width / 800; };
+  auto y = [height](int n) { return n * height / 480; };
+  const int cell_scale = width / 400;
   const auto now = id(wall).now();
+  const auto &prefs = id(display_options);
+  const auto lang = id(ui_language);
+  using deskclock::Text;
+  const auto tr = [&](Text key) { return deskclock::translate(lang, key); };
+  const auto &ticker = id(service_clock).ticker(prefs.reminders, prefs.calendar);
   const auto field = deskclock::editor.field;
   const bool sounding = id(ringing) || id(service_clock).is_ringing();
   const bool edit = !sounding && field != deskclock::Editor::Clock;
   const int alarm = edit ? deskclock::editor.draft : id(daily_alarm).value;
   const int hh = alarm % 1440 / 60, mm = alarm % 60;
-  const auto ink = Color::BLACK;
-  auto button = [&](int x, int y, int w, const char *text, bool selected) {
-    if (selected) {
-      it.filled_rectangle(x, y, w, 40, ink);
-      deskclock::draw_line(it, *id(ticker_atlas), text, 0, y + 4, Color::WHITE,
-                           x + (w - deskclock::line_width(text)) / 2);
-    } else {
-      it.rectangle(x, y, w, 40, ink);
-      deskclock::draw_line(it, *id(ticker_atlas), text, 0, y + 4, ink,
-                           x + (w - deskclock::line_width(text)) / 2);
-    }
+  auto hint = [&](Text key) {
+    it.print(x(400), y(444), id(label), ink, TextAlign::CENTER, tr(key));
+  };
+  auto button = [&](int left, int top, int w, const char *text, bool selected) {
+    if (selected) it.filled_rectangle(x(left), y(top), x(w), y(48), ink);
+    else it.rectangle(x(left), y(top), x(w), y(48), ink);
+    it.print(x(left + w / 2), y(top + 24), id(label_small), selected ? paper : ink, TextAlign::CENTER, text);
   };
   if (deskusb::active() && !sounding) {
-    deskclock::draw_line(it, *id(ticker_atlas), "USB 配對", 0, 95, ink);
-    deskclock::draw_line(it, *id(ticker_atlas), "電腦執行配對工具", 0, 190, ink);
-    deskclock::draw_line(it, *id(ticker_atlas), "按 × 返回選單", 0, 335, ink);
+    it.print(x(400), y(95), id(label), ink, TextAlign::CENTER, tr(Text::UsbPair));
+    it.print(x(400), y(190), id(label_small), ink, TextAlign::CENTER, tr(Text::UsbConnect));
+    it.print(x(400), y(245), id(label_small), ink, TextAlign::CENTER, tr(Text::UsbRun));
+    hint(Text::BackMenu);
     return;
   }
   if (!sounding && deskclock::manual.field != deskclock::ManualClock::Idle) {
     const auto &c = deskclock::manual;
-    const char *names[] = {"", "年份", "月份", "日期", "小時", "分鐘十位", "分鐘個位"};
-    deskclock::draw_line(it, *id(ticker_atlas), std::string("設定時間 / ") + names[c.field], 0, 60, ink);
-    it.printf(400, 110, id(label), ink, TextAlign::CENTER, "%04d / %02d / %02d", c.year,c.month,c.day);
-    it.printf(400, 265, id(digits), ink, TextAlign::CENTER, "%02d:%02d", c.hour,c.minute);
-    it.print(400, 444, id(label), ink, TextAlign::CENTER, "＋ 選擇   ● 確定   × 取消");
+    const Text fields[] = {Text::Year, Text::Month, Text::Day, Text::Hour, Text::MinuteTens, Text::MinuteOnes};
+    it.printf(x(400), y(42), id(label_small), ink, TextAlign::CENTER, "%s / %s",
+              tr(Text::SetTime), tr(fields[c.field - 1]));
+    it.printf(x(400), y(110), id(label), ink, TextAlign::CENTER, "%04d / %02d / %02d", c.year, c.month, c.day);
+    it.printf(x(400), y(265), id(digits), ink, TextAlign::CENTER, "%02d:%02d", c.hour, c.minute);
+    hint(Text::AdjustKeys);
     return;
   }
   if (!sounding && !edit && deskclock::menu.active()) {
-    deskclock::draw_line(it, *id(ticker_atlas), "選單", 0, 45, ink,
-                         (800 - deskclock::line_width("選單")) / 2);
-    it.line(130, 100, 670, 100, ink);
-    const char *items[] = {"設定時間", "每日鬧鐘", "USB 配對"};
-    for (int i = 0; i < 3; ++i) {
-      const int y = 150 + i * 80;
-      if (i == int(deskclock::menu.item))
-        deskclock::draw_line(it, *id(ticker_atlas), ">", 0, y, ink, 300);
-      deskclock::draw_line(it, *id(ticker_atlas), items[i], 0, y, ink, 340);
+    const auto &menu = deskclock::menu;
+    constexpr int rows_per_page = 4;
+    const int page = menu.selected() / rows_per_page;
+    const int count = menu.row_count();
+    if (menu.preferences())
+      it.printf(x(400), y(60), id(label), ink, TextAlign::CENTER, "%s %d/%d",
+                tr(Text::Display), page + 1, (count + rows_per_page - 1) / rows_per_page);
+    else it.print(x(400), y(60), id(label), ink, TextAlign::CENTER, tr(Text::Menu));
+    it.line(x(130), y(100), x(670), y(100), ink);
+    for (int slot = 0, i = page * rows_per_page; slot < rows_per_page && i < count; ++slot, ++i) {
+      const int row = 146 + slot * 65;
+      if (i == menu.selected())
+        it.print(x(205), y(row), id(label), ink, TextAlign::CENTER_LEFT, ">");
+      it.print(x(245), y(row), id(label), ink, TextAlign::CENTER_LEFT, menu.row_label(i, prefs, lang).c_str());
     }
-    const std::string hint = "＋ 選擇   ● 確定   × 返回";
-    deskclock::draw_line(it, *id(ticker_atlas), hint, 0, 430, ink,
-                         (800 - deskclock::line_width(hint)) / 2);
+    hint(menu.preferences() ? Text::ChangeKeys : Text::ChooseKeys);
     return;
   }
   const auto &editor = deskclock::editor;
   if (edit && field == deskclock::Editor::Enabled && editor.original >= 1440) {
-    it.printf(400, 65, id(label), ink, TextAlign::CENTER, "鬧鐘  %02d:%02d", hh, mm);
-    button(120, 145, 560, "設定鬧鐘時間", editor.action == deskclock::Editor::EditTime);
+    it.printf(x(400), y(65), id(label), ink, TextAlign::CENTER, "%s  %02d:%02d", tr(Text::Alarm), hh, mm);
+    button(120, 145, 560, tr(Text::SetAlarmTime), editor.action == deskclock::Editor::EditTime);
     if (editor.target) {
       auto when = ESPTime::from_epoch_local(int64_t(editor.target) * 60);
-      const auto text = std::string(editor.target == editor.original_skip ? "恢復響鈴 " : "跳過下一次 ") +
-                        when.strftime("%m/%d %H:%M");
+      const auto text = std::string(tr(editor.target == editor.original_skip ? Text::Resume : Text::SkipNext)) +
+                        "  " + when.strftime("%m/%d %H:%M");
       button(120, 220, 560, text.c_str(), editor.action == deskclock::Editor::Skip || editor.action == deskclock::Editor::Resume);
     } else {
-      deskclock::draw_line(it, *id(ticker_atlas), now.is_valid() ? "本次已跳過" : "等待校時", 0, 224, ink, 260);
+      it.print(x(400), y(244), id(label_small), ink, TextAlign::CENTER, tr(now.is_valid() ? Text::SkippedThis : Text::Waiting));
     }
-    button(120, 295, 560, "取消鬧鈴", editor.action == deskclock::Editor::Disable);
-    it.print(400, 444, id(label), ink, TextAlign::CENTER, "＋ 選擇   ● 確定   × 取消");
+    button(120, 295, 560, tr(Text::DisableAlarm), editor.action == deskclock::Editor::Disable);
+    hint(Text::ChooseKeys);
     return;
   }
   if (edit) {
-    const char *fields[] = {"", "鬧鐘開關", "小時", "分鐘十位", "分鐘個位"};
-    it.print(400, 42, id(label), ink, TextAlign::CENTER, fields[field]);
-  } else if (now.is_valid()) {
-    it.strftime(400, 42, id(label), ink, TextAlign::CENTER, "%Y / %m / %d", now);
-  } else {
-    it.print(400, 42, id(label), ink, TextAlign::CENTER, "等待校時");
+    const Text fields[] = {Text::AlarmSwitch, Text::Hour, Text::MinuteTens, Text::MinuteOnes};
+    it.print(x(400), y(42), id(label), ink, TextAlign::CENTER, tr(fields[field - 1]));
+  } else if (sounding || prefs.date_style != deskclock::DisplayPrefs::HideDate) {
+    if (now.is_valid()) it.strftime(x(400), y(42), id(label), ink, TextAlign::CENTER,
+                                    sounding ? "%Y / %m / %d" : prefs.date_pattern(), now);
+    else it.print(x(400), y(42), id(label), ink, TextAlign::CENTER, tr(Text::Waiting));
   }
-  if (edit || now.is_valid())
-    it.printf(400, 212, id(digits), ink, TextAlign::CENTER, "%02d:%02d",
-              edit ? hh : int(now.hour), edit ? mm : int(now.minute));
-  else it.print(400, 212, id(digits), ink, TextAlign::CENTER, "--:--");
-  it.line(130, 335, 670, 335, ink);
+  if (sounding)
+    it.print(x(400), y(93), id(label_small), ink, TextAlign::CENTER,
+             tr(deskclock::ring_cancel.open ? Text::StopQuestion : Text::AlarmRinging));
+  const float volts = ${battery_voltage};
+  if (!edit && !sounding && prefs.battery && std::isfinite(volts) && volts > 0.5f)
+    it.printf(x(780), y(24), id(label_small), ink, TextAlign::TOP_RIGHT, "%.2f V", volts);
+  if (edit || sounding || prefs.time_style != deskclock::DisplayPrefs::HideTime) {
+    if (!edit && !sounding && now.is_valid() && prefs.time_style == deskclock::DisplayPrefs::H12)
+      it.print(x(400), y(90), id(label), ink, TextAlign::CENTER, tr(now.hour < 12 ? Text::Am : Text::Pm));
+    const int hour = sounding ? now.hour : prefs.hour(now.hour);
+    if (edit || now.is_valid())
+      it.printf(x(400), y(212), id(digits), ink, TextAlign::CENTER, "%02d:%02d",
+                edit ? hh : hour, edit ? mm : int(now.minute));
+    else it.print(x(400), y(212), id(digits), ink, TextAlign::CENTER, "--:--");
+  }
+  if (edit || sounding || prefs.alarms) it.line(x(130), y(335), x(670), y(335), ink);
   if (sounding) {
-    deskclock::draw_line(it, *id(ticker_atlas), "鬧鐘響鈴", 0, 360, ink);
     if (!deskclock::ring_cancel.open) {
-      button(300, 355, 200, "取消響鈴", true);
+      button(270, 355, 260, tr(Text::StopRing), true);
     } else {
-      button(270, 355, 120, "取消", deskclock::ring_cancel.choice == deskclock::RingCancel::Cancel);
-      button(410, 355, 120, "確認", deskclock::ring_cancel.choice == deskclock::RingCancel::Confirm);
+      button(90, 355, 300, tr(Text::KeepRinging), deskclock::ring_cancel.choice == deskclock::RingCancel::Cancel);
+      button(410, 355, 300, tr(Text::ConfirmStop), deskclock::ring_cancel.choice == deskclock::RingCancel::Confirm);
     }
-  } else if (!edit && id(daily_alarm).base == -2) {
-    deskclock::draw_line(it, *id(ticker_atlas), "遠端已刪除或變更規則 / 本機已停用", 0, 360, ink);
-  } else if (!edit && alarm >= 1440 && now.is_valid() && id(daily_alarm).skip >= now.timestamp / 60) {
-    auto when = ESPTime::from_epoch_local(int64_t(id(daily_alarm).skip) * 60);
-    const auto text = std::string("已跳過 ") + when.strftime("%m/%d %H:%M");
-    deskclock::draw_line(it, *id(ticker_atlas), text, 0, 355, ink, (800 - deskclock::line_width(text)) / 2);
-  } else {
-    it.printf(400, 372, id(label), ink, TextAlign::CENTER, "鬧鐘%s  %02d:%02d",
-              alarm >= 1440 ? "已啟用" : "已停用", hh, mm);
+  } else if (edit || prefs.alarms) {
+    if (!edit && id(daily_alarm).base == -2) {
+      it.printf(x(400), y(372), id(label_small), ink, TextAlign::CENTER, "%s / %s",
+                tr(Text::RemoteChanged), tr(Text::AlarmOff));
+    } else if (!edit && alarm >= 1440 && now.is_valid() && id(daily_alarm).skip >= now.timestamp / 60) {
+      auto when = ESPTime::from_epoch_local(int64_t(id(daily_alarm).skip) * 60);
+      it.printf(x(400), y(372), id(label_small), ink, TextAlign::CENTER, "%s  %s",
+                tr(Text::Skipped), when.strftime("%m/%d %H:%M").c_str());
+    } else {
+      it.printf(x(400), y(372), id(label), ink, TextAlign::CENTER, "%s  %02d:%02d",
+                tr(alarm >= 1440 ? Text::AlarmOn : Text::AlarmOff), hh, mm);
+    }
   }
-  if (sounding) {
-    if (!id(service_clock).ticker().empty())
-      deskclock::draw_line(it, *id(ticker_atlas), id(service_clock).ticker(), deskclock::ticker.start, 430, ink);
-    return;
-  }
-  if (edit) it.print(400, 444, id(label), ink, TextAlign::CENTER, "＋ 選擇   ● 確定   × 取消");
-  else if (id(service_clock).ticker().empty()) {
-    const std::string hint = "● 進入選單";
-    deskclock::draw_line(it, *id(ticker_atlas), hint, 0, 430, ink,
-                         (800 - deskclock::line_width(hint)) / 2);
-  } else deskclock::draw_line(it, *id(ticker_atlas), id(service_clock).ticker(), deskclock::ticker.start, 430, ink);
+  if (edit) hint(Text::AdjustKeys);
+  else if (!ticker.empty())
+    deskclock::draw_line(it, *id(ticker_atlas), ticker, deskclock::ticker.start, y(430), ink, x(22), cell_scale);
+  else if (!sounding) hint(Text::OpenMenu);

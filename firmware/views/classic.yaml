@@ -1,3 +1,12 @@
+substitutions:
+  digit_size: "280"
+  label_size: "38"
+  label_file: "${view_src}/fonts/NotoSansTC-clock.ttf"
+  label_glyphs: ' %()-./0123456789:>?ABCDEHKLMOPRSTUVWYabcdefghijklmnoprstuvwxy°×●かくけしすせちでにのはまみめらるわをアイオカキグケコサスソダッツニバパフブプペマムメュラリルレン・ー一上下中事今付份位個停入具分切刪刻則削前効動十午取合啟單回圧在執壓変字定実對小工已年度待後復恢態或戻択接提換擇整文料日時曆更替月有期本校次止毎每池決消済温湿溫濕無状狀用確示端等続線繁繼續腦藏行表規解言設認語調變資跳返這連進過遠選配醒鈴鐘開間關除隱電非響顯體鬧鳴（）＋／？'
+  face_ink: "Color::BLACK"
+  face_paper: "Color::WHITE"
+  battery_voltage: "NAN"
+
 esphome:
   includes:
     - ${view_src}/ticker.h
@@ -5,8 +14,8 @@ image:
   - {platform: file, file: "${view_src}/fonts/ticker.png", id: ticker_atlas, type: BINARY}
 
 font:
-  - {file: "${view_src}/fonts/Barlow-Bold.ttf", id: digits, size: 280, glyphs: '0123456789:-'}
-  - {file: "${view_src}/fonts/NotoSansTC-clock.ttf", id: label, size: 38, glyphs: ' 0123456789:-/＋●×鬧鐘開關小時分十位個等待校已啟用停按取消選擇確定響鈴'}
+  - {file: "${view_src}/fonts/Barlow-Bold.ttf", id: digits, size: "${digit_size}", glyphs: '0123456789:-'}
+  - {file: "${label_file}", id: label, size: "${label_size}", glyphs: "${label_glyphs}"}
 
 interval:
   - interval: 250ms
@@ -14,7 +23,8 @@ interval:
       - lambda: |-
           const auto now = id(wall).now();
           const int minute = now.is_valid() ? now.hour * 60 + now.minute : -1;
-          const auto &text = id(service_clock).ticker();
+          const auto &prefs = id(display_options);
+          const auto &text = id(service_clock).ticker(prefs.reminders, prefs.calendar);
           static std::string previous_text;
           static int previous_minute = -2;
           if (previous_text != text) {

@@ -165,17 +165,50 @@ class DeskServiceTest(unittest.TestCase):
 
     def test_ticker_on_public_display(self):
         api = self.fixture(control.ControlApiTest)
-        events = [{"text": "晨間會議", "time": "08:30", "all_day": False, "starts_at": 1795305600000},
-                  {"text": "紀念日", "time": "", "all_day": True, "starts_at": 1795305600000}]
-        with patch.object(clock, "calendar_display_events", return_value=events):
-            payload = api.program.get("/api/status").json
+        now = datetime.fromisoformat("2026-10-05T08:00:00+08:00")
+        events = [{"text": "晨間會議", "time": "08:30", "all_day": False,
+                   "starts_at": int((now + timedelta(minutes=30)).timestamp() * 1000)},
+                  {"text": "紀念日", "time": "", "all_day": True, "starts_at": int(now.timestamp() * 1000)}]
+        clock.save_json(api.root / "notes.json", [dict(id=1, text="繳費", due_date="2026-10-05 09:00")])
+        with patch.object(clock, "calendar_display_events", return_value=events), patch.object(clock, "get_local_now", return_value=now):
+            payload = api.program.get("/api/status", headers={"X-WebClock-Event-Kinds": "1"}).json
+            legacy = api.program.get("/api/status").json
         data = self.firmware({"display": payload})
-        self.assertEqual(data, {"ttl": 60000, "line": "08:30 晨間會議 / 紀念日"})
+        combined = "08:30 晨間會議 / 09:00 繳費 / 紀念日"
+        self.assertEqual(data, dict(ttl=60000, line=combined, reminders="09:00 繳費",
+                                    calendar="08:30 晨間會議 / 紀念日", disabled=""))
+        self.assertEqual(self.firmware({"display": legacy}),
+                         dict(ttl=60000, line=combined, reminders="", calendar="", disabled=""))
         self.assertEqual(self.firmware({"display": payload, "scoped": True})["line"], "")
+
+    def test_ticker_byte_limit_and_replacement(self):
+        texts = ["a" * 2048, "b" * 2048, "c" * 2048, "d" * 2039]
+        events = [dict(kind=kind, text=value) for kind, value in zip(("reminder", "calendar") * 2, texts)]
+        payload = {"events": events + [dict(kind="calendar", text="trailing")]}
+        data = self.firmware({"display": payload})
+        self.assertEqual(len(data["line"].encode()), 8192)
+        self.assertEqual(data["line"], " / ".join(texts))
+        self.assertEqual(data["calendar"], " / ".join(texts[1::2] + ["trailing"]))
+        self.assertEqual(data["reminders"], " / ".join(texts[::2]))
+
+        prefix = "a" * 2047
+        changed = {"events": [dict(kind="calendar", text=prefix + "界")]}
+        self.assertEqual(self.firmware({"display": changed, "previous_display": payload}),
+                         dict(ttl=60000, line=prefix, reminders="", calendar=prefix, disabled=""))
+
+    def test_ticker_reminders_survive_calendar_filling_combined_view(self):
+        calendar = ["a" * 2048, "b" * 2048, "c" * 2048, "d" * 2039]
+        events = [dict(kind="calendar", text=value) for value in calendar]
+        events += [dict(kind="reminder", text="繳費"), dict(kind="calendar", text="溢出的行事曆項目"),
+                   dict(kind="reminder", text="充電")]
+        data = self.firmware({"display": {"events": events}})
+        self.assertEqual(data["line"], " / ".join(calendar))
+        self.assertEqual(data["calendar"], data["line"])
+        self.assertEqual(data["reminders"], "繳費 / 充電")
 
     def test_ticker_on_paired_display(self):
         server = self.fixture(managed.ManagedDisplayTest)
-        group = server.group("Desk")
+        group = server.group("Desk", content={"calendar_source_ids": ["a"]})
         _, identity = server.device(group)
         paired = clock.app.test_client()
         invite = server.service().create_invite(server.owner, group["id"])
@@ -190,16 +223,27 @@ class DeskServiceTest(unittest.TestCase):
             dict(id=1, text="只給桌鐘群組", due_date="", targets={"group_ids": [group["id"]], "device_ids": []}),
             dict(id=2, text="別台的內容", due_date="", targets={"group_ids": [], "device_ids": [identity["device_id"]]}),
         ])
-        response = paired.get("/api/v2/device/display", base_url="https://localhost",
-                              headers={"Authorization": "Bearer " + attempt["token"]})
+        headers = {"Authorization": "Bearer " + attempt["token"], "X-WebClock-Event-Kinds": "1"}
+        event = dict(source_id="a", uid="desk-calendar", text="群組行事曆", all_day=True,
+                     starts_at=int(server.instant.timestamp() * 1000))
+        events = [event, dict(event, source_id="b", text="別組行事曆")]
+        with patch.object(clock, "get_calendar_events", return_value=events):
+            response = paired.get("/api/v2/device/display", base_url="https://localhost", headers=headers)
         self.assertEqual(response.status_code, 200, response.json)
         payload = response.json
         self.assertEqual(self.firmware({"display": payload, "scoped": True}),
-                         {"ttl": 60000, "line": "只給桌鐘群組"})
-        payload["lease"]["expires_at"] = payload["server_timestamp"] + 500
-        self.assertEqual(self.firmware({"display": payload, "scoped": True})["ttl"], 500)
-        payload["lease"]["expires_at"] -= 500
-        self.assertEqual(self.firmware({"display": payload, "scoped": True}), {"ttl": 0, "line": ""})
+                         dict(ttl=60000, line="群組行事曆 / 只給桌鐘群組", reminders="只給桌鐘群組",
+                              calendar="群組行事曆", disabled=""))
+        stamp = payload["server_timestamp"]
+        short = dict(payload, lease=dict(issued_at=stamp, expires_at=stamp + 500))
+        self.assertEqual(self.firmware({"display": short, "scoped": True})["ttl"], 500)
+        empty = dict(ttl=0, line="", reminders="", calendar="", disabled="")
+        expired = dict(payload, lease=dict(issued_at=stamp, expires_at=stamp))
+        self.assertEqual(self.firmware({"display": expired, "previous_display": payload, "scoped": True}), empty)
+        server.service().revoke(server.owner, joined.json["identity"]["device_id"])
+        response = paired.get("/api/v2/device/display", base_url="https://localhost", headers=headers)
+        self.assertIn(response.status_code, (401, 403))
+        self.assertEqual(self.firmware({"display": response.json, "previous_display": payload, "scoped": True}), empty)
 
 
 if __name__ == "__main__":

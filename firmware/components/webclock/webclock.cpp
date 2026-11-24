@@ -50,7 +50,7 @@ esp_err_t receive(esp_http_client_event_t *event) {
 }
 Response request(const std::string &url, const std::string &token,
                  const std::string &body = "", const std::string &etag = "",
-                 esp_http_client_method_t method = HTTP_METHOD_POST) {
+                 esp_http_client_method_t method = HTTP_METHOD_POST, bool event_kinds = false) {
   Response response;
   if (!response.body) return response;
   esp_http_client_config_t config{};
@@ -65,6 +65,7 @@ Response request(const std::string &url, const std::string &token,
   const std::string authorization = "Bearer " + token;
   if (!token.empty()) esp_http_client_set_header(client, "Authorization", authorization.c_str());
   esp_http_client_set_header(client, "Accept", "application/json");
+  if (event_kinds) esp_http_client_set_header(client, "X-WebClock-Event-Kinds", "1");
   if (!etag.empty()) esp_http_client_set_header(client, "If-None-Match", etag.c_str());
   if (!body.empty()) {
     esp_http_client_set_method(client, method);
@@ -240,13 +241,13 @@ bool WebClock::desk_tick(DeskAlarm &state, int legacy_value, int &last_minute) {
   if (desk_out_) xQueueOverwrite(desk_out_, &state);
   TickerUpdate incoming;
   if (ticker_in_ && xQueueReceive(ticker_in_, &incoming, 0)) {
-    std::unique_ptr<std::string> line(incoming.line);
+    std::unique_ptr<DeskTicker> content(incoming.content);
     ticker_deadline_ = incoming.deadline;
-    if (int32_t(millis() - ticker_deadline_) >= 0) line->clear();
-    if (ticker_ != *line) { ticker_.swap(*line); return true; }
+    if (int32_t(millis() - ticker_deadline_) >= 0) *content = {};
+    if (!(ticker_ == *content)) { ticker_ = std::move(*content); return true; }
   }
-  if (!ticker_.empty() && int32_t(millis() - ticker_deadline_) >= 0) {
-    ticker_.clear();
+  if (!ticker_.all.empty() && int32_t(millis() - ticker_deadline_) >= 0) {
+    ticker_ = {};
     return true;
   }
   return before != state.value || previous_base != state.base || previous_skip != state.skip;
@@ -274,13 +275,14 @@ void WebClock::sync_desk_() {
   if (!ticker_in_) return;
   const bool managed = !display_token_.empty();
   const uint32_t started = millis();
-  auto response = request(server_url_ + (managed ? "/api/v2/device/display" : "/api/status"), display_token_);
+  auto response = request(server_url_ + (managed ? "/api/v2/device/display" : "/api/status"),
+                          display_token_, "", "", HTTP_METHOD_GET, /*event_kinds=*/true);
   auto doc = parse(response);
-  auto line = std::make_unique<std::string>();
+  auto content = std::make_unique<DeskTicker>();
   uint32_t lifetime = 0;
-  if (response.status == 200) lifetime = calendar_line(doc, managed, *line);
-  TickerUpdate update{line.get(), started + lifetime};
-  if (xQueueSend(ticker_in_, &update, pdMS_TO_TICKS(100))) line.release();
+  if (response.status == 200) lifetime = ticker_lines(doc, managed, *content);
+  TickerUpdate update{content.get(), started + lifetime};
+  if (xQueueSend(ticker_in_, &update, pdMS_TO_TICKS(100))) content.release();
 }
 #endif
 
