@@ -24,7 +24,7 @@ firmware/.venv/bin/esphome run firmware/rlcd-clock/clock.yaml --device /dev/cu.R
 
 ## 操作與音樂
 
-面向螢幕，頂部由左至右為 **＋ 選擇、● 確定、× 取消**。已啟用的每日鬧鐘可選「跳過下一次」、「恢復響鈴」或「取消鬧鈴」。響鈴時按 ●、用 ＋ 移到「確認停止」、再按 ● 停止。原廠側鍵保留供電源和維修操作。
+三個操作鍵分別是 **＋ 選擇、● 確定、× 取消**。已啟用的每日鬧鐘可選「跳過下一次」、「恢復響鈴」或「取消鬧鈴」。響鈴時按 ●、用 ＋ 移到「確認停止」、再按 ● 停止。原廠側鍵保留供電源和維修操作。
 
 將自訂音樂存為 FAT32 microSD 根目錄的 `alarm.wav`，插卡並開機後即可作為鬧鈴。音檔格式、轉檔指令和內建提示音的啟用條件見[自訂鬧鈴說明](AUDIO.md)。
 
@@ -32,7 +32,7 @@ firmware/.venv/bin/esphome run firmware/rlcd-clock/clock.yaml --device /dev/cu.R
 
 兩板共用 `core/desk.yaml` 的排程、按鍵、RTC、配對、離線同步。RLCD 使用自己的 [400 × 300 版面](screen.yaml)，EE04 使用 `views/classic-frame.yaml`。兩者共用按需重繪與跑馬燈。每款板在自己的 `clock.yaml` 指定顯示驅動、字級與三鍵接腳；音訊 package 提供 `mix_audio`，依本機響鈴狀態及服務端音量控制輸出。EE04 使用蜂鳴器，本板使用喇叭。兩款都由 `core/esp32s3.yaml` 載入相同分割表，升級後維持原有 NVS 與 OTA 位址。
 
-外殼以橫向安裝。若實板測試圖顛倒，可將本板 `clock.yaml` 的 `display.rotation` 由 `0°` 改為 `180°`，按鍵對應仍以面向螢幕的左、中、右為準。
+若螢幕畫面上下顛倒，可將本板 `clock.yaml` 的 `display.rotation` 由 `0°` 改為 `180°`。
 
 ## 驗證
 

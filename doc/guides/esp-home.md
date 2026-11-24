@@ -2,7 +2,7 @@
 
 | 板型 | 螢幕與操作 | 文件 |
 |---|---|---|
-| 微雪 ESP32-S3-RLCD-4.2 | 400 × 300 全反射 LCD、頂部三鍵、電池電壓、microSD 自訂鬧鈴 | [刷機](../../firmware/rlcd-clock/README.md) · [專屬畫面與操作手冊](../../firmware/rlcd-clock/使用手冊.md) |
+| 微雪 ESP32-S3-RLCD-4.2 | 400 × 300 全反射 LCD、三鍵操作、電池電壓、microSD 自訂鬧鈴 | [刷機](../../firmware/rlcd-clock/README.md) · [專屬畫面與操作手冊](../../firmware/rlcd-clock/使用手冊.md) |
 | EE04 | 800 × 480 電子紙、背面三鍵、蜂鳴器 | [刷機](../../firmware/ee04-clock/README.md) · [使用手冊](../../firmware/ee04-clock/使用手冊.md) |
 
 ## EE04 電子紙桌鐘
